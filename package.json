@@ -7,11 +7,15 @@
     "prc": "./bin/prc.js"
   },
   "scripts": {
-    "check": "node --check bin/prc.js && node --check src/cli.js && node --check src/github.js && node --check src/render.js && node --check src/review-run.js",
+    "check": "node --check bin/prc.js && node --check src/cli.js && node --check src/github.js && node --check src/render.js && node --check src/review-run.js && node --check src/analysis/codex-agent.js && node scripts/check-webview-bundle.js",
     "prc": "node bin/prc.js"
   },
   "dependencies": {
-    "diff2html": "^3.4.52"
+    "@xyflow/react": "^12.11.2",
+    "diff2html": "^3.4.52",
+    "esbuild": "^0.28.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   },
   "engines": {
     "node": ">=20"

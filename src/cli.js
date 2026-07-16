@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { createReviewRun } from "./review-run.js";
+import { createAnalysisRun, createReviewRun, renderExistingRun } from "./review-run.js";
 
 const usage = `Usage:
   prc <github-pr-url> [--open] [--no-open]
+  prc analyze <github-pr-url>
+  prc view <run-dir> [--open]
 
 Options:
   --open       Open the generated review HTML in the default browser.
@@ -16,6 +18,42 @@ export async function runCli(args) {
 
   if (options.help) {
     console.log(usage.trimEnd());
+    return;
+  }
+
+  if (options.command === "analyze") {
+    if (!options.prUrl) {
+      throw new Error(usage.trimEnd());
+    }
+
+    const result = await createAnalysisRun({
+      prUrl: options.prUrl,
+      reviewsDir: path.resolve(process.cwd(), ".reviews"),
+    });
+
+    console.log(`Analysis generated: ${result.analysisPath}`);
+    console.log(`Run directory: ${result.runDir}`);
+    return;
+  }
+
+  if (options.command === "view") {
+    if (!options.prUrl) {
+      throw new Error(usage.trimEnd());
+    }
+
+    const result = await renderExistingRun({
+      runDir: path.resolve(process.cwd(), options.prUrl),
+    });
+
+    if (options.open) {
+      await openFile(result.htmlPath);
+    }
+
+    console.log(`Review generated: ${result.htmlPath}`);
+    if (result.analysisPath) {
+      console.log(`Graph analysis used: ${result.analysisPath}`);
+    }
+    console.log(`Run directory: ${result.runDir}`);
     return;
   }
 
@@ -38,6 +76,7 @@ export async function runCli(args) {
 
 function parseArgs(args) {
   const options = {
+    command: "review",
     help: false,
     open: false,
     prUrl: undefined,
@@ -46,6 +85,8 @@ function parseArgs(args) {
   for (const arg of args) {
     if (arg === "--") {
       continue;
+    } else if ((arg === "analyze" || arg === "view") && !options.prUrl && options.command === "review") {
+      options.command = arg;
     } else if (arg === "--help" || arg === "-h") {
       options.help = true;
     } else if (arg === "--open") {
