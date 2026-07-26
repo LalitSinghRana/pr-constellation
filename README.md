@@ -40,8 +40,29 @@ exists:
 pnpm prc -- view .reviews/REPO-123/2026-01-01T00-00-00-000Z --open
 ```
 
+Serve generated reviews on one local port:
+
+```sh
+pnpm web
+```
+
+The latest generated run for each PR is available at a stable URL:
+
+```text
+http://127.0.0.1:4173/reviews/REPO-123/
+```
+
+Timestamped revision URLs remain available for historical runs. You can also
+select a specific run with a query param:
+
+```text
+http://127.0.0.1:4173/?review=REPO-123/2026-01-01T00-00-00-000Z
+```
+
 The CLI uses local `gh` authentication, fetches PR metadata and the cumulative
 diff, then writes a timestamped run under `.reviews/<repo-pr-number>/`.
 
 The `analyze` command is headless. It invokes `codex exec` in read-only mode and
-writes graph data to `analysis.json`; it does not render the webview.
+writes one file-local mini-tree per changed file to `analysis.json`; it does not
+render the webview. The Tree view places those independent file mini-trees on
+the canvas and renders their nodes as code diffs.

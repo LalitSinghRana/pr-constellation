@@ -1,0 +1,44 @@
+# PR Review Cockpit Agent Instructions
+
+When the user invokes `@agentic-workflow`, use the project-local skill at
+`.codex/skills/agentic-workflow/SKILL.md`.
+
+Default project checks:
+
+```sh
+pnpm check
+```
+
+For UI work, use Agent Browser through the project scripts:
+
+```sh
+pnpm ab -- open --enable react-devtools <url>
+pnpm ab -- snapshot
+pnpm ab -- errors
+pnpm ab -- console
+pnpm ab -- screenshot .context/agent-browser/current.png
+pnpm ab -- close --all
+```
+
+For user-facing review URLs, always serve generated reviews from the fixed local
+server port and give the user the localhost URL:
+
+```sh
+pnpm web <run-dir>
+```
+
+The canonical user-facing route is stable across generated revisions:
+
+```text
+http://127.0.0.1:4173/reviews/<review-slug>/
+```
+
+Do not give `file://` or timestamped URLs as the main handoff URL. The stable
+route resolves the latest generated revision for that review slug. Historical
+revisions remain addressable by their `/reviews/<review-slug>/<run-id>/`
+subpaths on the same `127.0.0.1:4173` server. If port `4173` is already in use,
+reuse that server when it is serving this workspace, or stop it before starting
+a new one; do not switch to a random port.
+
+Generated review runs live under `.reviews/` and are gitignored. Do not commit
+generated review artifacts unless explicitly requested.

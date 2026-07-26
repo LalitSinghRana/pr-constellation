@@ -32,6 +32,9 @@ export async function runCli(args) {
     });
 
     console.log(`Analysis generated: ${result.analysisPath}`);
+    console.log(`Diff inventory generated: ${result.diffInventoryPath}`);
+    console.log(`Diff summary generated: ${result.diffSummaryPath}`);
+    console.log(`Judge generated: ${result.judgePath}`);
     console.log(`Run directory: ${result.runDir}`);
     return;
   }

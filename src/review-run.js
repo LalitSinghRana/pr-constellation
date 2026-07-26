@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { runCodexGraphAnalysis } from "./analysis/codex-agent.js";
+import { createDiffInventory, createDiffSummary } from "../workflows/pr-graph-analysis/03-build-diff-inventory/diff-inventory.js";
+import { runCodexGraphAnalysis } from "../workflows/pr-graph-analysis/07-run-retry-loop/codex-agent.js";
 import { fetchPullRequest, parseGitHubPrUrl } from "./github.js";
 import { renderDiffHtml } from "./render.js";
 
@@ -12,6 +13,8 @@ export async function createReviewRun({ prUrl, reviewsDir }) {
 
   return {
     diffPath: paths.diffPath,
+    diffInventoryPath: paths.diffInventoryPath,
+    diffSummaryPath: paths.diffSummaryPath,
     htmlPath: paths.htmlPath,
     metadataPath: paths.metadataPath,
     runDir,
@@ -25,6 +28,9 @@ export async function createAnalysisRun({ prUrl, reviewsDir }) {
   return {
     analysisPath: analysisResult.analysisPath,
     diffPath: paths.diffPath,
+    diffInventoryPath: paths.diffInventoryPath,
+    diffSummaryPath: paths.diffSummaryPath,
+    judgePath: analysisResult.judgePath,
     metadataPath: paths.metadataPath,
     runDir,
   };
@@ -67,12 +73,18 @@ async function createPrInputRun({ prUrl, reviewsDir }) {
   await mkdir(runDir, { recursive: true });
 
   const { metadata, diff } = await fetchPullRequest(prUrl);
+  const diffInventory = createDiffInventory(diff);
+  const diffSummary = createDiffSummary(diffInventory);
 
   const metadataPath = path.join(runDir, "metadata.json");
   const diffPath = path.join(runDir, "diff.patch");
+  const diffInventoryPath = path.join(runDir, "diff-inventory.json");
+  const diffSummaryPath = path.join(runDir, "diff-summary.json");
   const htmlPath = path.join(runDir, "index.html");
 
   await Promise.all([
+    writeFile(diffInventoryPath, `${JSON.stringify(diffInventory, null, 2)}\n`, "utf8"),
+    writeFile(diffSummaryPath, `${JSON.stringify(diffSummary)}\n`, "utf8"),
     writeFile(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8"),
     writeFile(diffPath, diff, "utf8"),
   ]);
@@ -82,6 +94,8 @@ async function createPrInputRun({ prUrl, reviewsDir }) {
     metadata,
     paths: {
       diffPath,
+      diffInventoryPath,
+      diffSummaryPath,
       htmlPath,
       metadataPath,
     },
