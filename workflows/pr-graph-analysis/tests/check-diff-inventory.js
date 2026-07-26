@@ -1,4 +1,4 @@
-import { createDiffInventory, createDiffSummary } from "../workflows/pr-graph-analysis/03-build-diff-inventory/diff-inventory.js";
+import { createDiffInventory, createDiffSummary } from "../03-build-diff-inventory/diff-inventory.js";
 
 const inventory = createDiffInventory(`diff --git a/src/example.js b/src/example.js
 index 0000000..1111111 100644

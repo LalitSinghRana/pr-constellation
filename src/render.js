@@ -11,10 +11,10 @@ import { createDiffInventory } from "../workflows/pr-graph-analysis/03-build-dif
 
 const require = createRequire(import.meta.url);
 const ANALYSIS_SCHEMA_PATH = fileURLToPath(new URL("../workflows/pr-graph-analysis/04-generate-candidate-analysis/02-create-mini-trees/schema.json", import.meta.url));
-const GRAPH_APP_ENTRY = fileURLToPath(new URL("./web/graph-app.jsx", import.meta.url));
+const GRAPH_APP_ENTRY = fileURLToPath(new URL("./graph-app.jsx", import.meta.url));
 const JSON_VIEW_CSS_PATH = require.resolve("react-json-view-lite/dist/index.css");
-const ROOT_DIR = fileURLToPath(new URL("..", import.meta.url));
-const WEB_STYLES_ENTRY = fileURLToPath(new URL("./web/styles.css", import.meta.url));
+const WEBSITE_DIR = fileURLToPath(new URL(".", import.meta.url));
+const WEB_STYLES_ENTRY = fileURLToPath(new URL("./styles.css", import.meta.url));
 const SHIKI_THEMES = { light: "light-plus", dark: "dark-plus" };
 const SHIKI_LANGUAGES = [
   "bash",
@@ -153,7 +153,7 @@ async function buildGraphAssets() {
   const js = bundle.outputFiles[0]?.text;
 
   if (!js) {
-    throw new Error("Failed to build graph webview bundle.");
+    throw new Error("Failed to build graph website bundle.");
   }
 
   return {
@@ -183,10 +183,10 @@ function aliasAtPlugin() {
     setup(build) {
       build.onResolve({ filter: /^@\// }, (args) => {
         if (args.path === "@/lib/utils") {
-          return { path: path.join(ROOT_DIR, "lib/utils.js") };
+          return { path: path.join(WEBSITE_DIR, "lib/utils.js") };
         }
 
-        return { path: path.join(ROOT_DIR, args.path.slice(2)) };
+        return { path: path.join(WEBSITE_DIR, args.path.slice(2)) };
       });
     },
   };

@@ -11,10 +11,15 @@
     "ab:close": "npm exec --yes --registry=https://registry.npmjs.org/ agent-browser@latest -- close --all",
     "ab:doctor": "npm exec --yes --registry=https://registry.npmjs.org/ agent-browser@latest -- doctor --quick --offline",
     "ab:mcp": "npm exec --yes --registry=https://registry.npmjs.org/ agent-browser@latest -- mcp --tools core,react,debug,network",
-    "check": "node --check bin/prc.js && node --check src/cli.js && node --check src/github.js && node --check src/render.js && node --check src/review-run.js && node --check src/web/mini-tree-model.js && node --check workflows/pr-graph-analysis/03-build-diff-inventory/diff-inventory.js && node --check workflows/pr-graph-analysis/05-validate-candidate/validate-analysis.js && node --check workflows/pr-graph-analysis/07-run-retry-loop/codex-agent.js && node --check scripts/serve-review.js && node --check scripts/check-analysis-pipeline.js && node --check scripts/check-analysis-validator.js && node --check scripts/check-diff-inventory.js && node --check scripts/check-mini-tree-folding.js && node scripts/check-diff-inventory.js && node scripts/check-analysis-validator.js && node scripts/check-analysis-pipeline.js && node scripts/check-mini-tree-folding.js && node scripts/check-webview-bundle.js",
-    "dev": "node scripts/serve-review.js --port 4173",
-    "web": "node scripts/serve-review.js --port 4173",
-    "prc": "node bin/prc.js"
+    "check": "pnpm check:core && pnpm check:analysis && pnpm check:webview",
+    "check:core": "node --check bin/prc.js && node --check cli/cli.js && node --check cli/review-run.js",
+    "check:analysis": "node --check workflows/pr-graph-analysis/02-fetch-pr/github.js && node --check workflows/pr-graph-analysis/03-build-diff-inventory/diff-inventory.js && node --check workflows/pr-graph-analysis/05-validate-candidate/validate-analysis.js && node --check workflows/pr-graph-analysis/07-run-retry-loop/codex-agent.js && node --check workflows/pr-graph-analysis/tests/check-analysis-pipeline.js && node --check workflows/pr-graph-analysis/tests/check-analysis-validator.js && node --check workflows/pr-graph-analysis/tests/check-diff-inventory.js && node workflows/pr-graph-analysis/tests/check-diff-inventory.js && node workflows/pr-graph-analysis/tests/check-analysis-validator.js && node workflows/pr-graph-analysis/tests/check-analysis-pipeline.js",
+    "check:webview": "node --check src/render.js && node --check src/mini-tree-model.js && node --check vite.config.js && node --check tests/webview/check-mini-tree-folding.js && node --check tests/webview/check-review-hosting.js && node --check tests/webview/check-webview-bundle.js && node tests/webview/check-mini-tree-folding.js && node tests/webview/check-review-hosting.js && node tests/webview/check-webview-bundle.js",
+    "dev": "vite --config vite.config.js",
+    "web": "vite --config vite.config.js",
+    "prc": "node bin/prc.js",
+    "ui:add": "shadcn add",
+    "ui:info": "shadcn info"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.3",
@@ -36,7 +41,10 @@
     "tw-animate-css": "^1.4.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^20.19.0 || >=22.12.0"
   },
-  "packageManager": "pnpm@10.14.0"
+  "packageManager": "pnpm@10.14.0",
+  "devDependencies": {
+    "vite": "^8.1.5"
+  }
 }

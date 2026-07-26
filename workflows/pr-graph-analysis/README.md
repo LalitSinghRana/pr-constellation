@@ -5,6 +5,13 @@ semantic grouping and review explanations. Deterministic validation owns file
 coverage, changed-line ownership, and tree structure. Failed attempts are never
 repaired or replaced with a generic fallback.
 
+All analysis implementation, contracts, and tests live in this directory.
+Run its focused suite with:
+
+```sh
+pnpm check:analysis
+```
+
 ## Output Shape
 
 Current schema: `pr-graph-mini-trees/v2`.

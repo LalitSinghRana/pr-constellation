@@ -22,7 +22,7 @@ pnpm ab:doctor
 Run any Agent Browser command:
 
 ```sh
-pnpm ab -- open --enable react-devtools file:///absolute/path/to/index.html
+pnpm ab -- open --enable react-devtools http://127.0.0.1:4173/reviews/<review-slug>/
 pnpm ab -- snapshot
 pnpm ab -- screenshot .context/agent-browser/page.png
 pnpm ab -- console
@@ -63,7 +63,7 @@ In the current chat, the agent can always invoke Agent Browser through shell
 commands such as:
 
 ```sh
-pnpm ab -- open --enable react-devtools file:///absolute/path/to/index.html
+pnpm ab -- open --enable react-devtools http://127.0.0.1:4173/reviews/<review-slug>/
 pnpm ab -- snapshot
 pnpm ab -- screenshot .context/agent-browser/current.png
 pnpm ab -- errors

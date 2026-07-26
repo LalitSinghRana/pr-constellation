@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { renderDiffHtml } from "../src/render.js";
+import { renderDiffHtml } from "../../src/render.js";
 
 const html = await renderDiffHtml({
   analysis: {
@@ -118,11 +118,13 @@ assert.deepEqual(
   ["const value = 1;", "const value = 2;"],
 );
 
-const [graphAppSource, webStyles] = await Promise.all([
-  readFile(new URL("../src/web/graph-app.jsx", import.meta.url), "utf8"),
-  readFile(new URL("../src/web/styles.css", import.meta.url), "utf8"),
+const [collapsibleSource, graphAppSource, webStyles] = await Promise.all([
+  readFile(new URL("../../src/components/ui/collapsible.jsx", import.meta.url), "utf8"),
+  readFile(new URL("../../src/graph-app.jsx", import.meta.url), "utf8"),
+  readFile(new URL("../../src/styles.css", import.meta.url), "utf8"),
 ]);
 
+assert.match(collapsibleSource, /CollapsiblePrimitive/);
 assert.match(graphAppSource, /nodesDraggable=\{false\}/);
 assert.doesNotMatch(graphAppSource, /MINI_NODE_MAX_HEIGHT/);
 assert.match(graphAppSource, /MINI_CODE_CHARACTER_COLUMNS = 120/);
@@ -132,6 +134,12 @@ assert.match(graphAppSource, /fileOrderViewIds/);
 assert.match(graphAppSource, /buildFileOrderMiniTree\(file\)/);
 assert.match(graphAppSource, /value="tree"/);
 assert.match(graphAppSource, /value="file"/);
+assert.match(graphAppSource, /<Collapsible/);
+assert.match(graphAppSource, /<CollapsibleTrigger asChild>/);
+assert.doesNotMatch(graphAppSource, /<button/);
+assert.match(graphAppSource, /<Badge className="file-page-label"/);
+assert.match(graphAppSource, /BackgroundVariant\.Dots/);
+assert.match(graphAppSource, /bgColor=/);
 assert.match(
   graphAppSource,
   /foldMiniTree\(file, \{ expandedGroupIds \}\)/,

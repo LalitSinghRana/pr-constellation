@@ -2,8 +2,8 @@
 @import "tw-animate-css";
 
 @source "./graph-app.jsx";
-@source "../../components/ui/**/*.{js,jsx}";
-@source "../../lib/**/*.{js,jsx}";
+@source "./components/ui/**/*.{js,jsx}";
+@source "./lib/**/*.{js,jsx}";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -225,6 +225,7 @@
   display: inline-flex;
   align-items: center;
   overflow: hidden;
+  padding: 0;
   border: 1px solid color-mix(in oklab, var(--mini-tree-color) 28%, var(--border));
   border-radius: 5px;
   background: var(--card);

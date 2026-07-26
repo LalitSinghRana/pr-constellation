@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createDiffInventory } from "../workflows/pr-graph-analysis/03-build-diff-inventory/diff-inventory.js";
-import { runCodexGraphAnalysis } from "../workflows/pr-graph-analysis/07-run-retry-loop/codex-agent.js";
+import { createDiffInventory } from "../03-build-diff-inventory/diff-inventory.js";
+import { runCodexGraphAnalysis } from "../07-run-retry-loop/codex-agent.js";
 
 const diff = `diff --git a/src/example.js b/src/example.js
 index 0000000..1111111 100644

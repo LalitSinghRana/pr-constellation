@@ -7,6 +7,18 @@ feature intent, highest-signal files, causal change path, acceptance criteria,
 and senior/product/QA review risks without drowning them in generated files,
 tests, fixtures, or Storybook noise.
 
+## Code Organization
+
+- `src/` is the generated-review website: HTML renderer, React Flow
+  application, tree presentation model, styles, and shadcn components.
+- `cli/` contains the command-line interface and the run coordinator that
+  connects analysis output to rendering.
+- `workflows/pr-graph-analysis/` contains the complete headless AI analysis
+  workflow: PR fetching, diff inventory, prompts, schemas, validation, judging,
+  retry orchestration, and analysis tests.
+- `tests/webview/` contains website rendering and presentation-model regression
+  checks.
+
 ## Dirty v0
 
 Install dependencies:
@@ -40,7 +52,7 @@ exists:
 pnpm prc -- view .reviews/REPO-123/2026-01-01T00-00-00-000Z --open
 ```
 
-Serve generated reviews on one local port:
+Serve generated reviews with Vite on the fixed local port:
 
 ```sh
 pnpm web
@@ -52,11 +64,10 @@ The latest generated run for each PR is available at a stable URL:
 http://127.0.0.1:4173/reviews/REPO-123/
 ```
 
-Timestamped revision URLs remain available for historical runs. You can also
-select a specific run with a query param:
+Timestamped revision URLs remain available for historical runs:
 
 ```text
-http://127.0.0.1:4173/?review=REPO-123/2026-01-01T00-00-00-000Z
+http://127.0.0.1:4173/reviews/REPO-123/2026-01-01T00-00-00-000Z/
 ```
 
 The CLI uses local `gh` authentication, fetches PR metadata and the cumulative

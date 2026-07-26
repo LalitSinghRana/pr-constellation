@@ -18,6 +18,7 @@ import {
 import { JsonView, allExpanded, collapseAllNested, defaultStyles } from "react-json-view-lite";
 import {
   Background,
+  BackgroundVariant,
   ControlButton,
   Controls,
   Handle,
@@ -27,9 +28,10 @@ import {
   ReactFlowProvider,
   useReactFlow,
 } from "@xyflow/react";
-import { Badge } from "../../components/ui/badge.jsx";
-import { Button } from "../../components/ui/button.jsx";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs.jsx";
+import { Badge } from "./components/ui/badge.jsx";
+import { Button } from "./components/ui/button.jsx";
+import { Collapsible, CollapsibleTrigger } from "./components/ui/collapsible.jsx";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.jsx";
 import { foldMiniTree, normalizeMiniTree } from "./mini-tree-model.js";
 
 const FILE_PAGE_GAP_X = 160;
@@ -268,7 +270,13 @@ function GraphCanvas({ graph, onFileViewModeChange, onToggleCollapsedGroup }) {
           zoomOnPinch
           zoomOnScroll
         >
-          <Background color="color-mix(in oklab, var(--primary) 16%, var(--border))" gap={28} size={1} />
+          <Background
+            bgColor="color-mix(in oklab, var(--muted) 34%, var(--background))"
+            color="color-mix(in oklab, var(--mini-tree-color) 24%, var(--border))"
+            gap={24}
+            size={1.2}
+            variant={BackgroundVariant.Dots}
+          />
           <Controls position="bottom-right" showFitView={false} showInteractive={false}>
             <ControlButton
               aria-label="Reset tree view"
@@ -372,10 +380,10 @@ function FilePageNode({ data }) {
   return (
     <section aria-label={`Mini-tree for ${filePath}`} className="file-page-node">
       <div className="file-page-header">
-        <div className="file-page-label" title={filePath}>
+        <Badge className="file-page-label" title={filePath} variant="outline">
           <FileCode2 aria-hidden="true" size={16} />
           <span>{filePath}</span>
-        </div>
+        </Badge>
         <Tabs
           className="file-page-view-tabs nodrag nopan nowheel"
           onValueChange={(nextMode) => data.onFileViewModeChange?.(data.file.id, nextMode)}
@@ -403,34 +411,45 @@ function CollapsedReviewGroupNode({ data }) {
   const rootPreview = group.rootTitles.slice(0, 3).join(", ");
 
   return (
-    <article className={`collapsed-review-group is-${data.miniNode.reviewClass} nodrag nopan nowheel`}>
-      <Handle className="node-handle" position={Position.Top} type="target" />
-      <button
-        aria-expanded={group.expanded}
-        aria-label={`${action} ${data.miniNode.title}`}
-        className="collapsed-review-group-button"
-        onClick={() => data.onToggleCollapsedGroup(group.groupId)}
-        title={`${action}: ${rootPreview}`}
-        type="button"
-      >
-        <span className="collapsed-review-group-icon">
-          <FolderTree aria-hidden="true" size={20} />
-        </span>
-        <span className="collapsed-review-group-copy">
-          <span className="collapsed-review-group-title">{data.miniNode.title}</span>
-          <span className="collapsed-review-group-summary">
-            {`${group.subtreeCount} ${group.subtreeCount === 1 ? "subtree" : "subtrees"} · ${group.nodeCount} nodes · ${group.lineCount} changed lines`}
-          </span>
-          <span className="collapsed-review-group-preview">{rootPreview}</span>
-        </span>
-        <span className="collapsed-review-group-toggle">
-          {group.expanded
-            ? <ChevronDown aria-hidden="true" size={19} />
-            : <ChevronRight aria-hidden="true" size={19} />}
-        </span>
-      </button>
-      <Handle className="node-handle" position={Position.Bottom} type="source" />
-    </article>
+    <Collapsible
+      asChild
+      onOpenChange={(expanded) => {
+        if (expanded !== group.expanded) {
+          data.onToggleCollapsedGroup(group.groupId);
+        }
+      }}
+      open={group.expanded}
+    >
+      <article className={`collapsed-review-group is-${data.miniNode.reviewClass} nodrag nopan nowheel`}>
+        <Handle className="node-handle" position={Position.Top} type="target" />
+        <CollapsibleTrigger asChild>
+          <Button
+            aria-label={`${action} ${data.miniNode.title}`}
+            className="collapsed-review-group-button"
+            title={`${action}: ${rootPreview}`}
+            type="button"
+            variant="ghost"
+          >
+            <span className="collapsed-review-group-icon">
+              <FolderTree aria-hidden="true" size={20} />
+            </span>
+            <span className="collapsed-review-group-copy">
+              <span className="collapsed-review-group-title">{data.miniNode.title}</span>
+              <span className="collapsed-review-group-summary">
+                {`${group.subtreeCount} ${group.subtreeCount === 1 ? "subtree" : "subtrees"} · ${group.nodeCount} nodes · ${group.lineCount} changed lines`}
+              </span>
+              <span className="collapsed-review-group-preview">{rootPreview}</span>
+            </span>
+            <span className="collapsed-review-group-toggle">
+              {group.expanded
+                ? <ChevronDown aria-hidden="true" size={19} />
+                : <ChevronRight aria-hidden="true" size={19} />}
+            </span>
+          </Button>
+        </CollapsibleTrigger>
+        <Handle className="node-handle" position={Position.Bottom} type="source" />
+      </article>
+    </Collapsible>
   );
 }
 
@@ -452,14 +471,14 @@ function MiniDiffNode({ data }) {
           {data.miniNode.title}
         </span>
         <span className="mini-node-labels">
-          <span className={`mini-node-label is-review-${reviewClass}`}>
+          <Badge className={`mini-node-label is-review-${reviewClass}`} variant="outline">
             <span className="mini-node-label-key">reviewClass</span>
             <span className="mini-node-label-value">{reviewClass}</span>
-          </span>
-          <span className={`mini-node-label is-role-${changeRole}`}>
+          </Badge>
+          <Badge className={`mini-node-label is-role-${changeRole}`} variant="outline">
             <span className="mini-node-label-key">changeRole</span>
             <span className="mini-node-label-value">{changeRole}</span>
-          </span>
+          </Badge>
         </span>
       </header>
       <div className="mini-diff-scroll">

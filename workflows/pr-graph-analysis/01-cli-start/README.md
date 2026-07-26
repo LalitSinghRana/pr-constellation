@@ -3,7 +3,7 @@
 Entry point:
 
 - `bin/prc.js`
-- `src/cli.js`
+- `cli/cli.js`
 
 Current command:
 

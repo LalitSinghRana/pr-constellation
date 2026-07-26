@@ -2,14 +2,18 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createDiffInventory, createDiffSummary } from "../workflows/pr-graph-analysis/03-build-diff-inventory/diff-inventory.js";
 import { runCodexGraphAnalysis } from "../workflows/pr-graph-analysis/07-run-retry-loop/codex-agent.js";
-import { fetchPullRequest, parseGitHubPrUrl } from "./github.js";
-import { renderDiffHtml } from "./render.js";
+import { fetchPullRequest, parseGitHubPrUrl } from "../workflows/pr-graph-analysis/02-fetch-pr/github.js";
+import { renderDiffHtml } from "../src/render.js";
 
 export async function createReviewRun({ prUrl, reviewsDir }) {
   const { diff, metadata, paths, runDir } = await createPrInputRun({ prUrl, reviewsDir });
   const html = await renderDiffHtml({ pr: metadata, diff });
 
-  await writeFile(paths.htmlPath, html, "utf8");
+  await writeReviewHtml({
+    html,
+    htmlPath: paths.htmlPath,
+    stableHtmlPath: paths.stableHtmlPath,
+  });
 
   return {
     diffPath: paths.diffPath,
@@ -18,6 +22,7 @@ export async function createReviewRun({ prUrl, reviewsDir }) {
     htmlPath: paths.htmlPath,
     metadataPath: paths.metadataPath,
     runDir,
+    stableHtmlPath: paths.stableHtmlPath,
   };
 }
 
@@ -41,6 +46,7 @@ export async function renderExistingRun({ runDir }) {
   const diffPath = path.join(runDir, "diff.patch");
   const analysisPath = path.join(runDir, "analysis.json");
   const htmlPath = path.join(runDir, "index.html");
+  const stableHtmlPath = path.join(path.dirname(runDir), "index.html");
 
   const [metadata, diff, analysis] = await Promise.all([
     readJson(metadataPath),
@@ -54,7 +60,7 @@ export async function renderExistingRun({ runDir }) {
     pr: metadata,
   });
 
-  await writeFile(htmlPath, html, "utf8");
+  await writeReviewHtml({ html, htmlPath, stableHtmlPath });
 
   return {
     analysisPath: analysis ? analysisPath : null,
@@ -62,6 +68,7 @@ export async function renderExistingRun({ runDir }) {
     htmlPath,
     metadataPath,
     runDir,
+    stableHtmlPath,
   };
 }
 
@@ -81,6 +88,7 @@ async function createPrInputRun({ prUrl, reviewsDir }) {
   const diffInventoryPath = path.join(runDir, "diff-inventory.json");
   const diffSummaryPath = path.join(runDir, "diff-summary.json");
   const htmlPath = path.join(runDir, "index.html");
+  const stableHtmlPath = path.join(reviewsDir, parsed.slug, "index.html");
 
   await Promise.all([
     writeFile(diffInventoryPath, `${JSON.stringify(diffInventory, null, 2)}\n`, "utf8"),
@@ -98,9 +106,17 @@ async function createPrInputRun({ prUrl, reviewsDir }) {
       diffSummaryPath,
       htmlPath,
       metadataPath,
+      stableHtmlPath,
     },
     runDir,
   };
+}
+
+async function writeReviewHtml({ html, htmlPath, stableHtmlPath }) {
+  await Promise.all([
+    writeFile(htmlPath, html, "utf8"),
+    writeFile(stableHtmlPath, html, "utf8"),
+  ]);
 }
 
 async function readJson(filePath) {
