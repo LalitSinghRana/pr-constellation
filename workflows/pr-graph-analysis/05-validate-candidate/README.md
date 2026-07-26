@@ -8,9 +8,10 @@
 - every node owns one source-ordered continuous range in one hunk
 - no node contains a line from another file
 - file `codeRefs` exactly match its inventory lines
-- mini-tree node ids and edges are valid and file-local
+- ordered mini-tree review edges form one valid file-local tree
+- secondary technical relations reference valid file-local mini-nodes
 - each mini-tree has one root and one parent per non-root node
-- each mini-tree has exactly one `core` node at its depth 0 root
+- each mini-tree has exactly one `core` node at its root
 - review priority flows `core > important > supporting > mechanical`
 - `imports`, `type`, `generated`, and `formatting` use deterministic
   `mechanical` classification outside the core root

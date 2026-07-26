@@ -23,7 +23,7 @@ const inventory = createDiffInventory(diff);
 const changedFiles = inventory.files.filter((file) => file.changedLineIds.length > 0);
 const [runtimeFile, testFile] = changedFiles;
 const validAnalysis = {
-  schemaVersion: "pr-graph-mini-trees/v1",
+  schemaVersion: "pr-graph-mini-trees/v2",
   intent: "Review the example value change",
   summary: "Update the runtime value and its expectation.",
   confidence: 1,
@@ -35,7 +35,6 @@ const validAnalysis = {
           miniNode({
             changedLineIds: runtimeFile.changedLineIds.slice(0, 2),
             changeRole: "runtime",
-            depth: 0,
             id: "change-runtime-value",
             reviewClass: "core",
             title: "Change runtime value",
@@ -43,16 +42,22 @@ const validAnalysis = {
           miniNode({
             changedLineIds: runtimeFile.changedLineIds.slice(2),
             changeRole: "runtime",
-            depth: 1,
             id: "validate-runtime-value",
             reviewClass: "supporting",
             title: "Validate runtime value",
           }),
         ],
-        edges: [
-          edge({
+        reviewEdges: [
+          reviewEdge({
             from: "change-runtime-value",
+            order: 0,
             to: "validate-runtime-value",
+          }),
+        ],
+        relations: [
+          relation({
+            from: "validate-runtime-value",
+            to: "change-runtime-value",
           }),
         ],
       },
@@ -65,13 +70,13 @@ const validAnalysis = {
           miniNode({
             changedLineIds: testFile.changedLineIds,
             changeRole: "test",
-            depth: 0,
             id: "update-value-expectation",
             reviewClass: "core",
             title: "Update value expectation",
           }),
         ],
-        edges: [],
+        reviewEdges: [],
+        relations: [],
       },
       reviewClass: "supporting",
     }),
@@ -79,6 +84,15 @@ const validAnalysis = {
 };
 
 expectValid(validAnalysis);
+expectValid(asLegacyV1(validAnalysis));
+
+const legacyWithInvalidDepth = asLegacyV1(validAnalysis);
+legacyWithInvalidDepth.files[0].miniTree.nodes[1].depth = 3;
+expectInvalid({
+  analysis: legacyWithInvalidDepth,
+  message: "must connect adjacent depths only",
+  name: "legacy mini-tree with inconsistent depth",
+});
 
 expectInvalid({
   analysis: {
@@ -195,29 +209,20 @@ expectInvalid({
 
 expectInvalid({
   analysis: patchMiniTree(validAnalysis, 0, {
-    edges: [],
+    reviewEdges: [],
   }),
-  message: "non-root miniNode must have exactly one parent",
+  message: "must contain exactly one root with no incoming review edge",
   name: "disconnected mini-tree node",
 });
 
 expectInvalid({
   analysis: patchMiniTree(validAnalysis, 0, {
-    edges: [
-      edge({
+    reviewEdges: [
+      reviewEdge({
         from: "validate-runtime-value",
+        order: 0,
         to: "change-runtime-value",
       }),
-    ],
-    nodes: [
-      {
-        ...validAnalysis.files[0].miniTree.nodes[0],
-        depth: 1,
-      },
-      {
-        ...validAnalysis.files[0].miniTree.nodes[1],
-        depth: 0,
-      },
     ],
   }),
   message: "must flow from core changes toward supporting/mechanical changes",
@@ -225,10 +230,37 @@ expectInvalid({
 });
 
 expectInvalid({
+  analysis: patchMiniTree(validAnalysis, 0, {
+    reviewEdges: [
+      reviewEdge({
+        from: "change-runtime-value",
+        order: 1,
+        to: "validate-runtime-value",
+      }),
+    ],
+  }),
+  message: "unique contiguous sibling order values starting at 0",
+  name: "review hierarchy with non-contiguous sibling order",
+});
+
+expectInvalid({
+  analysis: patchMiniTree(validAnalysis, 0, {
+    relations: [
+      relation({
+        from: "validate-runtime-value",
+        to: "missing-node",
+      }),
+    ],
+  }),
+  message: "relations references unknown to id",
+  name: "technical relation to unknown mini-node",
+});
+
+expectInvalid({
   analysis: patchMiniNode(validAnalysis, 0, 0, {
     reviewClass: "important",
   }),
-  message: "depth 0 root must use reviewClass core",
+  message: "root must use reviewClass core",
   name: "root without core review class",
 });
 
@@ -236,7 +268,7 @@ expectInvalid({
   analysis: patchMiniNode(validAnalysis, 0, 1, {
     reviewClass: "core",
   }),
-  message: "only its depth 0 root may use reviewClass core",
+  message: "only its root may use reviewClass core",
   name: "non-root core node",
 });
 
@@ -286,7 +318,6 @@ function buildFile({
 function miniNode({
   changedLineIds,
   changeRole,
-  depth,
   id,
   reviewClass,
   title,
@@ -296,18 +327,26 @@ function miniNode({
     title,
     reviewClass,
     changeRole,
-    depth,
     comment: `${title} is a distinct file-local review concept.`,
     changedLineIds,
   };
 }
 
-function edge({ from, to }) {
+function reviewEdge({ from, order, to }) {
   return {
     from,
     to,
-    relation: "requires",
-    comment: `${from} requires ${to}.`,
+    order,
+    comment: `Review ${to} after ${from}.`,
+  };
+}
+
+function relation({ from, to }) {
+  return {
+    from,
+    to,
+    relation: "depends on",
+    comment: `${from} technically depends on ${to}.`,
   };
 }
 
@@ -336,6 +375,49 @@ function patchMiniTree(analysis, fileIndex, patch) {
     ...patch,
   };
   return next;
+}
+
+function asLegacyV1(analysis) {
+  const legacy = structuredClone(analysis);
+  legacy.schemaVersion = "pr-graph-mini-trees/v1";
+
+  for (const file of legacy.files) {
+    const depthByNodeId = deriveDepths(file.miniTree);
+    file.miniTree.nodes = file.miniTree.nodes.map((node) => ({
+      ...node,
+      depth: depthByNodeId.get(node.id),
+    }));
+    file.miniTree.edges = file.miniTree.reviewEdges.map((edgeValue) => ({
+      from: edgeValue.from,
+      to: edgeValue.to,
+      relation: "requires",
+      comment: edgeValue.comment,
+    }));
+    delete file.miniTree.reviewEdges;
+    delete file.miniTree.relations;
+  }
+
+  return legacy;
+}
+
+function deriveDepths(miniTree) {
+  const incomingIds = new Set(miniTree.reviewEdges.map((edge) => edge.to));
+  const childrenById = new Map(miniTree.nodes.map((node) => [node.id, []]));
+  for (const edge of miniTree.reviewEdges) {
+    childrenById.get(edge.from)?.push(edge.to);
+  }
+
+  const root = miniTree.nodes.find((node) => !incomingIds.has(node.id));
+  const depths = new Map();
+  const queue = root ? [[root.id, 0]] : [];
+  for (let index = 0; index < queue.length; index += 1) {
+    const [nodeId, depth] = queue[index];
+    depths.set(nodeId, depth);
+    for (const childId of childrenById.get(nodeId) || []) {
+      queue.push([childId, depth + 1]);
+    }
+  }
+  return depths;
 }
 
 function expectValid(analysis) {

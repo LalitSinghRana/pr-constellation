@@ -1,6 +1,6 @@
 # 04 Generate Candidate Analysis
 
-This step asks Codex to generate `pr-graph-mini-trees/v1` JSON from the PR
+This step asks Codex to generate `pr-graph-mini-trees/v2` JSON from the PR
 metadata, diff file map, changed-line map, and cumulative patch.
 
 The active generation contract has two prompt parts:

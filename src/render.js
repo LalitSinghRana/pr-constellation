@@ -196,7 +196,10 @@ function buildGraphData({ analysis, diff, syntaxHighlighter }) {
   const inventory = createDiffInventory(diff);
   const inventoryIndex = indexDiffInventory(inventory);
 
-  if (analysis.schemaVersion === "pr-graph-mini-trees/v1") {
+  if (
+    analysis.schemaVersion === "pr-graph-mini-trees/v1"
+    || analysis.schemaVersion === "pr-graph-mini-trees/v2"
+  ) {
     return buildGraphDataMiniTrees({
       analysis,
       inventoryIndex,
@@ -236,7 +239,8 @@ function buildGraphDataMiniTrees({ analysis, inventoryIndex, syntaxHighlighter }
     confidence: analysis.confidence ?? null,
     files: (analysis.files || []).map((file) => {
       const miniTree = {
-        edges: file.miniTree?.edges || [],
+        relations: file.miniTree?.relations || [],
+        reviewEdges: normalizeReviewEdges(file.miniTree),
         nodes: file.miniTree?.nodes || [],
       };
 
@@ -247,6 +251,11 @@ function buildGraphDataMiniTrees({ analysis, inventoryIndex, syntaxHighlighter }
         changeRole: file.changeRole,
         comment: file.comment || "",
         codeRefs: normalizeCodeRefs(file.codeRefs),
+        fileOrderCodeChunks: buildCodeChunksForFile({
+          file,
+          inventoryIndex,
+          syntaxHighlighter,
+        }),
         miniTree: {
           nodes: miniTree.nodes.map((miniNode) => ({
             id: miniNode.id,
@@ -263,16 +272,38 @@ function buildGraphDataMiniTrees({ analysis, inventoryIndex, syntaxHighlighter }
               syntaxHighlighter,
             }),
           })),
-          edges: miniTree.edges.map((edge) => ({
+          reviewEdges: miniTree.reviewEdges.map((edge) => ({
             from: edge.from,
             to: edge.to,
-            relation: edge.relation || "",
+            order: edge.order,
             comment: edge.comment || "",
+          })),
+          relations: miniTree.relations.map((relation) => ({
+            from: relation.from,
+            to: relation.to,
+            relation: relation.relation || "",
+            comment: relation.comment || "",
           })),
         },
       };
     }),
   };
+}
+
+function normalizeReviewEdges(miniTree) {
+  const edges = miniTree?.reviewEdges || miniTree?.edges || [];
+  const nextOrderByParentId = new Map();
+
+  return edges.map((edge) => {
+    const fallbackOrder = nextOrderByParentId.get(edge.from) || 0;
+    const order = Number.isInteger(edge.order) ? edge.order : fallbackOrder;
+    nextOrderByParentId.set(edge.from, Math.max(fallbackOrder, order) + 1);
+
+    return {
+      ...edge,
+      order,
+    };
+  });
 }
 
 function buildGraphDataV3({ analysis, inventoryIndex, syntaxHighlighter }) {
@@ -537,6 +568,26 @@ function buildCodeChunksForMiniNode({ file, inventoryIndex, miniNode, syntaxHigh
   });
 }
 
+function buildCodeChunksForFile({ file, inventoryIndex, syntaxHighlighter }) {
+  const inventoryFile = inventoryIndex.fileByPath.get(file.path);
+
+  return (inventoryFile?.hunks || [])
+    .filter((hunk) => (hunk.changedLineIds || []).length > 0)
+    .map((hunk) => {
+      const lines = (hunk.lines || []).map((line) => inventoryLineToSnippetLine(line));
+
+      return {
+        file: file.path,
+        hunk: hunk.header || "",
+        lines: highlightSnippetLines({
+          file: file.path,
+          lines,
+          syntaxHighlighter,
+        }),
+      };
+    });
+}
+
 function contextBoundary({ direction, hunk, ownedLineIds, startIndex }) {
   let boundary = startIndex;
   let contextLineCount = 0;
@@ -671,9 +722,12 @@ function buildCodeChunksForSection({ inventoryIndex, section, syntaxHighlighter 
 }
 
 function indexDiffInventory(inventory) {
+  const fileByPath = new Map();
   const lineById = new Map();
 
   for (const file of inventory.files || []) {
+    fileByPath.set(file.path, file);
+
     for (const hunk of file.hunks || []) {
       (hunk.lines || []).forEach((line, lineIndex) => {
         lineById.set(line.id, {
@@ -686,7 +740,7 @@ function indexDiffInventory(inventory) {
     }
   }
 
-  return { lineById };
+  return { fileByPath, lineById };
 }
 
 function inventoryLineToSnippetLine(line) {

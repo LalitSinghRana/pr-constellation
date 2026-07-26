@@ -93,6 +93,17 @@ try {
   assert.match(miniPrompts[1], /Step 05 validate candidate failed/);
   assert.match(miniPrompts[1], /Step 06 judge candidate failed/);
   assert.match(miniPrompts[0], /<diff_line_map_json>/);
+  assert.match(miniPrompts[0], /## Cohesive Review Units/);
+  assert.match(
+    miniPrompts[0],
+    /Partition each file into cohesive review units before assigning/,
+  );
+  assert.match(miniPrompts[0], /Do not emit numeric node depths/);
+  assert.match(judgePrompts[0], /## Mandatory Section-Cohesion Audit/);
+  assert.match(
+    judgePrompts[0],
+    /contiguous JSX\/render phase split into separate loading/,
+  );
   assert.deepEqual(result.analysis, validCandidate);
   assert.deepEqual(
     JSON.parse(await readFile(path.join(runDir, "mini-trees.raw.json"), "utf8")),
@@ -170,7 +181,7 @@ try {
 
   await assert.rejects(
     runCodexGraphAnalysis({ executeCodex, runDir: failedRunDir }),
-    /PR mini-tree analysis failed after 3 complete attempts/,
+    /PR mini-tree analysis failed after 5 complete attempts/,
   );
   assert.deepEqual(calls, [
     "mini-1",
@@ -179,6 +190,10 @@ try {
     "judge-2",
     "mini-3",
     "judge-3",
+    "mini-4",
+    "judge-4",
+    "mini-5",
+    "judge-5",
   ]);
   await assert.rejects(
     readFile(path.join(failedRunDir, "analysis.json"), "utf8"),
@@ -197,12 +212,11 @@ function buildCandidate({ coveredLineIds, fileId, filePath }) {
       title: "Change the value",
       reviewClass: "core",
       changeRole: "runtime",
-      depth: 0,
       comment: "The value change is the core runtime behavior.",
       changedLineIds: rootLineIds,
     },
   ];
-  const edges = [];
+  const reviewEdges = [];
 
   if (supportingLineIds.length > 0) {
     nodes.push({
@@ -210,20 +224,19 @@ function buildCandidate({ coveredLineIds, fileId, filePath }) {
       title: "Validate the value",
       reviewClass: "supporting",
       changeRole: "runtime",
-      depth: 1,
       comment: "Validation is required by the changed runtime value.",
       changedLineIds: supportingLineIds,
     });
-    edges.push({
+    reviewEdges.push({
       from: "change-value",
       to: "validate-value",
-      relation: "requires validation",
+      order: 0,
       comment: "Changing the value requires validating it.",
     });
   }
 
   return {
-    schemaVersion: "pr-graph-mini-trees/v1",
+    schemaVersion: "pr-graph-mini-trees/v2",
     intent: "Review the example change",
     summary: "Update and validate the example value.",
     confidence: 1,
@@ -240,7 +253,8 @@ function buildCandidate({ coveredLineIds, fileId, filePath }) {
         },
         miniTree: {
           nodes,
-          edges,
+          reviewEdges,
+          relations: [],
         },
       },
     ],

@@ -1,11 +1,14 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Braces,
   ChevronsDownUp,
   ChevronsUpDown,
+  ChevronDown,
+  ChevronRight,
   FileCode2,
   FileDiff,
+  FolderTree,
   GitBranch,
   GitPullRequest,
   Network,
@@ -27,6 +30,7 @@ import {
 import { Badge } from "../../components/ui/badge.jsx";
 import { Button } from "../../components/ui/button.jsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs.jsx";
+import { foldMiniTree, normalizeMiniTree } from "./mini-tree-model.js";
 
 const FILE_PAGE_GAP_X = 160;
 const FILE_PAGE_PADDING = 32;
@@ -46,6 +50,8 @@ const MINI_NODE_WIDTH = (
   + MINI_DIFF_HORIZONTAL_PADDING
 );
 const MINI_NODE_HEADER_HEIGHT = 58;
+const MINI_TREE_GROUP_NODE_HEIGHT = 118;
+const MINI_TREE_GROUP_NODE_WIDTH = 520;
 const MINI_TREE_LAYER_GAP_Y = 110;
 const MINI_TREE_SIBLING_GAP_X = 72;
 const MIN_GRAPH_ZOOM = 0.18;
@@ -54,8 +60,27 @@ const SUPER_TREE_LAYER_GAP_Y = 280;
 const SUPER_TREE_SIBLING_GAP_X = 320;
 const VIEWPORT_PADDING_Y = 96;
 const FALLBACK_GRAPH_VIEWPORT = { x: 72, y: 52, zoom: 0.86 };
+const FILE_REVIEW_CLASS_PRIORITY = new Map([
+  ["important", 0],
+  ["supporting", 1],
+  ["mechanical", 2],
+]);
+const FILE_CHANGE_ROLE_PRIORITY = new Map([
+  ["runtime", 0],
+  ["test", 1],
+  ["storybook", 2],
+  ["type", 3],
+  ["config", 4],
+  ["dependency", 5],
+  ["docs", 6],
+  ["snapshot", 7],
+  ["generated", 8],
+  ["formatting", 9],
+  ["imports", 10],
+]);
 
 const nodeTypes = {
+  collapsedGroup: React.memo(CollapsedReviewGroupNode),
   filePage: React.memo(FilePageNode),
   miniDiff: React.memo(MiniDiffNode),
 };
@@ -67,7 +92,39 @@ function App() {
   const reactFlowData = useMemo(readReactFlowData, []);
   const diffHtml = useMemo(readDiffHtml, []);
   const hasGraph = Boolean((reactFlowData?.files || []).some((file) => miniTreeNodes(file).length > 0));
-  const graph = useMemo(() => buildMiniDiffGraph(reactFlowData), [reactFlowData]);
+  const expansionStorageKey = useMemo(() => {
+    return `pr-review-tree-expansion:${window.location.pathname}`;
+  }, []);
+  const fileOrderViewStorageKey = useMemo(() => {
+    return `pr-review-file-order-view:${window.location.pathname}`;
+  }, []);
+  const [expandedGroupIds, setExpandedGroupIds] = usePersistentStringSet(expansionStorageKey);
+  const [fileOrderViewIds, setFileOrderViewIds] = usePersistentStringSet(fileOrderViewStorageKey);
+  const graph = useMemo(() => {
+    return buildMiniDiffGraph(reactFlowData, { expandedGroupIds, fileOrderViewIds });
+  }, [expandedGroupIds, fileOrderViewIds, reactFlowData]);
+  const toggleCollapsedGroup = useCallback((groupId) => {
+    setExpandedGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }, [setExpandedGroupIds]);
+  const setFileViewMode = useCallback((fileId, viewMode) => {
+    setFileOrderViewIds((current) => {
+      const next = new Set(current);
+      if (viewMode === "file") {
+        next.add(fileId);
+      } else {
+        next.delete(fileId);
+      }
+      return next;
+    });
+  }, [setFileOrderViewIds]);
 
   return (
     <Tabs className="review-shell" defaultValue={hasGraph ? "graph" : "diff"}>
@@ -77,7 +134,11 @@ function App() {
           {hasGraph ? (
             <section className="graph-panel" aria-label="PR review tree">
               <ReactFlowProvider>
-                <GraphCanvas graph={graph} />
+                <GraphCanvas
+                  graph={graph}
+                  onFileViewModeChange={setFileViewMode}
+                  onToggleCollapsedGroup={toggleCollapsedGroup}
+                />
               </ReactFlowProvider>
             </section>
           ) : (
@@ -158,22 +219,46 @@ function ReviewHeader({ hasGraph, review }) {
   );
 }
 
-function GraphCanvas({ graph }) {
+function GraphCanvas({ graph, onFileViewModeChange, onToggleCollapsedGroup }) {
   const reactFlow = useReactFlow();
   const defaultViewport = graph.defaultViewport || FALLBACK_GRAPH_VIEWPORT;
+  const interactiveNodes = useMemo(() => {
+    return graph.nodes.map((node) => {
+      if (node.type === "collapsedGroup") {
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            onToggleCollapsedGroup,
+          },
+        };
+      }
 
+      if (node.type === "filePage") {
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            onFileViewModeChange,
+          },
+        };
+      }
+
+      return node;
+    });
+  }, [graph.nodes, onFileViewModeChange, onToggleCollapsedGroup]);
   return (
     <div className="flow-reader" data-flow-reader>
       <div className="flow-canvas">
         <ReactFlow
           colorMode="light"
-          defaultEdges={graph.edges}
-          defaultNodes={graph.nodes}
           defaultViewport={defaultViewport}
+          edges={graph.edges}
           maxZoom={1.7}
           minZoom={MIN_GRAPH_ZOOM}
           nodesConnectable={false}
           nodesDraggable={false}
+          nodes={interactiveNodes}
           nodeTypes={nodeTypes}
           panOnDrag
           proOptions={{ hideAttribution: true }}
@@ -282,14 +367,70 @@ function JsonDocument({ data }) {
 
 function FilePageNode({ data }) {
   const filePath = data.file?.path || "Unknown file";
+  const viewMode = data.viewMode === "file" ? "file" : "tree";
 
   return (
     <section aria-label={`Mini-tree for ${filePath}`} className="file-page-node">
-      <div className="file-page-label" title={filePath}>
-        <FileCode2 aria-hidden="true" size={16} />
-        <span>{filePath}</span>
+      <div className="file-page-header">
+        <div className="file-page-label" title={filePath}>
+          <FileCode2 aria-hidden="true" size={16} />
+          <span>{filePath}</span>
+        </div>
+        <Tabs
+          className="file-page-view-tabs nodrag nopan nowheel"
+          onValueChange={(nextMode) => data.onFileViewModeChange?.(data.file.id, nextMode)}
+          value={viewMode}
+        >
+          <TabsList aria-label={`${filePath} view`} className="file-page-view-tabs-list">
+            <TabsTrigger className="file-page-view-tab" value="tree">
+              <Network aria-hidden="true" size={14} />
+              Tree
+            </TabsTrigger>
+            <TabsTrigger className="file-page-view-tab" value="file">
+              <FileDiff aria-hidden="true" size={14} />
+              File
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
     </section>
+  );
+}
+
+function CollapsedReviewGroupNode({ data }) {
+  const group = data.miniNode.collapsedGroup;
+  const action = group.expanded ? "Collapse" : "Expand";
+  const rootPreview = group.rootTitles.slice(0, 3).join(", ");
+
+  return (
+    <article className={`collapsed-review-group is-${data.miniNode.reviewClass} nodrag nopan nowheel`}>
+      <Handle className="node-handle" position={Position.Top} type="target" />
+      <button
+        aria-expanded={group.expanded}
+        aria-label={`${action} ${data.miniNode.title}`}
+        className="collapsed-review-group-button"
+        onClick={() => data.onToggleCollapsedGroup(group.groupId)}
+        title={`${action}: ${rootPreview}`}
+        type="button"
+      >
+        <span className="collapsed-review-group-icon">
+          <FolderTree aria-hidden="true" size={20} />
+        </span>
+        <span className="collapsed-review-group-copy">
+          <span className="collapsed-review-group-title">{data.miniNode.title}</span>
+          <span className="collapsed-review-group-summary">
+            {`${group.subtreeCount} ${group.subtreeCount === 1 ? "subtree" : "subtrees"} · ${group.nodeCount} nodes · ${group.lineCount} changed lines`}
+          </span>
+          <span className="collapsed-review-group-preview">{rootPreview}</span>
+        </span>
+        <span className="collapsed-review-group-toggle">
+          {group.expanded
+            ? <ChevronDown aria-hidden="true" size={19} />
+            : <ChevronRight aria-hidden="true" size={19} />}
+        </span>
+      </button>
+      <Handle className="node-handle" position={Position.Bottom} type="source" />
+    </article>
   );
 }
 
@@ -297,6 +438,7 @@ function MiniDiffNode({ data }) {
   const filePath = data.file?.path || "Unknown file";
   const reviewClass = data.miniNode.reviewClass || "unknown";
   const changeRole = data.miniNode.changeRole || "unknown";
+  const showHandles = !data.miniNode.fileOrderView;
 
   return (
     <article
@@ -304,7 +446,7 @@ function MiniDiffNode({ data }) {
       className="mini-diff-node nodrag nopan nowheel"
       data-file-path={filePath}
     >
-      <Handle className="node-handle" position={Position.Top} type="target" />
+      {showHandles ? <Handle className="node-handle" position={Position.Top} type="target" /> : null}
       <header className="mini-diff-header">
         <span className="mini-diff-title" title={data.miniNode.title}>
           {data.miniNode.title}
@@ -334,7 +476,7 @@ function MiniDiffNode({ data }) {
           </pre>
         ))}
       </div>
-      <Handle className="node-handle" position={Position.Bottom} type="source" />
+      {showHandles ? <Handle className="node-handle" position={Position.Bottom} type="source" /> : null}
     </article>
   );
 }
@@ -352,14 +494,17 @@ function CodeContent({ line }) {
   return <span className="code-content">{line.content}</span>;
 }
 
-function buildMiniDiffGraph(analysis) {
+function buildMiniDiffGraph(
+  analysis,
+  { expandedGroupIds = new Set(), fileOrderViewIds = new Set() } = {},
+) {
   const nodes = [];
   const edges = [];
   const filePages = [];
-  const fileSpecs = buildFilePageSpecs(analysis);
+  const fileSpecs = buildFilePageSpecs(analysis, { expandedGroupIds, fileOrderViewIds });
 
   for (const spec of fileSpecs) {
-    const { file, miniNodes, miniTree, pageHeight, pageId, pageWidth, x, y } = spec;
+    const { file, miniNodes, miniTree, pageHeight, pageId, pageWidth, viewMode, x, y } = spec;
     if (miniNodes.length === 0) {
       continue;
     }
@@ -368,7 +513,7 @@ function buildMiniDiffGraph(analysis) {
 
     nodes.push({
       id: pageId,
-      data: { file },
+      data: { file, viewMode },
       draggable: false,
       position: { x, y },
       selectable: false,
@@ -376,9 +521,11 @@ function buildMiniDiffGraph(analysis) {
       type: "filePage",
     });
     filePages.push({
-      edgeCount: miniTree.edges.length,
+      edgeCount: miniTree.reviewEdges.length,
       height: pageHeight,
       miniNodeCount: miniNodes.length,
+      changeRole: file.changeRole,
+      reviewClass: file.reviewClass,
       width: pageWidth,
       x,
       y,
@@ -399,13 +546,13 @@ function buildMiniDiffGraph(analysis) {
           y: FILE_PAGE_PADDING_TOP + item.y,
         },
         selectable: false,
-        style: { width: MINI_NODE_WIDTH },
-        type: "miniDiff",
+        style: { width: miniNodeWidth(item.node) },
+        type: item.node.collapsedGroup ? "collapsedGroup" : "miniDiff",
       });
     }
 
     const validMiniNodeIds = new Set(miniNodes.map((miniNode) => miniNode.id));
-    for (const edge of miniTree.edges) {
+    for (const edge of miniTree.reviewEdges) {
       if (!validMiniNodeIds.has(edge.from) || !validMiniNodeIds.has(edge.to)) {
         continue;
       }
@@ -431,19 +578,27 @@ function buildMiniDiffGraph(analysis) {
         zIndex: 4,
       });
     }
+
   }
 
   return {
     defaultViewport: defaultViewportForPages(filePages),
     edges,
+    groupIds: fileSpecs.flatMap((spec) => spec.miniTree.groupIds || []),
     nodes,
   };
 }
 
-function buildFilePageSpecs(analysis) {
+function buildFilePageSpecs(
+  analysis,
+  { expandedGroupIds = new Set(), fileOrderViewIds = new Set() } = {},
+) {
   const fileLayouts = (analysis?.files || [])
     .filter((file) => miniTreeNodes(file).length > 0)
-    .map(buildFileLayout);
+    .map((file) => buildFileLayout(file, {
+      expandedGroupIds,
+      viewMode: fileOrderViewIds.has(file.id) ? "file" : "tree",
+    }));
 
   return layoutIndependentFilePages(fileLayouts);
 }
@@ -548,7 +703,7 @@ function buildSuperGroupLayouts(analysis, fileById) {
 }
 
 function buildMiddleGroupLayout({ files, order, superNode, treeNode }) {
-  const fileLayouts = files.map(buildFileLayout);
+  const fileLayouts = files.map((file) => buildFileLayout(file));
   const contentWidth = Math.max(
     ...fileLayouts.map((item) => item.pageWidth),
     MINI_NODE_WIDTH + FILE_PAGE_PADDING * 2,
@@ -580,13 +735,15 @@ function buildMiddleGroupLayout({ files, order, superNode, treeNode }) {
   };
 }
 
-function buildFileLayout(file) {
-  const miniTree = {
-    edges: miniTreeEdges(file),
-    nodes: miniTreeNodes(file),
-  };
+function buildFileLayout(
+  file,
+  { expandedGroupIds = new Set(), viewMode = "tree" } = {},
+) {
+  const miniTree = viewMode === "file"
+    ? buildFileOrderMiniTree(file)
+    : foldMiniTree(file, { expandedGroupIds });
   const miniNodes = miniTree.nodes;
-  const layout = layoutMiniNodes(miniNodes, miniTree.edges);
+  const layout = layoutMiniNodes(miniNodes, miniTree.reviewEdges);
 
   return {
     file,
@@ -599,6 +756,25 @@ function buildFileLayout(file) {
     ),
     pageId: filePageId(file),
     pageWidth: FILE_PAGE_PADDING * 2 + layout.width,
+    viewMode,
+  };
+}
+
+function buildFileOrderMiniTree(file) {
+  return {
+    groupIds: [],
+    nodes: [{
+      id: "file-order-view",
+      title: "File-order diff",
+      reviewClass: file.reviewClass || "important",
+      changeRole: file.changeRole || "runtime",
+      comment: "Changed hunks in source order.",
+      changedLineIds: file.codeRefs?.changedLineIds || [],
+      codeChunks: file.fileOrderCodeChunks || [],
+      fileOrderView: true,
+    }],
+    relations: [],
+    reviewEdges: [],
   };
 }
 
@@ -630,6 +806,7 @@ function layoutGroupsTopToBottom({ edges, getId, items, layerGap, siblingGap }) 
   const itemById = new Map(items.map((item) => [getId(item), item]));
   const childrenById = new Map(items.map((item) => [getId(item), []]));
   const incomingIds = new Set();
+  const reviewOrderById = new Map();
 
   for (const edge of edges) {
     if (
@@ -643,11 +820,17 @@ function layoutGroupsTopToBottom({ edges, getId, items, layerGap, siblingGap }) 
 
     childrenById.get(edge.from).push(edge.to);
     incomingIds.add(edge.to);
+    if (Number.isInteger(edge.order)) {
+      reviewOrderById.set(edge.to, edge.order);
+    }
   }
 
   for (const children of childrenById.values()) {
     children.sort((leftId, rightId) => {
-      return itemById.get(leftId).order - itemById.get(rightId).order;
+      return (
+        (reviewOrderById.get(leftId) ?? itemById.get(leftId).order)
+        - (reviewOrderById.get(rightId) ?? itemById.get(rightId).order)
+      );
     });
   }
 
@@ -946,6 +1129,20 @@ function defaultViewportForPages(filePages) {
     if (!best) {
       return page;
     }
+    const reviewClassDifference = (
+      fileReviewClassPriority(page.reviewClass)
+      - fileReviewClassPriority(best.reviewClass)
+    );
+    if (reviewClassDifference !== 0) {
+      return reviewClassDifference < 0 ? page : best;
+    }
+    const changeRoleDifference = (
+      fileChangeRolePriority(page.changeRole)
+      - fileChangeRolePriority(best.changeRole)
+    );
+    if (changeRoleDifference !== 0) {
+      return changeRoleDifference < 0 ? page : best;
+    }
     if (page.edgeCount !== best.edgeCount) {
       return page.edgeCount > best.edgeCount ? page : best;
     }
@@ -967,12 +1164,20 @@ function defaultViewportForPages(filePages) {
   };
 }
 
+function fileReviewClassPriority(reviewClass) {
+  return FILE_REVIEW_CLASS_PRIORITY.get(reviewClass) ?? FILE_REVIEW_CLASS_PRIORITY.size;
+}
+
+function fileChangeRolePriority(changeRole) {
+  return FILE_CHANGE_ROLE_PRIORITY.get(changeRole) ?? FILE_CHANGE_ROLE_PRIORITY.size;
+}
+
 function layoutMiniNodes(miniNodes, miniEdges) {
   const items = miniNodes.map((node, order) => ({
     height: miniNodeHeight(node),
     node,
     order,
-    width: MINI_NODE_WIDTH,
+    width: miniNodeWidth(node),
   }));
   const layout = layoutGroupsTopToBottom({
     edges: miniEdges,
@@ -994,8 +1199,16 @@ function layoutMiniNodes(miniNodes, miniEdges) {
 }
 
 function miniNodeHeight(miniNode) {
+  if (miniNode.collapsedGroup) {
+    return MINI_TREE_GROUP_NODE_HEIGHT;
+  }
+
   const lineCount = (miniNode.codeChunks || []).reduce((total, chunk) => total + (chunk.lines || []).length, 0);
   return Math.max(120, MINI_NODE_HEADER_HEIGHT + lineCount * 18 + 2);
+}
+
+function miniNodeWidth(miniNode) {
+  return miniNode.collapsedGroup ? MINI_TREE_GROUP_NODE_WIDTH : MINI_NODE_WIDTH;
 }
 
 function miniNodeId(file, miniNodeIdValue) {
@@ -1015,11 +1228,28 @@ function superGroupId(superNodeId) {
 }
 
 function miniTreeNodes(file) {
-  return file?.miniTree?.nodes || file?.miniNodes || [];
+  return normalizeMiniTree(file).nodes;
 }
 
-function miniTreeEdges(file) {
-  return file?.miniTree?.edges || file?.miniEdges || [];
+function usePersistentStringSet(storageKey) {
+  const [values, setValues] = useState(() => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(storageKey) || "[]");
+      return new Set(Array.isArray(stored) ? stored : []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify([...values]));
+    } catch {
+      // Persistence is optional when the review runs in a restricted browser.
+    }
+  }, [storageKey, values]);
+
+  return [values, setValues];
 }
 
 function readReviewData() {

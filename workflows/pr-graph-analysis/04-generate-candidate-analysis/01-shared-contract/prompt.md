@@ -23,7 +23,8 @@ file:
 files[]
   miniTree
     nodes[] = mini-nodes with changedLineIds[]
-    edges[] = mini-edges
+    reviewEdges[] = ordered review parent-child edges
+    relations[] = optional technical cross-links
 ```
 
 There is a strict one-to-one relationship between `files[]` entries and
@@ -46,8 +47,9 @@ semantic mini-node.
 - Only use changed line ids that exist in `diff-inventory.json`.
 - Every mini-node must contain at least one changed line id.
 - Across all mini-nodes, every changed line id must appear exactly once.
-- Assign changed lines to the semantic mini-node that explains them. Do not
-  collapse useful review concepts merely to shorten the response.
+- Assign changed lines to the maximal cohesive code section that a reviewer
+  needs to understand as one unit. Do not split that section merely to give
+  internal branches different labels or tree positions.
 - Do not cover context-only lines. Context lines are available only to
   understand nearby code.
 - Every mini-node is file-local: all changed line ids in a mini-node must come
@@ -63,7 +65,8 @@ semantic mini-node.
   mini-node changed line ids.
 
 Output completeness and semantic quality take precedence over response length.
-Do not omit line ids or merge useful nodes to reduce tokens, latency, or cost.
+Do not omit line ids, fragment cohesive sections, or merge unrelated sections
+to reduce tokens, latency, or cost.
 
 ## Review Class And Role
 
@@ -76,14 +79,16 @@ Every file and mini-node must include:
 
 `reviewClass` tells the human how to review the change:
 
-- `core`: the single depth 0 starting node in a mini-tree.
-- `important`: this is central behavior or important review work.
-- `supporting`: this is needed to make or prove the important change work.
+- `core`: the single root starting node in a mini-tree.
+- `important`: this is central behavior that belongs in the reviewer's first
+  pass.
+- `supporting`: this is secondary behavior or implementation needed to make or
+  prove the important change work and can be opened after the first pass.
 - `mechanical`: this is mostly skim/verify work, such as imports, formatting,
   generated output, dependency churn, or low-signal snapshots.
 
 Review priority is always `core > important > supporting > mechanical`. Each
-mini-tree must contain exactly one `core` node, and it must be the depth 0 root.
+mini-tree must contain exactly one `core` node, and it must be the root.
 No file summary or non-root mini-node may use `core`.
 
 `changeRole` tells the human what kind of change it is:
@@ -104,7 +109,7 @@ mini-nodes:
 - `generated` -> `mechanical`
 - `formatting` -> `mechanical`
 
-The depth 0 root's structural `core` class overrides those mappings. For
+The root's structural `core` class overrides those mappings. For
 example, the main contract in a type-only file is `core/type`, while every
 downstream type node is `mechanical/type`.
 

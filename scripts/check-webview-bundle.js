@@ -4,7 +4,7 @@ import { renderDiffHtml } from "../src/render.js";
 
 const html = await renderDiffHtml({
   analysis: {
-    schemaVersion: "pr-graph-mini-trees/v1",
+    schemaVersion: "pr-graph-mini-trees/v2",
     intent: "Check graph rendering",
     summary: "A minimal file mini-tree used to verify the embedded React Flow bundle builds.",
     confidence: 1,
@@ -26,12 +26,34 @@ const html = await renderDiffHtml({
               title: "Replace old value",
               reviewClass: "core",
               changeRole: "runtime",
-              depth: 0,
               comment: "The runtime value changes from the old value to the new value.",
-              changedLineIds: ["file-1:hunk-1:line-1", "file-1:hunk-1:line-2"],
+              changedLineIds: ["file-1:hunk-1:line-1"],
+            },
+            {
+              id: "set-new-value",
+              title: "Set new value",
+              reviewClass: "supporting",
+              changeRole: "runtime",
+              comment: "The replacement value supports the reviewed behavior.",
+              changedLineIds: ["file-1:hunk-1:line-2"],
             },
           ],
-          edges: [],
+          reviewEdges: [
+            {
+              from: "replace-old-value",
+              to: "set-new-value",
+              order: 0,
+              comment: "Review the replacement after understanding the behavior change.",
+            },
+          ],
+          relations: [
+            {
+              from: "set-new-value",
+              to: "replace-old-value",
+              relation: "replaces",
+              comment: "The new value replaces the removed value.",
+            },
+          ],
         },
       },
     ],
@@ -70,17 +92,31 @@ const requiredWebviewMarkers = [
   "react-flow",
   "code-row",
   "file-page-label",
+  "file-page-view-tabs",
   "mini-node-label",
   "is-review-core",
   "reviewClass",
   "changeRole",
   "mini-tree-edge",
+  "collapsed-review-group",
   "--mini-tree-color",
 ];
 
 if (requiredWebviewMarkers.some((marker) => !html.includes(marker))) {
   throw new Error("Graph webview bundle check failed.");
 }
+
+const graphData = extractJsonScript(html, "pr-analysis-data");
+assert.equal(graphData.schemaVersion, "pr-graph-mini-trees/v2");
+assert.equal(graphData.files[0].miniTree.reviewEdges[0].order, 0);
+assert.equal(graphData.files[0].miniTree.relations[0].relation, "replaces");
+assert.ok(!("edges" in graphData.files[0].miniTree));
+assert.ok(!("depth" in graphData.files[0].miniTree.nodes[0]));
+assert.equal(graphData.files[0].fileOrderCodeChunks.length, 1);
+assert.deepEqual(
+  graphData.files[0].fileOrderCodeChunks[0].lines.map((line) => line.content),
+  ["const value = 1;", "const value = 2;"],
+);
 
 const [graphAppSource, webStyles] = await Promise.all([
   readFile(new URL("../src/web/graph-app.jsx", import.meta.url), "utf8"),
@@ -90,20 +126,28 @@ const [graphAppSource, webStyles] = await Promise.all([
 assert.match(graphAppSource, /nodesDraggable=\{false\}/);
 assert.doesNotMatch(graphAppSource, /MINI_NODE_MAX_HEIGHT/);
 assert.match(graphAppSource, /MINI_CODE_CHARACTER_COLUMNS = 120/);
+assert.doesNotMatch(graphAppSource, /mini-tree-technical-edge/);
+assert.doesNotMatch(graphAppSource, /onNodeMouseEnter/);
+assert.match(graphAppSource, /fileOrderViewIds/);
+assert.match(graphAppSource, /buildFileOrderMiniTree\(file\)/);
+assert.match(graphAppSource, /value="tree"/);
+assert.match(graphAppSource, /value="file"/);
 assert.match(
   graphAppSource,
-  /layoutGroupsTopToBottom\(\{\s*edges: miniEdges,/s,
+  /foldMiniTree\(file, \{ expandedGroupIds \}\)/,
 );
+assert.match(graphAppSource, /type:\s*item\.node\.collapsedGroup \? "collapsedGroup" : "miniDiff"/);
 assert.ok((graphAppSource.match(/\bforceMount\b/g) || []).length >= 4);
 assert.match(
   webStyles,
   /\.react-flow__node-miniDiff\s*\{[^}]*pointer-events:\s*auto\s*!important;/s,
 );
 assert.doesNotMatch(webStyles, /max-height:\s*340px/);
+assert.doesNotMatch(webStyles, /mini-tree-technical-edge/);
 
 const tsxHtml = await renderDiffHtml({
   analysis: {
-    schemaVersion: "pr-graph-mini-trees/v1",
+    schemaVersion: "pr-graph-mini-trees/v2",
     intent: "Check contextual TSX highlighting",
     summary: "Verify opening and closing component tags share full-snippet grammar context.",
     confidence: 1,
@@ -131,7 +175,6 @@ const tsxHtml = await renderDiffHtml({
               title: "Render example",
               reviewClass: "core",
               changeRole: "runtime",
-              depth: 0,
               comment: "The complete TSX range preserves grammar state.",
               changedLineIds: [
                 "file-1:hunk-1:line-1",
@@ -142,7 +185,8 @@ const tsxHtml = await renderDiffHtml({
               ],
             },
           ],
-          edges: [],
+          reviewEdges: [],
+          relations: [],
         },
       },
     ],

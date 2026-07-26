@@ -79,6 +79,11 @@
   pointer-events: auto !important;
 }
 
+.flow-canvas .react-flow__node-collapsedGroup {
+  z-index: 4 !important;
+  pointer-events: auto !important;
+}
+
 .flow-canvas .react-flow__edge.mini-tree-edge {
   z-index: 4;
 }
@@ -98,14 +103,24 @@
   box-shadow: none;
 }
 
-.file-page-label {
+.file-page-header {
   position: absolute;
-  top: 14px;
-  left: 50%;
+  top: 11px;
+  right: 14px;
+  left: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.file-page-label {
   display: flex;
   align-items: center;
+  justify-self: start;
   gap: 8px;
-  max-width: calc(100% - 32px);
+  max-width: 100%;
   min-width: 0;
   padding: 8px 10px;
   overflow: hidden;
@@ -121,13 +136,37 @@
   line-height: 1;
   user-select: none;
   white-space: nowrap;
-  transform: translateX(-50%);
 }
 
 .file-page-label span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.file-page-view-tabs {
+  gap: 0;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.file-page-view-tabs-list {
+  width: 136px;
+  height: 34px;
+  border: 1px solid color-mix(in oklab, var(--mini-tree-color) 24%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--mini-tree-color) 6%, var(--muted));
+}
+
+.file-page-view-tab {
+  height: 26px;
+  border-radius: 5px;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.file-page-view-tab[data-state="active"] {
+  color: color-mix(in oklab, var(--mini-tree-color) 84%, var(--foreground));
 }
 
 .mini-diff-node {
@@ -285,6 +324,124 @@
 }
 
 .mini-diff-node .node-handle {
+  width: 1px;
+  height: 1px;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+}
+
+.collapsed-review-group {
+  width: 100%;
+  height: 100%;
+  border: 1px solid color-mix(in oklab, var(--mini-tree-color) 42%, var(--border));
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 7%, transparent);
+  overflow: hidden;
+}
+
+.collapsed-review-group.is-supporting {
+  border-color: color-mix(in oklab, oklch(0.62 0.14 72) 46%, var(--border));
+  background: color-mix(in oklab, oklch(0.92 0.06 88) 22%, var(--card));
+}
+
+.collapsed-review-group.is-mechanical {
+  border-color: color-mix(in oklab, var(--muted-foreground) 34%, var(--border));
+  background: color-mix(in oklab, var(--muted) 46%, var(--card));
+}
+
+.collapsed-review-group-button {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: 0;
+  padding: 14px 16px;
+  text-align: left;
+}
+
+.collapsed-review-group-button:hover {
+  background: color-mix(in oklab, var(--mini-tree-color) 7%, transparent);
+}
+
+.collapsed-review-group-button:focus-visible {
+  outline: 3px solid color-mix(in oklab, var(--mini-tree-color) 52%, transparent);
+  outline-offset: -3px;
+}
+
+.collapsed-review-group-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid color-mix(in oklab, currentColor 18%, var(--border));
+  border-radius: 7px;
+  background: var(--card);
+  color: color-mix(in oklab, var(--mini-tree-color) 82%, var(--foreground));
+}
+
+.collapsed-review-group.is-supporting .collapsed-review-group-icon {
+  color: oklch(0.48 0.14 72);
+}
+
+.collapsed-review-group.is-mechanical .collapsed-review-group-icon {
+  color: var(--muted-foreground);
+}
+
+.collapsed-review-group-copy {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.collapsed-review-group-title {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collapsed-review-group-summary,
+.collapsed-review-group-preview {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  letter-spacing: 0;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collapsed-review-group-summary {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.collapsed-review-group-toggle {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+}
+
+.collapsed-review-group-button:hover .collapsed-review-group-toggle {
+  background: var(--card);
+  color: var(--foreground);
+}
+
+.collapsed-review-group .node-handle {
   width: 1px;
   height: 1px;
   border: 0;

@@ -9,6 +9,13 @@ Default project checks:
 pnpm check
 ```
 
+Before creating a UI component, check the existing `components/ui` directory,
+the shadcn component registry, and maintained npm packages for a suitable
+implementation. Reuse or install an established component when it satisfies
+the interaction and accessibility requirements. Hand-written generic UI
+primitives are a last resort; create one only when no suitable library
+component exists or the component is inherently project-specific.
+
 For UI work, use Agent Browser through the project scripts:
 
 ```sh

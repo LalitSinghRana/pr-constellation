@@ -26,8 +26,8 @@ const MINI_TREES_SCHEMA_PATH = path.join(
 );
 const JUDGE_PROMPT_PATH = path.join(WORKFLOW_DIR, "06-judge-candidate", "prompt.md");
 const JUDGE_SCHEMA_PATH = path.join(WORKFLOW_DIR, "06-judge-candidate", "schema.json");
-const MAX_ANALYSIS_ATTEMPTS = 3;
-const CODEX_EXEC_TIMEOUT_MS = Number(process.env.PRC_CODEX_TIMEOUT_MS || 1800000);
+const MAX_ANALYSIS_ATTEMPTS = 5;
+const CODEX_EXEC_TIMEOUT_MS = Number(process.env.PRC_CODEX_TIMEOUT_MS || 900000);
 
 export { validateGraphAnalysis, validateMiniTreeAnalysis };
 

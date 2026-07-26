@@ -65,4 +65,8 @@ diff, then writes a timestamped run under `.reviews/<repo-pr-number>/`.
 The `analyze` command is headless. It invokes `codex exec` in read-only mode and
 writes one file-local mini-tree per changed file to `analysis.json`; it does not
 render the webview. The Tree view places those independent file mini-trees on
-the canvas and renders their nodes as code diffs.
+the canvas and renders their nodes as code diffs. Primary edges follow the
+AI-authored review hierarchy. Technical cross-links remain available in the
+JSON views without adding unlabeled edges to the canvas. Supporting and
+mechanical sibling forests start in deterministic expandable groups so the
+first pass stays focused on core and important runtime work.

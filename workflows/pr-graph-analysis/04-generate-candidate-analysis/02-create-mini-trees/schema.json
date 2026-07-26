@@ -13,7 +13,7 @@
   "properties": {
     "schemaVersion": {
       "type": "string",
-      "const": "pr-graph-mini-trees/v1"
+      "const": "pr-graph-mini-trees/v2"
     },
     "intent": {
       "type": "string",
@@ -140,7 +140,8 @@
       "additionalProperties": false,
       "required": [
         "nodes",
-        "edges"
+        "reviewEdges",
+        "relations"
       ],
       "properties": {
         "nodes": {
@@ -150,10 +151,18 @@
             "$ref": "#/$defs/miniNode"
           }
         },
-        "edges": {
+        "reviewEdges": {
+          "description": "Ordered parent-child edges that define the human review hierarchy.",
           "type": "array",
           "items": {
-            "$ref": "#/$defs/edge"
+            "$ref": "#/$defs/reviewEdge"
+          }
+        },
+        "relations": {
+          "description": "Optional technical relationships that do not determine review parentage or layout.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relation"
           }
         }
       }
@@ -166,7 +175,6 @@
         "title",
         "reviewClass",
         "changeRole",
-        "depth",
         "comment",
         "changedLineIds"
       ],
@@ -185,11 +193,6 @@
         "changeRole": {
           "$ref": "#/$defs/changeRole"
         },
-        "depth": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 6
-        },
         "comment": {
           "type": "string",
           "minLength": 1
@@ -204,7 +207,35 @@
         }
       }
     },
-    "edge": {
+    "reviewEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "order",
+        "comment"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "comment": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "relation": {
       "type": "object",
       "additionalProperties": false,
       "required": [

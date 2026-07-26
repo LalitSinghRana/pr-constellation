@@ -38,11 +38,14 @@ const ROOT_CHANGE_ROLE_PRIORITY = new Map([
   ["formatting", 9],
   ["imports", 10],
 ]);
+const MINI_TREE_SCHEMA_V1 = "pr-graph-mini-trees/v1";
+const MINI_TREE_SCHEMA_V2 = "pr-graph-mini-trees/v2";
+const MINI_TREE_SCHEMA_VERSIONS = new Set([MINI_TREE_SCHEMA_V1, MINI_TREE_SCHEMA_V2]);
 
 export function validateMiniTreeAnalysis(analysis, { inventory = null } = {}) {
   const errors = [];
 
-  if (analysis?.schemaVersion !== "pr-graph-mini-trees/v1") {
+  if (!MINI_TREE_SCHEMA_VERSIONS.has(analysis?.schemaVersion)) {
     errors.push("analysis.json has an invalid or missing schemaVersion.");
   }
 
@@ -156,11 +159,19 @@ function validateFiles({ analysis, errors, inventory }) {
       continue;
     }
 
-    if (!Array.isArray(file.miniTree.edges)) {
+    if (analysis.schemaVersion === MINI_TREE_SCHEMA_V2) {
+      if (!Array.isArray(file.miniTree.reviewEdges)) {
+        errors.push(`analysis.json file ${file.id} miniTree.reviewEdges must be an array.`);
+      }
+      if (!Array.isArray(file.miniTree.relations)) {
+        errors.push(`analysis.json file ${file.id} miniTree.relations must be an array.`);
+      }
+    } else if (!Array.isArray(file.miniTree.edges)) {
       errors.push(`analysis.json file ${file.id} miniTree.edges must be an array.`);
     }
 
     const coveredLineIds = validateMiniTree({
+      analysisSchemaVersion: analysis.schemaVersion,
       changedLineOwnerById,
       errors,
       file,
@@ -206,6 +217,7 @@ function validateFiles({ analysis, errors, inventory }) {
 }
 
 function validateMiniTree({
+  analysisSchemaVersion,
   changedLineOwnerById,
   errors,
   file,
@@ -244,7 +256,10 @@ function validateMiniTree({
       errors.push(`analysis.json miniNode ${owner} is missing title.`);
     }
 
-    if (!Number.isInteger(miniNode.depth) || miniNode.depth < 0 || miniNode.depth > 6) {
+    if (
+      analysisSchemaVersion === MINI_TREE_SCHEMA_V1
+      && (!Number.isInteger(miniNode.depth) || miniNode.depth < 0 || miniNode.depth > 6)
+    ) {
       errors.push(`analysis.json miniNode ${owner} must have integer depth 0-6.`);
     }
 
@@ -295,19 +310,34 @@ function validateMiniTree({
     });
   }
 
-  validateTreeEdges({
-    edgeLabel: `file ${file.id} miniTree.edges`,
-    edges: file.miniTree.edges,
+  const usesReviewEdges = analysisSchemaVersion === MINI_TREE_SCHEMA_V2;
+  const reviewEdges = usesReviewEdges
+    ? file.miniTree.reviewEdges
+    : file.miniTree.edges;
+
+  const rootNode = validateTreeEdges({
+    edgeLabel: `file ${file.id} miniTree.${usesReviewEdges ? "reviewEdges" : "edges"}`,
+    edges: reviewEdges,
     errors,
+    ordered: usesReviewEdges,
     nodeById: miniNodeById,
     nodeIds: miniNodeIds,
     parentCounts,
     childrenById,
     rootLabel: `file ${file.id} miniTree`,
   });
+  if (usesReviewEdges) {
+    validateTechnicalRelations({
+      errors,
+      nodeIds: miniNodeIds,
+      relationLabel: `file ${file.id} miniTree.relations`,
+      relations: file.miniTree.relations,
+    });
+  }
   validateReviewPriorityFlow({
     errors,
     nodeById: miniNodeById,
+    rootNode,
     rootLabel: `file ${file.id} miniTree`,
   });
 
@@ -318,6 +348,7 @@ function validateTreeEdges({
   edgeLabel,
   edges,
   errors,
+  ordered,
   nodeById,
   nodeIds,
   parentCounts,
@@ -325,10 +356,11 @@ function validateTreeEdges({
   rootLabel,
 }) {
   if (!Array.isArray(edges)) {
-    return;
+    return null;
   }
 
   const edgeIds = new Set();
+  const ordersByParentId = new Map();
 
   for (const [index, edge] of edges.entries()) {
     if (!edge || typeof edge !== "object") {
@@ -343,8 +375,18 @@ function validateTreeEdges({
     }
     edgeIds.add(edgeId);
 
-    if (!isNonEmptyString(edge.relation)) {
+    if (!ordered && !isNonEmptyString(edge.relation)) {
       errors.push(`analysis.json ${edgeLabel} ${edgeId} is missing relation.`);
+    }
+
+    if (ordered) {
+      if (!Number.isInteger(edge.order) || edge.order < 0) {
+        errors.push(`analysis.json ${edgeLabel} ${edgeId} must have a non-negative integer order.`);
+      } else {
+        const orders = ordersByParentId.get(edge.from) || [];
+        orders.push(edge.order);
+        ordersByParentId.set(edge.from, orders);
+      }
     }
 
     if (!isNonEmptyString(edge.comment)) {
@@ -370,7 +412,7 @@ function validateTreeEdges({
       continue;
     }
 
-    if (toNode.depth !== fromNode.depth + 1) {
+    if (!ordered && toNode.depth !== fromNode.depth + 1) {
       errors.push(
         `analysis.json ${edgeLabel} must connect adjacent depths only: ${edge.from} depth ${fromNode.depth} -> ${edge.to} depth ${toNode.depth}`,
       );
@@ -395,25 +437,48 @@ function validateTreeEdges({
     childrenById.get(edge.from)?.push(edge.to);
   }
 
-  const roots = [...nodeById.values()].filter((node) => node.depth === 0);
-  if (roots.length !== 1) {
-    errors.push(`analysis.json ${rootLabel} must contain exactly one depth 0 root; found ${roots.length}.`);
+  if (ordered) {
+    for (const [parentId, orders] of ordersByParentId) {
+      const sortedOrders = orders.slice().sort((left, right) => left - right);
+      const expectedOrders = sortedOrders.map((_, index) => index);
+
+      if (
+        sortedOrders.length !== new Set(sortedOrders).size
+        || sortedOrders.some((order, index) => order !== expectedOrders[index])
+      ) {
+        errors.push(
+          `analysis.json ${edgeLabel} from ${parentId} must use unique contiguous sibling order values starting at 0.`,
+        );
+      }
+    }
   }
 
+  const roots = [...nodeById.values()].filter((node) => {
+    return (parentCounts.get(node.id) || 0) === 0;
+  });
+  if (roots.length !== 1) {
+    errors.push(
+      `analysis.json ${rootLabel} must contain exactly one root with no incoming review edge; found ${roots.length}.`,
+    );
+  }
+
+  const rootNode = roots.length === 1 ? roots[0] : null;
   for (const node of nodeById.values()) {
     const parents = parentCounts.get(node.id) || 0;
 
-    if (node.depth === 0 && parents !== 0) {
-      errors.push(`analysis.json ${rootLabel} root must not have an incoming edge: ${node.id}`);
-    }
-
-    if (node.depth > 0 && parents !== 1) {
+    if (rootNode && node.id !== rootNode.id && parents !== 1) {
       errors.push(`analysis.json non-root miniNode must have exactly one parent: ${node.id} has ${parents}.`);
     }
   }
 
-  if (roots.length === 1) {
-    const reachable = collectReachableNodeIds(roots[0].id, childrenById);
+  if (rootNode) {
+    if (!ordered && rootNode.depth !== 0) {
+      errors.push(
+        `analysis.json ${rootLabel} legacy root must use depth 0; ${rootNode.id} has depth ${rootNode.depth}.`,
+      );
+    }
+
+    const reachable = collectReachableNodeIds(rootNode.id, childrenById);
 
     for (const node of nodeById.values()) {
       if (!reachable.has(node.id)) {
@@ -421,22 +486,65 @@ function validateTreeEdges({
       }
     }
   }
+
+  return rootNode;
 }
 
-function validateReviewPriorityFlow({ errors, nodeById, rootLabel }) {
-  const nodes = [...nodeById.values()];
-  const roots = nodes.filter((node) => node.depth === 0);
-
-  if (roots.length !== 1 || nodes.length === 0) {
+function validateTechnicalRelations({
+  errors,
+  nodeIds,
+  relationLabel,
+  relations,
+}) {
+  if (!Array.isArray(relations)) {
     return;
   }
 
-  const root = roots[0];
+  const relationIds = new Set();
+
+  for (const [index, relation] of relations.entries()) {
+    if (!relation || typeof relation !== "object") {
+      errors.push(`analysis.json ${relationLabel} entry at index ${index} must be an object.`);
+      continue;
+    }
+
+    const relationId = `${relation.from || "<missing>"}->${relation.to || "<missing>"}`;
+    if (relationIds.has(relationId)) {
+      errors.push(`analysis.json ${relationLabel} contains duplicate relation: ${relationId}`);
+      continue;
+    }
+    relationIds.add(relationId);
+
+    if (relation.from === relation.to) {
+      errors.push(`analysis.json ${relationLabel} ${relationId} cannot point to itself.`);
+    }
+    if (!nodeIds.has(relation.from)) {
+      errors.push(`analysis.json ${relationLabel} references unknown from id: ${relation.from}`);
+    }
+    if (!nodeIds.has(relation.to)) {
+      errors.push(`analysis.json ${relationLabel} references unknown to id: ${relation.to}`);
+    }
+    if (!isNonEmptyString(relation.relation)) {
+      errors.push(`analysis.json ${relationLabel} ${relationId} is missing relation.`);
+    }
+    if (!isNonEmptyString(relation.comment)) {
+      errors.push(`analysis.json ${relationLabel} ${relationId} is missing comment.`);
+    }
+  }
+}
+
+function validateReviewPriorityFlow({ errors, nodeById, rootNode, rootLabel }) {
+  const nodes = [...nodeById.values()];
+
+  if (!rootNode || nodes.length === 0) {
+    return;
+  }
+
   const coreNodes = nodes.filter((node) => node.reviewClass === "core");
 
-  if (root.reviewClass !== "core") {
+  if (rootNode.reviewClass !== "core") {
     errors.push(
-      `analysis.json ${rootLabel} depth 0 root must use reviewClass core; root ${root.id} is ${root.reviewClass}.`,
+      `analysis.json ${rootLabel} root must use reviewClass core; root ${rootNode.id} is ${rootNode.reviewClass}.`,
     );
   }
 
@@ -447,9 +555,9 @@ function validateReviewPriorityFlow({ errors, nodeById, rootLabel }) {
   }
 
   for (const node of coreNodes) {
-    if (node.depth !== 0) {
+    if (node.id !== rootNode.id) {
       errors.push(
-        `analysis.json ${rootLabel} only its depth 0 root may use reviewClass core; ${node.id} has depth ${node.depth}.`,
+        `analysis.json ${rootLabel} only its root may use reviewClass core; ${node.id} is not the root.`,
       );
     }
   }

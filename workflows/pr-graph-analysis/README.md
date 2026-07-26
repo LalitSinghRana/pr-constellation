@@ -7,12 +7,13 @@ repaired or replaced with a generic fallback.
 
 ## Output Shape
 
-Current schema: `pr-graph-mini-trees/v1`.
+Current schema: `pr-graph-mini-trees/v2`.
 
 ```txt
 files[]: exactly one entry per changed file
-  miniTree.nodes[]: a partition of that file's changed lines
-  miniTree.edges[]: a logical review flow inside that file
+  miniTree.nodes[]: maximal cohesive sections partitioning that file's changed lines
+  miniTree.reviewEdges[]: the ordered logical review hierarchy
+  miniTree.relations[]: optional technical cross-links
 ```
 
 Middle-tree and super-tree analysis are intentionally outside the current
@@ -63,13 +64,18 @@ The deterministic validator enforces:
 - each mini-tree node owns one continuous, source-ordered range in one hunk
 - no mini-tree node contains a changed line from another file
 - file `codeRefs` exactly match that file's changed lines
-- each mini-tree has one root and every non-root node has one parent
-- edges stay inside their file and flow toward supporting/mechanical work
-- every depth 0 root is the tree's only `core` node
+- each mini-tree has one root and every non-root node has one review parent
+- sibling review edges use contiguous order values starting at zero
+- review edges stay inside their file and flow toward
+  supporting/mechanical work
+- technical relations reference valid file-local nodes without affecting the
+  review hierarchy
+- every root is the tree's only `core` node
 - review priority is `core > important > supporting > mechanical`
 - imports, types, generated output, and formatting are deterministically
   mechanical outside the core root
 - `reviewClass` and `changeRole` use the approved values
 
-The judge then checks whether each file-local flow is semantically useful.
+The judge then checks whether node boundaries preserve cohesive implementation
+sections and whether each file-local flow is semantically useful.
 Step 07 retries only after validation and judging have both run.

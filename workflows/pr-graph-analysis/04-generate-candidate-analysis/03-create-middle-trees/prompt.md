@@ -1,6 +1,6 @@
 # Step 04.3: Create All Middle Trees From The Mini-Trees
 
-The input includes the exact `pr-graph-mini-trees/v1` JSON produced by the
+The input includes the exact `pr-graph-mini-trees/v2` JSON produced by the
 previous AI stage. Group those complete file mini-trees into
 `middleTrees[].tree.nodes[]`.
 
