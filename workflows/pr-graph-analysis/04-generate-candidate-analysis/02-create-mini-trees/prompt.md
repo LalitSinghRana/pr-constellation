@@ -30,6 +30,10 @@ reference a changed line from another file.
   the file.
 - A review-edge direction means: review the source question first, then inspect
   the target as part of that source's logical branch.
+- Every review-edge comment must name what requirement or review relationship
+  connects the two nodes and why the target belongs next under the source. Do
+  not use generic sequencing text such as "review this next" or narrate how the
+  target's code is implemented.
 - Each parent's review edges must use unique contiguous `order` values starting
   at 0. Order siblings by review value and narrative flow, never by line number.
 - Review priority is `core > important > supporting > mechanical`. Important,
@@ -132,7 +136,8 @@ Required construction order:
   useful but must not control review depth, parentage, sibling order, or layout.
 - Relation direction means the source technically uses, depends on, configures,
   or affects the target. State that relationship precisely in `relation` and
-  explain it in `comment`.
+  explain what the secondary relationship means and why it is useful to the
+  reviewer in `comment`. The code already shows how the dependency is wired.
 - Relations may cross review branches and may give a node multiple incoming
   technical links. They still remain file-local and may not point to themselves
   or unknown nodes.
@@ -183,8 +188,13 @@ Required construction order:
 - `supporting` means the node can be folded initially and inspected when the
   reviewer opens supporting work. Do not label every runtime branch important
   merely because it executes at runtime.
-- Every mini-node needs a `comment` explaining why the file-local change was
-  needed or how it supports the file's main change.
+- Every mini-node needs a `comment` explaining what the cohesive section changes
+  or proves and why that file-local change is needed or consequential. The code
+  in the node already explains how it works.
+- Do not force comments to be concise. Use Markdown bullet points when a node
+  has multiple distinct effects, reasons, constraints, or reviewer checks. A
+  comment longer than 280 characters must contain at least two Markdown bullet
+  lines. Never discard useful detail merely to stay under that threshold.
 - `miniTree.reviewEdges[]` and `miniTree.relations[]` connect mini-nodes within
   the same file only.
 - Before returning the file, compare hierarchy order with changed-line

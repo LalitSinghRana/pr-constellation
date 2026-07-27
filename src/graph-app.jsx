@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import ReactMarkdown from "react-markdown";
 import {
   Braces,
   ChevronsDownUp,
@@ -11,6 +12,7 @@ import {
   FolderTree,
   GitBranch,
   GitPullRequest,
+  MessageSquareText,
   Network,
   RotateCcw,
   UserRound,
@@ -19,6 +21,7 @@ import { JsonView, allExpanded, collapseAllNested, defaultStyles } from "react-j
 import {
   Background,
   BackgroundVariant,
+  BaseEdge,
   ControlButton,
   Controls,
   Handle,
@@ -26,11 +29,13 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  getSmoothStepPath,
   useReactFlow,
 } from "@xyflow/react";
 import { Badge } from "./components/ui/badge.jsx";
 import { Button } from "./components/ui/button.jsx";
 import { Collapsible, CollapsibleTrigger } from "./components/ui/collapsible.jsx";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "./components/ui/hover-card.jsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.jsx";
 import { foldMiniTree, normalizeMiniTree } from "./mini-tree-model.js";
 
@@ -85,6 +90,9 @@ const nodeTypes = {
   collapsedGroup: React.memo(CollapsedReviewGroupNode),
   filePage: React.memo(FilePageNode),
   miniDiff: React.memo(MiniDiffNode),
+};
+const edgeTypes = {
+  reviewExplanation: React.memo(ReviewExplanationEdge),
 };
 
 function App() {
@@ -256,6 +264,7 @@ function GraphCanvas({ graph, onFileViewModeChange, onToggleCollapsedGroup }) {
           colorMode="light"
           defaultViewport={defaultViewport}
           edges={graph.edges}
+          edgeTypes={edgeTypes}
           maxZoom={1.7}
           minZoom={MIN_GRAPH_ZOOM}
           nodesConnectable={false}
@@ -376,14 +385,28 @@ function JsonDocument({ data }) {
 function FilePageNode({ data }) {
   const filePath = data.file?.path || "Unknown file";
   const viewMode = data.viewMode === "file" ? "file" : "tree";
+  const fileComment = data.file?.comment || "";
 
   return (
     <section aria-label={`Mini-tree for ${filePath}`} className="file-page-node">
       <div className="file-page-header">
-        <Badge className="file-page-label" title={filePath} variant="outline">
-          <FileCode2 aria-hidden="true" size={16} />
-          <span>{filePath}</span>
-        </Badge>
+        <ExplanationHoverCard
+          comment={fileComment}
+          contextLabel="File: What / Why"
+          side="bottom"
+          title={filePath}
+        >
+          <Badge
+            className="file-page-label"
+            data-has-explanation={Boolean(fileComment)}
+            tabIndex={fileComment ? 0 : undefined}
+            title={filePath}
+            variant="outline"
+          >
+            <FileCode2 aria-hidden="true" size={16} />
+            <span>{filePath}</span>
+          </Badge>
+        </ExplanationHoverCard>
         <Tabs
           className="file-page-view-tabs nodrag nopan nowheel"
           onValueChange={(nextMode) => data.onFileViewModeChange?.(data.file.id, nextMode)}
@@ -411,45 +434,51 @@ function CollapsedReviewGroupNode({ data }) {
   const rootPreview = group.rootTitles.slice(0, 3).join(", ");
 
   return (
-    <Collapsible
-      asChild
-      onOpenChange={(expanded) => {
-        if (expanded !== group.expanded) {
-          data.onToggleCollapsedGroup(group.groupId);
-        }
-      }}
-      open={group.expanded}
+    <ExplanationHoverCard
+      comment={data.miniNode.comment}
+      contextLabel="Node group: What / Why"
+      title={data.miniNode.title}
     >
-      <article className={`collapsed-review-group is-${data.miniNode.reviewClass} nodrag nopan nowheel`}>
-        <Handle className="node-handle" position={Position.Top} type="target" />
-        <CollapsibleTrigger asChild>
-          <Button
-            aria-label={`${action} ${data.miniNode.title}`}
-            className="collapsed-review-group-button"
-            title={`${action}: ${rootPreview}`}
-            type="button"
-            variant="ghost"
-          >
-            <span className="collapsed-review-group-icon">
-              <FolderTree aria-hidden="true" size={20} />
-            </span>
-            <span className="collapsed-review-group-copy">
-              <span className="collapsed-review-group-title">{data.miniNode.title}</span>
-              <span className="collapsed-review-group-summary">
-                {`${group.subtreeCount} ${group.subtreeCount === 1 ? "subtree" : "subtrees"} · ${group.nodeCount} nodes · ${group.lineCount} changed lines`}
+      <Collapsible
+        asChild
+        onOpenChange={(expanded) => {
+          if (expanded !== group.expanded) {
+            data.onToggleCollapsedGroup(group.groupId);
+          }
+        }}
+        open={group.expanded}
+      >
+        <article className={`collapsed-review-group is-${data.miniNode.reviewClass} nodrag nopan nowheel`}>
+          <Handle className="node-handle" position={Position.Top} type="target" />
+          <CollapsibleTrigger asChild>
+            <Button
+              aria-label={`${action} ${data.miniNode.title}`}
+              className="collapsed-review-group-button"
+              title={`${action}: ${rootPreview}`}
+              type="button"
+              variant="ghost"
+            >
+              <span className="collapsed-review-group-icon">
+                <FolderTree aria-hidden="true" size={20} />
               </span>
-              <span className="collapsed-review-group-preview">{rootPreview}</span>
-            </span>
-            <span className="collapsed-review-group-toggle">
-              {group.expanded
-                ? <ChevronDown aria-hidden="true" size={19} />
-                : <ChevronRight aria-hidden="true" size={19} />}
-            </span>
-          </Button>
-        </CollapsibleTrigger>
-        <Handle className="node-handle" position={Position.Bottom} type="source" />
-      </article>
-    </Collapsible>
+              <span className="collapsed-review-group-copy">
+                <span className="collapsed-review-group-title">{data.miniNode.title}</span>
+                <span className="collapsed-review-group-summary">
+                  {`${group.subtreeCount} ${group.subtreeCount === 1 ? "subtree" : "subtrees"} · ${group.nodeCount} nodes · ${group.lineCount} changed lines`}
+                </span>
+                <span className="collapsed-review-group-preview">{rootPreview}</span>
+              </span>
+              <span className="collapsed-review-group-toggle">
+                {group.expanded
+                  ? <ChevronDown aria-hidden="true" size={19} />
+                  : <ChevronRight aria-hidden="true" size={19} />}
+              </span>
+            </Button>
+          </CollapsibleTrigger>
+          <Handle className="node-handle" position={Position.Bottom} type="source" />
+        </article>
+      </Collapsible>
+    </ExplanationHoverCard>
   );
 }
 
@@ -459,28 +488,47 @@ function MiniDiffNode({ data }) {
   const changeRole = data.miniNode.changeRole || "unknown";
   const showHandles = !data.miniNode.fileOrderView;
 
+  const nodeComment = data.miniNode.comment || "";
+
   return (
     <article
-      aria-label={`Code diff mini node for ${filePath}`}
+      aria-label={`Code diff mini node for ${filePath}: ${data.miniNode.title}. ${plainTextComment(nodeComment)}`}
       className="mini-diff-node nodrag nopan nowheel"
       data-file-path={filePath}
     >
       {showHandles ? <Handle className="node-handle" position={Position.Top} type="target" /> : null}
-      <header className="mini-diff-header">
-        <span className="mini-diff-title" title={data.miniNode.title}>
-          {data.miniNode.title}
-        </span>
-        <span className="mini-node-labels">
-          <Badge className={`mini-node-label is-review-${reviewClass}`} variant="outline">
-            <span className="mini-node-label-key">reviewClass</span>
-            <span className="mini-node-label-value">{reviewClass}</span>
-          </Badge>
-          <Badge className={`mini-node-label is-role-${changeRole}`} variant="outline">
-            <span className="mini-node-label-key">changeRole</span>
-            <span className="mini-node-label-value">{changeRole}</span>
-          </Badge>
-        </span>
-      </header>
+      <ExplanationHoverCard
+        comment={nodeComment}
+        contextLabel="Node: What / Why"
+        title={data.miniNode.title}
+      >
+        <header
+          aria-label={`What and why for ${data.miniNode.title}. ${plainTextComment(nodeComment)}`}
+          className="mini-diff-header"
+          tabIndex={nodeComment ? 0 : undefined}
+        >
+          <span className="mini-diff-title" title={data.miniNode.title}>
+            {data.miniNode.title}
+          </span>
+          <span className="mini-node-labels">
+            {nodeComment ? (
+              <MessageSquareText
+                aria-label="What and why explanation available"
+                className="mini-node-comment-indicator"
+                size={15}
+              />
+            ) : null}
+            <Badge className={`mini-node-label is-review-${reviewClass}`} variant="outline">
+              <span className="mini-node-label-key">reviewClass</span>
+              <span className="mini-node-label-value">{reviewClass}</span>
+            </Badge>
+            <Badge className={`mini-node-label is-role-${changeRole}`} variant="outline">
+              <span className="mini-node-label-key">changeRole</span>
+              <span className="mini-node-label-value">{changeRole}</span>
+            </Badge>
+          </span>
+        </header>
+      </ExplanationHoverCard>
       <div className="mini-diff-scroll">
         {(data.miniNode.codeChunks || []).map((chunk, chunkIndex) => (
           <pre className="code-diff mini-diff-code" key={`${data.miniNode.id}-${chunkIndex}`}>
@@ -498,6 +546,97 @@ function MiniDiffNode({ data }) {
       {showHandles ? <Handle className="node-handle" position={Position.Bottom} type="source" /> : null}
     </article>
   );
+}
+
+function ReviewExplanationEdge({
+  data,
+  id,
+  markerEnd,
+  sourcePosition,
+  sourceX,
+  sourceY,
+  style,
+  targetPosition,
+  targetX,
+  targetY,
+}) {
+  const [edgePath] = getSmoothStepPath({
+    borderRadius: 14,
+    offset: 20,
+    sourcePosition,
+    sourceX,
+    sourceY,
+    targetPosition,
+    targetX,
+    targetY,
+  });
+  const comment = data?.comment || "";
+  const sourceTitle = data?.sourceTitle || "Source node";
+  const targetTitle = data?.targetTitle || "Target node";
+
+  return (
+    <ExplanationHoverCard
+      comment={comment}
+      contextLabel="Review edge: What / Why"
+      side="top"
+      title={`${sourceTitle} → ${targetTitle}`}
+    >
+      <g
+        aria-label={`${sourceTitle} to ${targetTitle}. ${plainTextComment(comment)}`}
+        className="comment-edge-trigger"
+        role="note"
+        tabIndex={comment ? 0 : undefined}
+      >
+        <BaseEdge
+          className="comment-edge-path"
+          id={id}
+          interactionWidth={0}
+          markerEnd={markerEnd}
+          path={edgePath}
+          style={style}
+        />
+        <path aria-hidden="true" className="comment-edge-hit-path" d={edgePath} />
+      </g>
+    </ExplanationHoverCard>
+  );
+}
+
+function ExplanationHoverCard({
+  children,
+  comment,
+  contextLabel,
+  side = "top",
+  title,
+}) {
+  const explanation = String(comment || "").trim();
+  if (!explanation) {
+    return children;
+  }
+
+  return (
+    <HoverCard closeDelay={120} openDelay={220}>
+      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
+      <HoverCardContent
+        align="start"
+        className="explanation-hover-card nodrag nopan nowheel"
+        side={side}
+        sideOffset={10}
+      >
+        <div className="explanation-hover-label">{contextLabel}</div>
+        <div className="explanation-hover-title">{title}</div>
+        <div className="explanation-hover-comment">
+          <ReactMarkdown>{explanation}</ReactMarkdown>
+        </div>
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
+function plainTextComment(comment) {
+  return String(comment || "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function CodeContent({ line }) {
@@ -570,7 +709,8 @@ function buildMiniDiffGraph(
       });
     }
 
-    const validMiniNodeIds = new Set(miniNodes.map((miniNode) => miniNode.id));
+    const miniNodeById = new Map(miniNodes.map((miniNode) => [miniNode.id, miniNode]));
+    const validMiniNodeIds = new Set(miniNodeById.keys());
     for (const edge of miniTree.reviewEdges) {
       if (!validMiniNodeIds.has(edge.from) || !validMiniNodeIds.has(edge.to)) {
         continue;
@@ -579,6 +719,11 @@ function buildMiniDiffGraph(
       edges.push({
         id: `${file.id}:${edge.from}->${edge.to}`,
         className: "mini-tree-edge",
+        data: {
+          comment: edge.comment || "",
+          sourceTitle: miniNodeById.get(edge.from)?.title || edge.from,
+          targetTitle: miniNodeById.get(edge.to)?.title || edge.to,
+        },
         markerEnd: {
           color: "var(--mini-tree-color)",
           height: 18,
@@ -593,7 +738,7 @@ function buildMiniDiffGraph(
           strokeWidth: 4,
         },
         target: miniNodeId(file, edge.to),
-        type: "smoothstep",
+        type: "reviewExplanation",
         zIndex: 4,
       });
     }
@@ -787,7 +932,7 @@ function buildFileOrderMiniTree(file) {
       title: "File-order diff",
       reviewClass: file.reviewClass || "important",
       changeRole: file.changeRole || "runtime",
-      comment: "Changed hunks in source order.",
+      comment: "This view keeps every changed hunk together in source order for reviewers who prefer top-to-bottom file context. It intentionally presents file order rather than the causal review hierarchy.",
       changedLineIds: file.codeRefs?.changedLineIds || [],
       codeChunks: file.fileOrderCodeChunks || [],
       fileOrderView: true,

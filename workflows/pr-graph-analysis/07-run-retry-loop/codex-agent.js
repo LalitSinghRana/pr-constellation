@@ -287,7 +287,12 @@ Regenerate the complete mini-tree analysis from scratch. Fix every reported
 file ownership, changed-line ownership, mini-tree topology, reviewClass,
 changeRole, comment, validation, or judge issue. Every changed file must appear
 exactly once and every changed line must belong to exactly one node in that
-file's mini-tree.
+file's mini-tree. Rewrite weak comments to explain what changed or is related
+and why it matters or belongs next; leave how the implementation works to the
+code attached to the node. Use Markdown bullets when the explanation has
+multiple distinct points, and use at least two bullet lines for every comment
+longer than 280 characters. Do not remove useful context merely to stay below
+that threshold.
 `
     : "";
 }

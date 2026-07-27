@@ -39,6 +39,8 @@ When validation passes, it has checked:
 - every mini-tree has exactly one `core` reviewClass at its root
 - deterministic role mappings are enforced for non-root nodes and file
   summaries (`imports`, `type`, `generated`, and `formatting` are mechanical)
+- every comment longer than 280 characters contains at least two Markdown
+  bullet lines
 
 If the validation result is `FAIL`, your verdict must also be `fail`. Still
 inspect semantic quality and report useful semantic findings so the retry step
@@ -59,8 +61,8 @@ Look for:
   reviewer to jump between nodes to understand one render, handler, state,
   computation, style, type, test, or story unit
 - missing, duplicate, or cross-file mini-tree ownership
-- weak mini-tree comments that restate code instead of explaining why the
-  file-local change matters
+- weak mini-tree comments that restate how the code works instead of explaining
+  what the cohesive change represents and why the file-local change matters
 - a file mini-tree that is ordered top-to-bottom by file location instead of by
   review causality
 - a file mini-tree rooted at props, types, dependencies, setup, styles, test
@@ -77,8 +79,9 @@ Look for:
   downstream required/supporting changes after it
 - review edges that reproduce a shallow technical-dependency star instead of
   assigning each node to the nearest reviewer question it explains
-- weak review-edge comments that do not explain why the target belongs next in
-  the source's review branch
+- weak review-edge comments that do not explain what requirement or review
+  relationship connects the nodes and why the target belongs next in the
+  source's review branch
 - technical dependencies encoded as review parentage when they belong in
   `relations`, or noisy relations that merely duplicate the review tree
 - sibling `reviewEdges` ordered by source location instead of review value
@@ -128,6 +131,30 @@ computations from rendering, or rendering from styles.
 There is no preferred or maximum mini-node line count. A large cohesive node is
 better than several fragments that hide the full control flow. Classification
 applies to the complete section using its highest review significance.
+
+## Mandatory Comment Audit
+
+Audit every file comment, mini-node comment, review-edge comment, and technical
+relation comment using this division:
+
+- The attached code answers **how** the implementation works.
+- The comment must answer **what** changed, matters, or is related and **why**
+  it exists, is consequential, or belongs at that point in the review.
+
+Fail comments that primarily translate syntax into prose, enumerate visible
+function calls, narrate line-by-line control flow, merely repeat a title, or
+use generic sequencing such as "review this next." A useful node comment gives
+the reviewer intent, impact, rationale, risk, or a concrete review question. A
+useful review-edge comment states the requirement or consequence that makes the
+target follow from the source.
+
+Do not reward artificial brevity and do not fail a useful comment for being
+long. When an explanation contains multiple distinct reasons, effects,
+constraints, or reviewer checks, expect a readable Markdown bullet list rather
+than one compressed sentence. A comment longer than 280 characters without at
+least two Markdown bullet lines is a deterministic validation failure. Also
+fail artificial threshold avoidance when useful rationale, consequences, or
+review checks were clearly omitted merely to keep prose below 280 characters.
 
 ## Mandatory Root Audit
 

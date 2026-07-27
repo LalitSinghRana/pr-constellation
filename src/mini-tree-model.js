@@ -180,7 +180,7 @@ export function foldMiniTree(file, { expandedGroupIds = [] } = {}) {
         title: bucket.label,
         reviewClass: bucket.reviewClass,
         changeRole: bucket.changeRole,
-        comment: `${bucket.label} contains ${children.length} review ${pluralize("subtree", children.length)}.`,
+        comment: `${bucket.label} groups lower-priority changes that support "${node.title}".\n\n- What: ${children.length} related review ${pluralize("subtree", children.length)} covering ${forestNodes.length} nodes.\n- Why: They share the same review priority and role, so the reviewer can inspect them together after the parent question.`,
         changedLineIds: [],
         collapsedGroup: {
           bucketId: bucket.id,
@@ -202,7 +202,7 @@ export function foldMiniTree(file, { expandedGroupIds = [] } = {}) {
         from: nodeId,
         to: groupNodeId,
         order: childEntry.order,
-        comment: `${bucket.label} is folded until the reviewer opens it.`,
+        comment: `${bucket.label} follows "${node.title}" because these lower-priority changes support that parent question without replacing its primary review focus.`,
         synthetic: true,
       });
 
@@ -214,11 +214,12 @@ export function foldMiniTree(file, { expandedGroupIds = [] } = {}) {
       nextRevealedBucketIds.add(bucket.id);
 
       children.forEach((child, order) => {
+        const childTitle = nodeById.get(child.nodeId)?.title || child.nodeId;
         visibleReviewEdges.push({
           from: groupNodeId,
           to: child.nodeId,
           order,
-          comment: `${child.nodeId} belongs to the expanded ${bucket.label} group.`,
+          comment: `"${childTitle}" belongs under ${bucket.label} because it is a distinct supporting review question with the same priority and role as the grouped changes.`,
           synthetic: true,
         });
         visit(child.nodeId, nextRevealedBucketIds, nextAncestry);

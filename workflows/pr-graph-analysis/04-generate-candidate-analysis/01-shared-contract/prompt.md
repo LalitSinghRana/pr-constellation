@@ -10,9 +10,10 @@ Do not think about UI, visual layout, rendering, navigation, or review-page
 behavior. Only generate the review structure data.
 
 Return only JSON that matches the schema for the current stage. Do not include
-Markdown, commentary, code fences, or extra text. The runner executes each
-stage separately and gives every later stage the exact JSON produced by the
-earlier stages.
+Markdown, commentary, code fences, or extra text around the JSON. Markdown
+paragraphs and bullet lists are allowed inside `comment` string values. The
+runner executes each stage separately and gives every later stage the exact
+JSON produced by the earlier stages.
 
 ## Output Model
 
@@ -116,3 +117,41 @@ downstream type node is `mechanical/type`.
 Do not automatically mark tests, stories, or snapshots as mechanical. Classify
 them by review value. A test can be `supporting/test`; a snapshot can be
 `mechanical/snapshot` when it only reflects already-reviewed behavior.
+
+## Explanation Comments: What And Why
+
+The code attached to a mini-node already tells the reviewer **how** the change
+was implemented. Comments must add the context that code cannot provide:
+
+- **What** behavior, contract, reviewer question, consequence, or supporting
+  responsibility this item represents.
+- **Why** the change exists, why it matters to the PR, or why the reviewer
+  should inspect it at this point in the review flow.
+
+Apply this distinction at every level:
+
+- A file comment explains what responsibility changed in the file and why that
+  file matters to the PR.
+- A mini-node comment explains what the cohesive code section changes or proves
+  and why that change is needed or consequential.
+- A review-edge comment explains what requirement or review relationship
+  connects the source to the target and why the target belongs next under that
+  source.
+- A technical-relation comment explains what secondary relationship exists and
+  why knowing it helps the reviewer.
+
+Do not narrate the implementation line by line, paraphrase function calls, or
+describe control flow that is already visible in the node's diff. Mention an
+implementation detail only when it is necessary context for explaining impact,
+intent, risk, or rationale.
+
+There is no target or maximum comment length. Do not shorten a useful
+explanation merely to save tokens, latency, or cost. Use enough detail to make
+the review decision clear. For comments with multiple distinct reasons,
+effects, constraints, or reviewer checks, use Markdown bullet points inside the
+string instead of compressing everything into one dense sentence. A short
+opening paragraph followed by bullets is valid. As a deterministic formatting
+rule, every comment longer than 280 characters must contain at least two
+Markdown bullet lines beginning with `-`, `*`, or `+`. Do not omit useful
+context or compress a naturally multi-point explanation below 280 characters
+just to avoid bullets; preserve the explanation and format it clearly.

@@ -124,6 +124,7 @@
           "$ref": "#/$defs/changeRole"
         },
         "comment": {
+          "description": "What responsibility changed in this file and why the file matters to the PR. The code explains how. Markdown paragraphs and bullet lists are allowed; comments longer than 280 characters require at least two bullet lines.",
           "type": "string",
           "minLength": 1
         },
@@ -194,6 +195,7 @@
           "$ref": "#/$defs/changeRole"
         },
         "comment": {
+          "description": "What this cohesive code section changes or proves and why it is needed or consequential. The attached code explains how. Markdown paragraphs and bullet lists are allowed; comments longer than 280 characters require at least two bullet lines.",
           "type": "string",
           "minLength": 1
         },
@@ -230,6 +232,7 @@
           "minimum": 0
         },
         "comment": {
+          "description": "What requirement or review relationship connects the source to the target and why the target belongs next. Do not narrate implementation mechanics. Markdown paragraphs and bullet lists are allowed; comments longer than 280 characters require at least two bullet lines.",
           "type": "string",
           "minLength": 1
         }
@@ -258,6 +261,7 @@
           "minLength": 1
         },
         "comment": {
+          "description": "What secondary technical relationship exists and why knowing it helps the reviewer. The code explains how it is wired. Markdown paragraphs and bullet lists are allowed; comments longer than 280 characters require at least two bullet lines.",
           "type": "string",
           "minLength": 1
         }

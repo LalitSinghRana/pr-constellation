@@ -295,6 +295,37 @@ expectValid(patchMiniNode(validAnalysis, 1, 0, {
   reviewClass: "core",
 }));
 
+const longExplanationWithoutBullets = (
+  "This explanation covers the changed responsibility, why the PR needs it, "
+  + "the reviewer-facing consequence, and the contract that downstream work must preserve. "
+).repeat(3).trim();
+
+expectInvalid({
+  analysis: patchMiniNode(validAnalysis, 0, 0, {
+    comment: longExplanationWithoutBullets,
+  }),
+  message: "comments longer than 280 characters must use at least two Markdown bullet points",
+  name: "long mini-node explanation without bullets",
+});
+
+expectInvalid({
+  analysis: patchMiniTree(validAnalysis, 0, {
+    reviewEdges: [{
+      ...validAnalysis.files[0].miniTree.reviewEdges[0],
+      comment: longExplanationWithoutBullets,
+    }],
+  }),
+  message: "comments longer than 280 characters must use at least two Markdown bullet points",
+  name: "long review-edge explanation without bullets",
+});
+
+expectValid(patchMiniNode(validAnalysis, 0, 0, {
+  comment: `${longExplanationWithoutBullets}
+
+- What: the runtime contract changes for every caller.
+- Why: downstream validation must preserve the new behavior.`,
+}));
+
 function buildFile({
   changeRole = "runtime",
   file,

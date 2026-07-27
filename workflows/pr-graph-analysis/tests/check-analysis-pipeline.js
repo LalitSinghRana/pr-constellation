@@ -5,6 +5,29 @@ import path from "node:path";
 import { createDiffInventory } from "../03-build-diff-inventory/diff-inventory.js";
 import { runCodexGraphAnalysis } from "../07-run-retry-loop/codex-agent.js";
 
+const miniTreeSchema = JSON.parse(
+  await readFile(
+    new URL(
+      "../04-generate-candidate-analysis/02-create-mini-trees/schema.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
+
+assert.match(
+  miniTreeSchema.$defs.miniNode.properties.comment.description,
+  /What this cohesive code section changes or proves and why/,
+);
+assert.match(
+  miniTreeSchema.$defs.reviewEdge.properties.comment.description,
+  /why the target belongs next/,
+);
+assert.match(
+  miniTreeSchema.$defs.reviewEdge.properties.comment.description,
+  /longer than 280 characters require at least two bullet lines/,
+);
+
 const diff = `diff --git a/src/example.js b/src/example.js
 index 0000000..1111111 100644
 --- a/src/example.js
@@ -93,6 +116,17 @@ try {
   assert.match(miniPrompts[1], /Step 05 validate candidate failed/);
   assert.match(miniPrompts[1], /Step 06 judge candidate failed/);
   assert.match(miniPrompts[0], /<diff_line_map_json>/);
+  assert.match(miniPrompts[0], /## Explanation Comments: What And Why/);
+  assert.match(
+    miniPrompts[0],
+    /code attached to a mini-node already tells the reviewer \*\*how\*\*/,
+  );
+  assert.match(miniPrompts[0], /use Markdown bullet points inside the/);
+  assert.match(
+    miniPrompts[0],
+    /every comment longer than 280 characters must contain at least two/,
+  );
+  assert.match(miniPrompts[0], /compress a naturally multi-point explanation below 280/);
   assert.match(miniPrompts[0], /## Cohesive Review Units/);
   assert.match(
     miniPrompts[0],
@@ -100,6 +134,17 @@ try {
   );
   assert.match(miniPrompts[0], /Do not emit numeric node depths/);
   assert.match(judgePrompts[0], /## Mandatory Section-Cohesion Audit/);
+  assert.match(judgePrompts[0], /## Mandatory Comment Audit/);
+  assert.match(
+    judgePrompts[0],
+    /attached code answers \*\*how\*\* the implementation works/,
+  );
+  assert.match(
+    judgePrompts[0],
+    /comment longer than 280 characters without at/,
+  );
+  assert.match(judgePrompts[0], /least two Markdown bullet lines/);
+  assert.match(judgePrompts[0], /artificial threshold avoidance/);
   assert.match(
     judgePrompts[0],
     /contiguous JSX\/render phase split into separate loading/,

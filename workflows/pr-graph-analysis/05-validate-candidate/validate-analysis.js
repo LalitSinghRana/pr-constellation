@@ -41,6 +41,7 @@ const ROOT_CHANGE_ROLE_PRIORITY = new Map([
 const MINI_TREE_SCHEMA_V1 = "pr-graph-mini-trees/v1";
 const MINI_TREE_SCHEMA_V2 = "pr-graph-mini-trees/v2";
 const MINI_TREE_SCHEMA_VERSIONS = new Set([MINI_TREE_SCHEMA_V1, MINI_TREE_SCHEMA_V2]);
+const LONG_EXPLANATION_BULLET_THRESHOLD = 280;
 
 export function validateMiniTreeAnalysis(analysis, { inventory = null } = {}) {
   const errors = [];
@@ -145,9 +146,11 @@ function validateFiles({ analysis, errors, inventory }) {
       value: file,
     });
 
-    if (!isNonEmptyString(file.comment)) {
-      errors.push(`analysis.json file ${file.id} is missing comment explaining why the file matters.`);
-    }
+    validateExplanationComment({
+      errors,
+      label: `file ${file.id} comment`,
+      value: file.comment,
+    });
 
     if (!file.miniTree || typeof file.miniTree !== "object") {
       errors.push(`analysis.json file ${file.id} must contain exactly one miniTree.`);
@@ -263,9 +266,11 @@ function validateMiniTree({
       errors.push(`analysis.json miniNode ${owner} must have integer depth 0-6.`);
     }
 
-    if (!isNonEmptyString(miniNode.comment)) {
-      errors.push(`analysis.json miniNode ${owner} is missing comment explaining why the change matters.`);
-    }
+    validateExplanationComment({
+      errors,
+      label: `miniNode ${owner} comment`,
+      value: miniNode.comment,
+    });
 
     if (!Array.isArray(miniNode.changedLineIds) || miniNode.changedLineIds.length === 0) {
       errors.push(`analysis.json miniNode ${owner} must cover at least one changed line id.`);
@@ -389,9 +394,11 @@ function validateTreeEdges({
       }
     }
 
-    if (!isNonEmptyString(edge.comment)) {
-      errors.push(`analysis.json ${edgeLabel} ${edgeId} is missing comment.`);
-    }
+    validateExplanationComment({
+      errors,
+      label: `${edgeLabel} ${edgeId} comment`,
+      value: edge.comment,
+    });
 
     if (edge.from === edge.to) {
       errors.push(`analysis.json ${edgeLabel} ${edgeId} cannot point to itself.`);
@@ -527,9 +534,11 @@ function validateTechnicalRelations({
     if (!isNonEmptyString(relation.relation)) {
       errors.push(`analysis.json ${relationLabel} ${relationId} is missing relation.`);
     }
-    if (!isNonEmptyString(relation.comment)) {
-      errors.push(`analysis.json ${relationLabel} ${relationId} is missing comment.`);
-    }
+    validateExplanationComment({
+      errors,
+      label: `${relationLabel} ${relationId} comment`,
+      value: relation.comment,
+    });
   }
 }
 
@@ -660,6 +669,28 @@ function validateReviewClassAndRole({
   ) {
     errors.push(
       `analysis.json ${targetId} changeRole ${value.changeRole} must use reviewClass ${deterministicReviewClass}.`,
+    );
+  }
+}
+
+function validateExplanationComment({ errors, label, value }) {
+  if (!isNonEmptyString(value)) {
+    errors.push(`analysis.json ${label} is missing a What/Why explanation.`);
+    return;
+  }
+
+  const comment = value.trim();
+  const markdownBulletCount = (
+    comment.match(/^\s*[-*+]\s+\S.*$/gm)
+    || []
+  ).length;
+
+  if (
+    comment.length > LONG_EXPLANATION_BULLET_THRESHOLD
+    && markdownBulletCount < 2
+  ) {
+    errors.push(
+      `analysis.json ${label} is ${comment.length} characters; comments longer than ${LONG_EXPLANATION_BULLET_THRESHOLD} characters must use at least two Markdown bullet points.`,
     );
   }
 }

@@ -55,6 +55,21 @@ assert.equal(
     .collapsedGroup.nodeCount,
   4,
 );
+assert.match(
+  collapsed.nodes.find((item) => item.id === "ui-fold-root-supporting-runtime")
+    .comment,
+  /- What:/,
+);
+assert.match(
+  collapsed.reviewEdges.find((edge) => edge.to === "ui-fold-root-supporting-runtime")
+    .comment,
+  /because these lower-priority changes support/,
+);
+assert.doesNotMatch(
+  collapsed.reviewEdges.find((edge) => edge.to === "ui-fold-root-supporting-runtime")
+    .comment,
+  /folded until/,
+);
 assert.equal(collapsed.relations.length, 1);
 
 const supportingGroupId = "file-1:ui-fold-root-supporting-runtime";

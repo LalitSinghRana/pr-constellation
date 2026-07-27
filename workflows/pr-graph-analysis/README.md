@@ -82,7 +82,11 @@ The deterministic validator enforces:
 - imports, types, generated output, and formatting are deterministically
   mechanical outside the core root
 - `reviewClass` and `changeRole` use the approved values
+- every file, node, review edge, and technical relation has a non-empty
+  What/Why comment
+- comments longer than 280 characters use at least two Markdown bullet lines
 
 The judge then checks whether node boundaries preserve cohesive implementation
-sections and whether each file-local flow is semantically useful.
+sections, whether comments explain What/Why instead of narrating How, and
+whether each file-local flow is semantically useful.
 Step 07 retries only after validation and judging have both run.

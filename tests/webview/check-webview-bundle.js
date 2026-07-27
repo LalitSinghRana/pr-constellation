@@ -14,7 +14,7 @@ const html = await renderDiffHtml({
         path: "src/example.js",
         reviewClass: "important",
         changeRole: "runtime",
-        comment: "This file contains the runtime behavior under review.",
+        comment: "This file owns the runtime behavior under review.\n\n- What: the value contract changes.\n- Why: downstream consumers need the replacement value.",
         codeRefs: {
           fileIds: ["file-1"],
           changedLineIds: ["file-1:hunk-1:line-1", "file-1:hunk-1:line-2"],
@@ -26,7 +26,7 @@ const html = await renderDiffHtml({
               title: "Replace old value",
               reviewClass: "core",
               changeRole: "runtime",
-              comment: "The runtime value changes from the old value to the new value.",
+              comment: "The runtime contract now exposes the replacement value.\n\n- Why: callers must observe the updated behavior.\n- Review: confirm the new value matches the PR intent.",
               changedLineIds: ["file-1:hunk-1:line-1"],
             },
             {
@@ -43,7 +43,7 @@ const html = await renderDiffHtml({
               from: "replace-old-value",
               to: "set-new-value",
               order: 0,
-              comment: "Review the replacement after understanding the behavior change.",
+              comment: "The supporting assignment follows the contract change because it supplies the value that callers will now observe.",
             },
           ],
           relations: [
@@ -98,17 +98,22 @@ const requiredWebviewMarkers = [
   "reviewClass",
   "changeRole",
   "mini-tree-edge",
+  "Node: What / Why",
+  "Review edge: What / Why",
   "collapsed-review-group",
   "--mini-tree-color",
 ];
 
-if (requiredWebviewMarkers.some((marker) => !html.includes(marker))) {
-  throw new Error("Graph webview bundle check failed.");
+const missingWebviewMarkers = requiredWebviewMarkers.filter((marker) => !html.includes(marker));
+if (missingWebviewMarkers.length > 0) {
+  throw new Error(`Graph webview bundle check failed. Missing: ${missingWebviewMarkers.join(", ")}`);
 }
 
 const graphData = extractJsonScript(html, "pr-analysis-data");
 assert.equal(graphData.schemaVersion, "pr-graph-mini-trees/v2");
 assert.equal(graphData.files[0].miniTree.reviewEdges[0].order, 0);
+assert.match(graphData.files[0].miniTree.reviewEdges[0].comment, /because it supplies/);
+assert.match(graphData.files[0].miniTree.nodes[0].comment, /- Review:/);
 assert.equal(graphData.files[0].miniTree.relations[0].relation, "replaces");
 assert.ok(!("edges" in graphData.files[0].miniTree));
 assert.ok(!("depth" in graphData.files[0].miniTree.nodes[0]));
@@ -126,6 +131,12 @@ const [collapsibleSource, graphAppSource, webStyles] = await Promise.all([
 
 assert.match(collapsibleSource, /CollapsiblePrimitive/);
 assert.match(graphAppSource, /nodesDraggable=\{false\}/);
+assert.match(graphAppSource, /ReactMarkdown/);
+assert.match(graphAppSource, /HoverCardContent/);
+assert.match(graphAppSource, /edgeTypes=\{edgeTypes\}/);
+assert.match(graphAppSource, /reviewExplanation: React\.memo\(ReviewExplanationEdge\)/);
+assert.match(graphAppSource, /type: "reviewExplanation"/);
+assert.match(graphAppSource, /comment: edge\.comment \|\| ""/);
 assert.doesNotMatch(graphAppSource, /MINI_NODE_MAX_HEIGHT/);
 assert.match(graphAppSource, /MINI_CODE_CHARACTER_COLUMNS = 120/);
 assert.doesNotMatch(graphAppSource, /mini-tree-technical-edge/);
@@ -137,7 +148,7 @@ assert.match(graphAppSource, /value="file"/);
 assert.match(graphAppSource, /<Collapsible/);
 assert.match(graphAppSource, /<CollapsibleTrigger asChild>/);
 assert.doesNotMatch(graphAppSource, /<button/);
-assert.match(graphAppSource, /<Badge className="file-page-label"/);
+assert.match(graphAppSource, /className="file-page-label"/);
 assert.match(graphAppSource, /BackgroundVariant\.Dots/);
 assert.match(graphAppSource, /bgColor=/);
 assert.match(
@@ -152,6 +163,8 @@ assert.match(
 );
 assert.doesNotMatch(webStyles, /max-height:\s*340px/);
 assert.doesNotMatch(webStyles, /mini-tree-technical-edge/);
+assert.match(webStyles, /\.explanation-hover-comment ul/);
+assert.match(webStyles, /\.comment-edge-hit-path/);
 
 const tsxHtml = await renderDiffHtml({
   analysis: {

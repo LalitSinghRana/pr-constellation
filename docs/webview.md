@@ -17,6 +17,10 @@ browser-facing implementation.
 
 The website consumes the validated analysis schema and diff inventory from
 `workflows/pr-graph-analysis/`; it does not author or repair AI analysis.
+File groups, mini-tree node headers, collapsed groups, and review edges expose
+their What/Why comments through shadcn Hover Cards. Comment Markdown is rendered
+with `react-markdown`, including structured bullet lists for longer
+explanations.
 
 Run its focused suite with:
 
