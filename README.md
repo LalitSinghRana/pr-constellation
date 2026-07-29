@@ -18,6 +18,8 @@ tests, fixtures, or Storybook noise.
   retry orchestration, and analysis tests.
 - `tests/webview/` contains website rendering and presentation-model regression
   checks.
+- `notifications/` is the standalone local GitHub notification-priority app;
+  it has its own npm dependencies and run instructions.
 
 ## Dirty v0
 
