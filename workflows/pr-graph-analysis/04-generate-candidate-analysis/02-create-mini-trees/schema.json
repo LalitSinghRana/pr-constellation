@@ -70,29 +70,23 @@
         "imports"
       ]
     },
-    "codeRefs": {
+    "changedLineRange": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "fileIds",
-        "changedLineIds"
+        "start",
+        "end"
       ],
       "properties": {
-        "fileIds": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
+        "start": {
+          "description": "Inclusive first changed-line id in this source-ordered range.",
+          "type": "string",
+          "minLength": 1
         },
-        "changedLineIds": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
+        "end": {
+          "description": "Inclusive last changed-line id in this source-ordered range.",
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -105,7 +99,6 @@
         "reviewClass",
         "changeRole",
         "comment",
-        "codeRefs",
         "miniTree"
       ],
       "properties": {
@@ -127,9 +120,6 @@
           "description": "What responsibility changed in this file and why the file matters to the PR. The code explains how. Prefer concise Markdown prose and use bullet lists for multiple distinct points, but preserve useful context regardless of length or formatting.",
           "type": "string",
           "minLength": 1
-        },
-        "codeRefs": {
-          "$ref": "#/$defs/codeRefs"
         },
         "miniTree": {
           "$ref": "#/$defs/miniTree"
@@ -177,7 +167,7 @@
         "reviewClass",
         "changeRole",
         "comment",
-        "changedLineIds"
+        "changedLineRanges"
       ],
       "properties": {
         "id": {
@@ -199,13 +189,12 @@
           "type": "string",
           "minLength": 1
         },
-        "changedLineIds": {
-          "description": "Source-ordered changed line ids from one hunk. A cohesive node may bridge unchanged context, but it must include every intervening changed line between its first and last owned ids.",
+        "changedLineRanges": {
+          "description": "Minimal source-ordered inclusive changed-line ranges owned by this node. Each range stays within one hunk; a cohesive node may use multiple ranges or hunks.",
           "type": "array",
           "minItems": 1,
           "items": {
-            "type": "string",
-            "minLength": 1
+            "$ref": "#/$defs/changedLineRange"
           }
         }
       }

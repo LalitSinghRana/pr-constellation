@@ -1,8 +1,8 @@
 # Step 04.2: Create All Mini-Trees
 
 Create exactly one `files[]` entry for every changed file with added/deleted
-changed lines in `diff-file-map.json`. Never omit a changed file and never emit
-the same file twice. Use the exact `diff-file-map.files[].id` and `path` values.
+lines in the structured diff. Never omit a changed file and never emit the same
+file twice. Use the exact structured-diff file `id` and `path` values.
 
 Then create each file's `miniTree`.
 
@@ -149,19 +149,8 @@ Required construction order:
 
 - Split a file into mini-nodes only when it contains multiple cohesive review
   sections.
-- Every mini-node's changed line ids must come from exactly one hunk and appear
-  in source order.
-- A cohesive mini-node may own multiple changed spans separated by unchanged
-  context lines. Between its first and last owned line ids, it must include
-  every changed line in the hunk; never skip changed work assigned to another
-  node. A hunk boundary or intervening changed line owned by another node ends
-  the section, while unchanged context alone does not.
-- Assign every changed line id listed for the file in `diff-inventory.json` to
-  exactly one mini-node.
-- Treat `changedLineIds` as an ownership partition: the same changed line id
-  must never appear in two mini-nodes, even when the concepts overlap.
-- Every mini-node must own at least one changed line id. Never emit an empty
-  `changedLineIds` array.
+- After partitioning cohesive sections, encode each section with the minimal
+  source-ordered `changedLineRanges` required by the shared ownership contract.
 - Describe internal variants and details in the node title/comment rather than
   extracting them from their cohesive section solely to create more concepts.
 - Put imports, formatting, and generated churn in mechanical mini-nodes.
@@ -189,22 +178,15 @@ Required construction order:
 - `supporting` means the node can be folded initially and inspected when the
   reviewer opens supporting work. Do not label every runtime branch important
   merely because it executes at runtime.
-- Every mini-node needs a `comment` explaining what the cohesive section changes
-  or proves and why that file-local change is needed or consequential. The code
-  in the node already explains how it works.
-- Prefer concise comments, and use Markdown bullet points when a node has
-  multiple distinct effects, reasons, constraints, or reviewer checks. Never
-  discard useful detail to meet a length target, and never treat length or
-  Markdown formatting alone as a quality failure.
 - `miniTree.reviewEdges[]` and `miniTree.relations[]` connect mini-nodes within
   the same file only.
 - Before returning the file, compare hierarchy order with changed-line
   positions. If the result mostly follows ascending line numbers, rebuild it
   from review causality. Coincidental file-order trees are invalid.
 - Before returning the full result, audit every file independently. The union
-  of its mini-node `changedLineIds` must exactly equal that file's line ids,
+  of its expanded mini-node ranges must exactly equal that file's changed lines,
   every intersection between two nodes must be empty, and no node may contain
-  another file's line id.
+  another file's range.
 
 Good mini-node examples:
 

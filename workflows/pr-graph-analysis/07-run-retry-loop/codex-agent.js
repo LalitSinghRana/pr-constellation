@@ -33,14 +33,22 @@ const JUDGE_PROMPT_PATH = path.join(WORKFLOW_DIR, "06-judge-candidate", "prompt.
 const JUDGE_SCHEMA_PATH = path.join(WORKFLOW_DIR, "06-judge-candidate", "schema.json");
 const MAX_ANALYSIS_ATTEMPTS = 3;
 const CODEX_EXEC_TIMEOUT_MS = Number(process.env.PRC_CODEX_TIMEOUT_MS || 900000);
+const DEFAULT_ANALYSIS_REASONING_EFFORT = "xhigh";
+const JUDGE_REASONING_EFFORT = "high";
+// Retained for offline benchmarking; deterministic validation is the active gate.
+const SEMANTIC_JUDGE_ENABLED = false;
 
-export { validateGraphAnalysis, validateMiniTreeAnalysis };
+export {
+  materializeLineOwnership,
+  validateGraphAnalysis,
+  validateMiniTreeAnalysis,
+};
 
 export async function runCodexGraphAnalysis({
   executeCodex = runCodexExec,
   model,
   onEvent,
-  reasoningEffort,
+  reasoningEffort = DEFAULT_ANALYSIS_REASONING_EFFORT,
   runDir,
   signal,
 }) {
@@ -51,6 +59,10 @@ export async function runCodexGraphAnalysis({
   const executionConfig = resolveCodexExecutionConfig({
     model,
     reasoningEffort,
+  });
+  const judgeExecutionConfig = resolveCodexExecutionConfig({
+    model,
+    reasoningEffort: JUDGE_REASONING_EFFORT,
   });
   const usage = emptyUsage();
   const executeCodexWithUsage = async (options) => {
@@ -92,12 +104,7 @@ export async function runCodexGraphAnalysis({
         path.join(resolvedRunDir, "metadata.json"),
         "utf8",
       );
-      const diffPatchText = await readFile(
-        path.join(resolvedRunDir, "diff.patch"),
-        "utf8",
-      );
-      const diffLineMapText = `${JSON.stringify(buildDiffLineMap(inventory))}\n`;
-      const fileMapText = `${JSON.stringify(buildFileMap(inventory))}\n`;
+      const structuredDiffText = `${JSON.stringify(buildStructuredDiff(inventory))}\n`;
       const analysisPath = path.join(resolvedRunDir, "analysis.json");
       const candidatePath = path.join(resolvedRunDir, "analysis.candidate.json");
       const judgePath = path.join(resolvedRunDir, "judge.json");
@@ -136,13 +143,11 @@ export async function runCodexGraphAnalysis({
           run: async () => runAnalysisAttempt({
             attempt,
             candidatePath,
-            diffLineMapText,
-            diffPatchText,
             emitEvent,
             executionConfig,
             executeCodex: executeCodexWithUsage,
-            fileMapText,
             inventory,
+            judgeExecutionConfig,
             judgePrompt,
             metadataText,
             miniTreesPrompt,
@@ -151,6 +156,7 @@ export async function runCodexGraphAnalysis({
             previousFailure: failures.at(-1),
             resolvedRunDir,
             sharedPrompt,
+            structuredDiffText,
             usage,
           }),
           stageId: `analysis.attempt-${attempt}`,
@@ -222,13 +228,11 @@ export async function runCodexGraphAnalysis({
 async function runAnalysisAttempt({
   attempt,
   candidatePath,
-  diffLineMapText,
-  diffPatchText,
   emitEvent,
   executionConfig,
   executeCodex,
-  fileMapText,
   inventory,
+  judgeExecutionConfig,
   judgePrompt,
   metadataText,
   miniTreesPrompt,
@@ -237,6 +241,7 @@ async function runAnalysisAttempt({
   previousFailure,
   resolvedRunDir,
   sharedPrompt,
+  structuredDiffText,
   usage,
 }) {
   const artifacts = buildAttemptArtifacts({ attempt, runDir: resolvedRunDir });
@@ -303,23 +308,22 @@ async function runAnalysisAttempt({
 
         promptPath = artifacts.miniTreesPromptPath;
         candidateRawOutputPath = artifacts.miniTreesRawPath;
-        return runJsonStage({
+        const generated = await runJsonStage({
           cwd: resolvedRunDir,
           executionConfig,
           executeCodex,
           outputPath: artifacts.miniTreesRawPath,
           prompt: buildMiniTreesPrompt({
-            diffLineMapText,
-            diffPatchText,
-            fileMapText,
             metadataText,
             miniTreesPrompt,
             previousFailure,
             sharedPrompt,
+            structuredDiffText,
           }),
           promptPath: artifacts.miniTreesPromptPath,
           schemaPath: MINI_TREES_SCHEMA_PATH,
         });
+        return materializeLineOwnership(generated, { inventory });
       },
       stageId: generationStageId,
     });
@@ -336,25 +340,27 @@ async function runAnalysisAttempt({
   }
 
   if (candidate) {
-    const candidateText = `${JSON.stringify(candidate, null, 2)}\n`;
-    await writeFile(candidatePath, candidateText, "utf8");
+    await writeFile(
+      candidatePath,
+      `${JSON.stringify(candidate, null, 2)}\n`,
+      "utf8",
+    );
+    const candidateText = `${JSON.stringify(compactLineOwnership(candidate))}\n`;
 
     evaluation = await runCandidateEvaluation({
       attempt,
       attemptStageId,
       candidate,
       candidateText,
-      diffLineMapText,
-      diffPatchText,
       emitEvent,
-      executionConfig,
       executeCodex,
-      fileMapText,
       inventory,
+      judgeExecutionConfig,
       judgePrompt,
       metadataText,
       outputPath: artifacts.judgeRawPath,
       resolvedRunDir,
+      structuredDiffText,
       usage,
     });
     attemptJudge = evaluation.judge;
@@ -379,17 +385,15 @@ async function runCandidateEvaluation({
   attemptStageId,
   candidate,
   candidateText,
-  diffLineMapText,
-  diffPatchText,
   emitEvent,
-  executionConfig,
   executeCodex,
-  fileMapText,
   inventory,
+  judgeExecutionConfig,
   judgePrompt,
   metadataText,
   outputPath,
   resolvedRunDir,
+  structuredDiffText,
   usage,
 }) {
   const evaluationStageId = `${attemptStageId}.evaluation`;
@@ -431,7 +435,7 @@ async function runCandidateEvaluation({
         validationFailure = formatStageFailure("05 validate candidate", error);
       }
 
-      if (isSchemaUsableCandidate(candidate)) {
+      if (SEMANTIC_JUDGE_ENABLED && isSchemaUsableCandidate(candidate)) {
         const judgeUsageBefore = copyUsage(usage);
         try {
           judge = await runInstrumentedStage({
@@ -444,13 +448,13 @@ async function runCandidateEvaluation({
             ),
             label: "AI semantic judge",
             metricsForError: () => ({
-              ...executionMetrics(executionConfig),
+              ...executionMetrics(judgeExecutionConfig),
               ...usageMetrics(subtractUsage(usage, judgeUsageBefore)),
             }),
             metricsForResult: (judgeResult) => ({
               findingCount: judgeResult.findings?.length || 0,
               verdict: judgeResult.verdict,
-              ...executionMetrics(executionConfig),
+              ...executionMetrics(judgeExecutionConfig),
               ...usageMetrics(subtractUsage(usage, judgeUsageBefore)),
             }),
             parentStageId: evaluationStageId,
@@ -458,14 +462,12 @@ async function runCandidateEvaluation({
               const judgeResult = await runJudge({
                 candidateText,
                 cwd: resolvedRunDir,
-                diffLineMapText,
-                diffPatchText,
-                executionConfig,
+                executionConfig: judgeExecutionConfig,
                 executeCodex,
-                fileMapText,
                 judgePrompt,
                 metadataText,
                 outputPath,
+                structuredDiffText,
                 validationReport: buildValidationReport(validationFailure),
               });
               validateJudge(judgeResult);
@@ -484,14 +486,19 @@ async function runCandidateEvaluation({
         }
       } else {
         judgeSkipped = true;
-        judgeFailure = "Step 06 judge candidate skipped: candidate is not schema-usable.";
+        const skipReason = SEMANTIC_JUDGE_ENABLED
+          ? "schema-unusable-candidate"
+          : "semantic-judge-disabled";
+        if (SEMANTIC_JUDGE_ENABLED) {
+          judgeFailure = "Step 06 judge candidate skipped: candidate is not schema-usable.";
+        }
         await runInstrumentedStage({
           attempt,
           emitEvent,
           label: "AI semantic judge",
           metricsForResult: () => ({
-            reason: "schema-unusable-candidate",
-            ...executionMetrics(executionConfig),
+            reason: skipReason,
+            ...executionMetrics(judgeExecutionConfig),
           }),
           parentStageId: evaluationStageId,
           run: async () => null,
@@ -511,7 +518,9 @@ async function runCandidateEvaluation({
         judge,
         judgeFailure,
         judgeSkipped,
-        passed: validationFailure === null && judge?.verdict === "pass",
+        passed: validationFailure === null && (
+          judgeSkipped || judge?.verdict === "pass"
+        ),
         validationFailure,
       };
     },
@@ -652,7 +661,7 @@ async function runTargetedRepair({
   promptPath,
   repairScope,
 }) {
-  const repairPayload = await runJsonStage({
+  const repairPayload = materializeLineOwnership(await runJsonStage({
     cwd,
     executionConfig,
     executeCodex,
@@ -665,7 +674,7 @@ async function runTargetedRepair({
     }),
     promptPath,
     schemaPath: MINI_TREES_SCHEMA_PATH,
-  });
+  }), { inventory });
 
   validateRepairPayload({
     candidate,
@@ -691,7 +700,7 @@ function buildTargetedRepairPrompt({
   const affectedDiffText = `${JSON.stringify(
     buildAffectedDiffInput({ inventory, repairScope }),
   )}\n`;
-  const candidateText = `${JSON.stringify(candidate)}\n`;
+  const candidateText = `${JSON.stringify(compactLineOwnership(candidate))}\n`;
   const feedbackText = `${JSON.stringify(buildCombinedFeedback(evaluation))}\n`;
 
   return `# Targeted PR Mini-Tree Repair
@@ -768,37 +777,7 @@ function buildAffectedDiffInput({ inventory, repairScope }) {
     ]),
   );
 
-  return {
-    schemaVersion: "targeted-diff-input/v1",
-    files: (inventory?.files || [])
-      .filter((file) => hunkIdsByFileId.has(file.id))
-      .map((file) => {
-        const hunkIds = hunkIdsByFileId.get(file.id);
-        return {
-          id: file.id,
-          path: file.path,
-          status: file.status,
-          addedLines: file.addedLines ?? 0,
-          deletedLines: file.deletedLines ?? 0,
-          hunks: (file.hunks || [])
-            .filter((hunk) => (
-              hunk.changedLineIds?.length > 0
-              && (hunkIds === null || hunkIds.has(hunk.id))
-            ))
-            .map((hunk) => ({
-              id: hunk.id,
-              header: hunk.header,
-              lines: (hunk.lines || []).map((line) => ({
-                id: line.id,
-                kind: line.kind,
-                newLine: line.newLine,
-                oldLine: line.oldLine,
-                content: line.content,
-              })),
-            })),
-        };
-      }),
-  };
+  return buildStructuredDiff(inventory, { hunkIdsByFileId });
 }
 
 function resolveRepairScope({ candidate, evaluation, inventory }) {
@@ -1081,85 +1060,197 @@ function isSchemaUsableCandidate(candidate) {
   );
 }
 
-function buildFileMap(inventory) {
+function buildStructuredDiff(inventory, { hunkIdsByFileId = null } = {}) {
   return {
-    schemaVersion: "diff-file-map/v1",
+    schemaVersion: "pr-graph-structured-diff/v1",
     changedLineCount: inventory?.changedLineCount || 0,
     files: (inventory?.files || [])
-      .filter((file) => file.changedLineIds?.length > 0)
-      .map((file) => ({
-        id: file.id,
-        path: file.path,
-        status: file.status,
-        add: file.addedLines ?? 0,
-        del: file.deletedLines ?? 0,
-        hunks: (file.hunks || [])
-          .filter((hunk) => hunk.changedLineIds?.length > 0)
-          .map((hunk) => ({
-            id: hunk.id,
-            header: hunk.header,
-            lineIds: hunk.changedLineIds || [],
-          })),
-      })),
-  };
-}
-
-function buildDiffLineMap(inventory) {
-  const filesByPath = new Map(
-    (inventory?.files || [])
-      .filter((file) => file.changedLineIds?.length > 0)
-      .map((file) => [
-        file.path,
-        {
+      .filter((file) => (
+        file.changedLineIds?.length > 0
+        && (!hunkIdsByFileId || hunkIdsByFileId.has(file.id))
+      ))
+      .map((file) => {
+        const selectedHunkIds = hunkIdsByFileId?.get(file.id);
+        return {
           id: file.id,
           path: file.path,
           status: file.status,
-          changedLines: [],
-        },
-      ]),
+          add: file.addedLines ?? 0,
+          del: file.deletedLines ?? 0,
+          hunks: (file.hunks || [])
+            .filter((hunk) => (
+              hunk.changedLineIds?.length > 0
+              && (
+                selectedHunkIds === undefined
+                || selectedHunkIds === null
+                || selectedHunkIds.has(hunk.id)
+              )
+            ))
+            .map((hunk) => ({
+              id: hunk.id,
+              header: hunk.header,
+              oldStart: hunk.oldStartLine,
+              newStart: hunk.newStartLine,
+              lines: (hunk.lines || []).map((line) => ({
+                ...(line.kind === "context" ? {} : { id: line.id }),
+                kind: line.kind,
+                old: line.oldLine,
+                new: line.newLine,
+                content: line.content,
+              })),
+            })),
+        };
+      }),
+  };
+}
+
+function materializeLineOwnership(analysis, { inventory }) {
+  const inventoryFileById = new Map(
+    (inventory?.files || []).map((file) => [file.id, file]),
   );
-
-  for (const line of inventory?.changedLines || []) {
-    const file = filesByPath.get(line.file);
-    if (!file) {
-      continue;
-    }
-
-    file.changedLines.push({
-      id: line.id,
-      hunkId: line.hunkId,
-      kind: line.kind,
-      oldLine: line.oldLine,
-      newLine: line.newLine,
-      content: line.content,
-    });
-  }
+  const inventoryFileByPath = new Map(
+    (inventory?.files || []).map((file) => [file.path, file]),
+  );
+  const locations = indexChangedLineLocations(inventory);
 
   return {
-    schemaVersion: "diff-line-map/v1",
-    changedLineCount: inventory?.changedLineCount || 0,
-    files: [...filesByPath.values()],
+    ...analysis,
+    files: (analysis?.files || []).map((file) => {
+      const inventoryFile = inventoryFileById.get(file.id)
+        || inventoryFileByPath.get(file.path);
+      if (!inventoryFile) {
+        throw new Error(
+          `Cannot materialize line ownership for unknown file ${file.id || file.path || "<missing>"}.`,
+        );
+      }
+
+      const nodes = (file.miniTree?.nodes || []).map((node) => ({
+        ...node,
+        changedLineIds: expandChangedLineRanges({
+          file: inventoryFile,
+          locations,
+          node,
+        }),
+      }));
+      const coveredIds = new Set(
+        nodes.flatMap((node) => node.changedLineIds),
+      );
+
+      return {
+        ...file,
+        codeRefs: {
+          fileIds: [inventoryFile.id],
+          changedLineIds: (inventoryFile.changedLineIds || []).filter(
+            (lineId) => coveredIds.has(lineId),
+          ),
+        },
+        miniTree: {
+          ...file.miniTree,
+          nodes,
+        },
+      };
+    }),
+  };
+}
+
+function indexChangedLineLocations(inventory) {
+  const locations = new Map();
+
+  for (const [fileIndex, file] of (inventory?.files || []).entries()) {
+    let fileChangedIndex = 0;
+    for (const hunk of file.hunks || []) {
+      const changedLineIds = hunk.changedLineIds || [];
+      for (const [hunkChangedIndex, lineId] of changedLineIds.entries()) {
+        locations.set(lineId, {
+          fileId: file.id,
+          fileIndex,
+          fileChangedIndex,
+          hunk,
+          hunkChangedIndex,
+        });
+        fileChangedIndex += 1;
+      }
+    }
+  }
+
+  return locations;
+}
+
+function expandChangedLineRanges({ file, locations, node }) {
+  if (!Array.isArray(node.changedLineRanges) || node.changedLineRanges.length === 0) {
+    throw new Error(
+      `Mini-node ${node.id || "<missing>"} must include changedLineRanges.`,
+    );
+  }
+
+  const expanded = [];
+  let previousEndIndex = -1;
+
+  for (const range of node.changedLineRanges) {
+    const start = locations.get(range?.start);
+    const end = locations.get(range?.end);
+    if (!start || !end) {
+      throw new Error(
+        `Mini-node ${node.id || "<missing>"} contains an unknown changed-line range.`,
+      );
+    }
+    if (
+      start.fileId !== file.id
+      || end.fileId !== file.id
+      || start.hunk.id !== end.hunk.id
+      || start.hunkChangedIndex > end.hunkChangedIndex
+    ) {
+      throw new Error(
+        `Mini-node ${node.id || "<missing>"} ranges must be forward, file-local, and stay within one hunk.`,
+      );
+    }
+    if (start.fileChangedIndex <= previousEndIndex) {
+      throw new Error(
+        `Mini-node ${node.id || "<missing>"} ranges must be non-overlapping and in source order.`,
+      );
+    }
+
+    expanded.push(
+      ...start.hunk.changedLineIds.slice(
+        start.hunkChangedIndex,
+        end.hunkChangedIndex + 1,
+      ),
+    );
+    previousEndIndex = end.fileChangedIndex;
+  }
+
+  return expanded;
+}
+
+function compactLineOwnership(analysis) {
+  return {
+    ...analysis,
+    files: (analysis?.files || []).map(({ codeRefs, ...file }) => ({
+      ...file,
+      miniTree: {
+        ...file.miniTree,
+        nodes: (file.miniTree?.nodes || []).map(
+          ({ changedLineIds, ...node }) => node,
+        ),
+      },
+    })),
   };
 }
 
 function buildMiniTreesPrompt({
-  diffLineMapText,
-  diffPatchText,
-  fileMapText,
   metadataText,
   miniTreesPrompt,
   previousFailure,
   sharedPrompt,
+  structuredDiffText,
 }) {
   return `${sharedPrompt.trim()}
 
 ${miniTreesPrompt.trim()}
 ${buildRetryGuidance(previousFailure)}
 ${buildSourceInput({
-    diffLineMapText,
-    diffPatchText,
-    fileMapText,
     metadataText,
+    structuredDiffText,
   })}
 
 Generate every changed file's one complete mini-tree as your final answer.
@@ -1178,30 +1269,23 @@ rejected for these combined reasons:
 
 ${previousFailure}
 
-Regenerate the complete mini-tree analysis from scratch. Fix every reported
-file ownership, changed-line ownership, mini-tree topology, reviewClass,
-changeRole, comment, validation, or judge issue. Every changed file must appear
-exactly once and every changed line must belong to exactly one node in that
-file's mini-tree. Rewrite weak comments to explain what changed or is related
-and why it matters or belongs next; leave how the implementation works to the
-code attached to the node. Use Markdown bullets when the explanation has
-multiple distinct points, but treat length and Markdown formatting as advisory.
-Do not remove useful context merely to meet a formatting target.
+Regenerate the complete mini-tree analysis from scratch and fix every reported
+issue while following the authoritative shared contract above.
 `
     : "";
 }
 
 function buildSourceInput({
-  diffLineMapText,
-  diffPatchText,
-  fileMapText,
   metadataText,
+  structuredDiffText,
 }) {
   return `
 ## Inline Input
 
-Use the inline input below. Do not call tools or read files unless the inline
-patch is insufficient for semantic grouping.
+Use the inline input below. The structured diff is the complete source input:
+it contains file and hunk metadata, context lines, and every changed-line id
+with its content. Do not call tools or read files unless this input is
+insufficient for semantic grouping.
 
 ### metadata.json
 
@@ -1209,41 +1293,28 @@ patch is insufficient for semantic grouping.
 ${metadataText}
 </metadata_json>
 
-### diff-file-map.json
+### Structured diff
 
-<diff_file_map_json>
-${fileMapText}
-</diff_file_map_json>
-
-### Changed-line map derived from diff-inventory.json
-
-<diff_line_map_json>
-${diffLineMapText}
-</diff_line_map_json>
-
-### diff.patch
-
-<diff_patch>
-${diffPatchText}
-</diff_patch>
+<structured_diff_json>
+${structuredDiffText}
+</structured_diff_json>
 `;
 }
 
 function buildJudgePrompt({
   candidateText,
-  diffLineMapText,
-  diffPatchText,
-  fileMapText,
   judgePrompt,
   metadataText,
+  structuredDiffText,
   validationReport,
 }) {
   return `${judgePrompt}
 
 ## Inline Input
 
-Use the inline input below. Do not call tools or read files unless the inline
-patch is insufficient for semantic judgment.
+Use the inline input below. The structured diff is the complete source input.
+Do not call tools or read files unless it is insufficient for semantic
+judgment.
 
 ### metadata.json
 
@@ -1251,23 +1322,11 @@ patch is insufficient for semantic judgment.
 ${metadataText}
 </metadata_json>
 
-### diff-file-map.json
+### Structured diff
 
-<diff_file_map_json>
-${fileMapText}
-</diff_file_map_json>
-
-### Changed-line map derived from diff-inventory.json
-
-<diff_line_map_json>
-${diffLineMapText}
-</diff_line_map_json>
-
-### diff.patch
-
-<diff_patch>
-${diffPatchText}
-</diff_patch>
+<structured_diff_json>
+${structuredDiffText}
+</structured_diff_json>
 
 ### Step 05 validation result
 
@@ -1288,14 +1347,12 @@ Judge the candidate mini-tree analysis as your final answer.
 async function runJudge({
   candidateText,
   cwd,
-  diffLineMapText,
-  diffPatchText,
   executionConfig,
   executeCodex,
-  fileMapText,
   judgePrompt,
   metadataText,
   outputPath,
+  structuredDiffText,
   validationReport,
 }) {
   await executeCodex({
@@ -1304,11 +1361,9 @@ async function runJudge({
     outputPath,
     prompt: buildJudgePrompt({
       candidateText,
-      diffLineMapText,
-      diffPatchText,
-      fileMapText,
       judgePrompt,
       metadataText,
+      structuredDiffText,
       validationReport,
     }),
     schemaPath: JUDGE_SCHEMA_PATH,

@@ -64,15 +64,14 @@ This starts the local benchmark dashboard:
 http://127.0.0.1:4173/reviews/
 ```
 
-Choose an OpenAI or Claude model and paste a GitHub pull request URL to queue a
-benchmark batch. The dashboard freezes the PR input once, then runs that
-model's native reasoning efforts sequentially: low through xhigh for Codex, or
-low through max for Claude. Each reasoning run remains grouped under its pull
-request and analysis batch with its timings and token usage. Re-running from
-the dashboard uses the exact saved PR metadata and diff by default. **Refresh
-from GitHub** deliberately fetches the current PR state before the first
-reasoning run. **Cancel batch** terminates the active process tree and removes
-the remaining queued efforts without deleting completed history.
+Choose an OpenAI or Claude model and paste a GitHub pull request URL to queue
+one review run. Mini-tree generation and repair use the provider's highest
+configured effort (`xhigh` for Codex, `max` for Claude); the semantic judge
+is retained for offline benchmarking but disabled in the active pipeline.
+Re-running uses the exact saved PR metadata and diff by default.
+**Refresh from GitHub** deliberately fetches the current PR state first, and
+**Cancel run** terminates the active process tree without deleting completed
+history.
 
 The latest generated run for each PR is available at a stable URL:
 

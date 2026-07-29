@@ -17,38 +17,23 @@ http://127.0.0.1:4173/reviews/
 
 ## Run semantics
 
-- Starting an analysis selects one model and creates an ordered benchmark batch
-  for every effort supported by its provider. Codex models run
-  `low` → `medium` → `high` → `xhigh`; Claude runs
-  `low` → `medium` → `high` → `max`. The effort runs are independent and
-  execute sequentially so concurrent model work does not distort timing
-  comparisons.
+- Starting an analysis selects one model and creates one run. Mini-tree
+  generation and targeted repair use the provider's highest configured effort
+  (`xhigh` for Codex and `max` for Claude). Deterministic validation is the
+  active gate; the semantic judge is retained but disabled.
 - The first run for a PR fetches its metadata and cumulative diff through the
   locally authenticated `gh` CLI. Base and head refs are checked again after
   the diff fetch; if either moved, the snapshot is retried instead of storing
   mismatched metadata and code.
-- A fresh batch fetches GitHub exactly once. Its lowest-effort run owns that
-  frozen snapshot; every later effort references the same source run and input
-  fingerprint.
-- Runs with the same batch ID appear inside one labeled batch container with
-  their model, effort count, status summary, and batch-level actions. PR and
-  effort cards start collapsed so the history stays scannable. Older runs
-  without batch metadata remain standalone entries.
 - **Run again** and submitting the same PR URL use the latest saved input by
-  default. **Run all efforts** is shown once in each batch header and queues a
-  complete reasoning-effort batch with the model currently selected in the
-  global model control. This freezes the exact metadata, base/head commit SHAs,
-  and diff while exercising the current local analysis code.
+  default. This freezes the exact metadata, base/head commit SHAs, and diff
+  while exercising the current local analysis code.
 - **Refresh from GitHub** explicitly fetches the PR again before analysis.
-- **Cancel batch** stops the active GitHub or model process tree and cancels
-  every reasoning effort from that batch that is still queued. Efforts that
-  already completed remain available as benchmark history. Older standalone
-  runs expose **Cancel run** instead.
+- **Cancel run** stops the active GitHub or model process tree.
 - Every successful graph opens in a new browser tab from its run-specific URL.
   The stable PR URL continues to point at the latest rendered graph.
-- Completed effort cards can be deleted individually, or an entire completed
-  batch can be deleted from its batch header. Deletion requires confirmation
-  and removes the corresponding local run directories and generated graphs.
+- Completed runs can be deleted individually. Deletion requires confirmation
+  and removes the corresponding local run directory and generated graph.
 
 ## Timings
 
@@ -61,21 +46,20 @@ Each run records a total duration plus nested stages for:
 4. input persistence
 5. each analysis attempt, capped at three total attempts
 6. full mini-tree generation or targeted file-local repair
-7. one evaluation phase containing deterministic validation and AI semantic
-   judging
+7. deterministic validation
 8. graph build and HTML persistence
 
 The dashboard shows active progress, a nested timing waterfall, reasoning
-effort, retry attempts, and the delta from the preceding successful reasoning
-run in the same batch. A refreshed or otherwise different PR snapshot starts a
-new baseline instead of producing a misleading speed comparison.
+effort, retry attempts, and the delta from the preceding successful comparable
+run. A refreshed or otherwise different PR snapshot starts a new baseline
+instead of producing a misleading speed comparison.
 
 Timing is the primary benchmark signal. Immediately before a queued run starts,
 its metadata records the local Git commit and a code fingerprint that includes
 uncommitted changes. Each completed input snapshot also gets a deterministic
 fingerprint derived from its canonical PR metadata and exact diff. Run metadata
-also records its batch ID and position, provider, selected model, actual
-reasoning effort, PR size, and commit SHAs. When the model CLI reports usage,
+also records its provider, selected model, actual reasoning effort, PR size,
+and commit SHAs. When the model CLI reports usage,
 input, cached-input, output, and total token counts are persisted with the run,
 including when the analysis ultimately fails or is canceled after reporting
 usage.
@@ -120,18 +104,11 @@ experiments. `PRC_CLAUDE_MODELS`, `PRC_CLAUDE_MODEL`, and
 ```
 
 `POST /api/runs` accepts `{ "prUrl": "...", "model": "...", "refresh": false }`
-and returns the queued batch plus its ordered runs. `POST
-/api/batches/<batch-id>/rerun` and `POST
-/api/runs/<review-slug>/<run-id>/rerun` accept `{ "model": "..." }` and return
-the same batch shape.
+and returns the queued run. `POST
+/api/runs/<review-slug>/<run-id>/rerun` accepts `{ "model": "..." }` and returns
+one queued run against the saved input.
 
-`POST /api/batches/<batch-id>/cancel` aborts that batch's active process tree
-and cancels its queued runs. `POST
-/api/runs/<review-slug>/<run-id>/cancel` cancels a standalone run; when the
-target belongs to a batch, it delegates to whole-batch cancellation so
-dependent reasoning efforts cannot continue with missing frozen input.
-
-`DELETE /api/batches/<batch-id>` removes a completed batch. `DELETE
+`POST /api/runs/<review-slug>/<run-id>/cancel` cancels a run. `DELETE
 /api/runs/<review-slug>/<run-id>` removes one completed run. Active history
 must be canceled before deletion.
 

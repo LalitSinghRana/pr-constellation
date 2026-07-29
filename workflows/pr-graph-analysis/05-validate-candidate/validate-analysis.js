@@ -281,6 +281,7 @@ function validateMiniTree({
 
     validateChangedLineSequence({
       changedLineIds: miniNode.changedLineIds,
+      changedLineRanges: miniNode.changedLineRanges,
       errors,
       inventoryLinePositionById,
       owner,
@@ -587,8 +588,9 @@ function validateRequiredText({ errors, label, value }) {
 function indexInventoryChangedLinePositions(inventory) {
   const positions = new Map();
 
-  for (const file of inventory?.files || []) {
-    for (const hunk of file.hunks || []) {
+  for (const [fileIndex, file] of (inventory?.files || []).entries()) {
+    let fileChangedIndex = 0;
+    for (const [hunkIndex, hunk] of (file.hunks || []).entries()) {
       let changedIndex = 0;
 
       for (const [lineIndex, line] of (hunk.lines || []).entries()) {
@@ -598,11 +600,15 @@ function indexInventoryChangedLinePositions(inventory) {
 
         positions.set(line.id, {
           file: file.path,
+          fileChangedIndex,
+          fileIndex,
           hunkId: hunk.id,
+          hunkIndex,
           changedIndex,
           lineIndex,
         });
         changedIndex += 1;
+        fileChangedIndex += 1;
       }
     }
   }
@@ -612,6 +618,7 @@ function indexInventoryChangedLinePositions(inventory) {
 
 function validateChangedLineSequence({
   changedLineIds,
+  changedLineRanges,
   errors,
   inventoryLinePositionById,
   owner,
@@ -627,7 +634,22 @@ function validateChangedLineSequence({
     }))
     .filter((entry) => entry.position);
 
-  if (positions.length !== changedLineIds.length || positions.length < 2) {
+  if (positions.length !== changedLineIds.length) {
+    return;
+  }
+
+  if (Array.isArray(changedLineRanges)) {
+    validateChangedLineRanges({
+      changedLineIds,
+      changedLineRanges,
+      errors,
+      inventoryLinePositionById,
+      owner,
+    });
+    return;
+  }
+
+  if (positions.length < 2) {
     return;
   }
 
@@ -668,6 +690,84 @@ function validateChangedLineSequence({
       );
       return;
     }
+  }
+}
+
+function validateChangedLineRanges({
+  changedLineIds,
+  changedLineRanges,
+  errors,
+  inventoryLinePositionById,
+  owner,
+}) {
+  if (changedLineRanges.length === 0) {
+    errors.push(`analysis.json miniNode ${owner} must contain at least one changedLineRange.`);
+    return;
+  }
+
+  const expandedIds = [];
+  let previousEndPosition = null;
+
+  for (const [rangeIndex, range] of changedLineRanges.entries()) {
+    const start = inventoryLinePositionById.get(range?.start);
+    const end = inventoryLinePositionById.get(range?.end);
+
+    if (!start || !end) {
+      errors.push(
+        `analysis.json miniNode ${owner} changedLineRanges[${rangeIndex}] references an unknown boundary.`,
+      );
+      continue;
+    }
+
+    if (
+      start.file !== end.file
+      || start.hunkId !== end.hunkId
+      || start.changedIndex > end.changedIndex
+    ) {
+      errors.push(
+        `analysis.json miniNode ${owner} changedLineRanges[${rangeIndex}] must be forward and stay within one file hunk.`,
+      );
+      continue;
+    }
+
+    if (
+      previousEndPosition
+      && (
+        start.fileIndex < previousEndPosition.fileIndex
+        || (
+          start.fileIndex === previousEndPosition.fileIndex
+          && start.fileChangedIndex <= previousEndPosition.fileChangedIndex
+        )
+      )
+    ) {
+      errors.push(
+        `analysis.json miniNode ${owner} changedLineRanges must be non-overlapping and appear in source order.`,
+      );
+      continue;
+    }
+
+    const rangeIds = [...inventoryLinePositionById.entries()]
+      .filter(([, position]) => (
+        position.file === start.file
+        && position.hunkId === start.hunkId
+        && position.changedIndex >= start.changedIndex
+        && position.changedIndex <= end.changedIndex
+      ))
+      .sort((left, right) => (
+        left[1].changedIndex - right[1].changedIndex
+      ))
+      .map(([lineId]) => lineId);
+    expandedIds.push(...rangeIds);
+    previousEndPosition = end;
+  }
+
+  if (
+    expandedIds.length !== changedLineIds.length
+    || expandedIds.some((lineId, index) => lineId !== changedLineIds[index])
+  ) {
+    errors.push(
+      `analysis.json miniNode ${owner} changedLineIds must exactly match its materialized changedLineRanges.`,
+    );
   }
 }
 

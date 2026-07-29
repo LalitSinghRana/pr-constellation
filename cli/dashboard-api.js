@@ -25,12 +25,12 @@ export function createDashboardApiMiddleware({ service }) {
           throw createHttpError(400, "prUrl is required.");
         }
         validateOptionalModel(body.model);
-        const batch = await service.enqueueBatch({
+        const run = await service.enqueue({
           model: body.model?.trim(),
           prUrl: body.prUrl.trim(),
           refresh: body.refresh === true,
         });
-        sendJson(response, 202, { batch, runs: batch.runs });
+        sendJson(response, 202, { run, runs: [run] });
         return;
       }
 
@@ -51,11 +51,11 @@ export function createDashboardApiMiddleware({ service }) {
         const batchId = decodePathPart(rerunBatchMatch[1]);
         const body = await readOptionalJsonBody(request);
         validateOptionalModel(body.model);
-        const batch = await service.enqueueFrozenBatchRerun({
+        const run = await service.enqueueFrozenBatchRerun({
           batchId,
           model: body.model?.trim(),
         });
-        sendJson(response, 202, { batch, runs: batch.runs });
+        sendJson(response, 202, { run, runs: [run] });
         return;
       }
 
@@ -78,12 +78,12 @@ export function createDashboardApiMiddleware({ service }) {
         const runId = decodePathPart(rerunMatch[2]);
         const body = await readOptionalJsonBody(request);
         validateOptionalModel(body.model);
-        const batch = await service.enqueueFrozenRerun({
+        const run = await service.enqueueFrozenRerun({
           model: body.model?.trim(),
           runId,
           slug,
         });
-        sendJson(response, 202, { batch, runs: batch.runs });
+        sendJson(response, 202, { run, runs: [run] });
         return;
       }
 

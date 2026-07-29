@@ -93,13 +93,6 @@ index 1111111..2222222 100644
                 reviewClass: "important",
                 changeRole: "runtime",
                 comment: "This file changes the fixture value used by the benchmark.",
-                codeRefs: {
-                  fileIds: ["file-1"],
-                  changedLineIds: [
-                    "file-1:hunk-1:line-1",
-                    "file-1:hunk-1:line-2",
-                  ],
-                },
                 miniTree: {
                   nodes: [
                     {
@@ -108,10 +101,10 @@ index 1111111..2222222 100644
                       reviewClass: "core",
                       changeRole: "runtime",
                       comment: "The changed assignment is the complete runtime contract.",
-                      changedLineIds: [
-                        "file-1:hunk-1:line-1",
-                        "file-1:hunk-1:line-2",
-                      ],
+                      changedLineRanges: [{
+                        start: "file-1:hunk-1:line-1",
+                        end: "file-1:hunk-1:line-2",
+                      }],
                     },
                   ],
                   reviewEdges: [],
@@ -138,14 +131,13 @@ index 1111111..2222222 100644
   assert.equal(result.metadata.headRefOid, "head-sha");
   assert.equal(result.diffSummary.changedLineCount, 2);
   assert.equal(result.runDir, targetRunDir);
-  assert.equal(codexCalls.length, 2);
+  assert.equal(codexCalls.length, 1);
   assert.deepEqual(
     codexCalls.map(({ model, reasoningEffort }) => ({
       model,
       reasoningEffort,
     })),
     [
-      { model: "gpt-fixture", reasoningEffort: "low" },
       { model: "gpt-fixture", reasoningEffort: "low" },
     ],
   );
@@ -185,7 +177,6 @@ index 1111111..2222222 100644
     sourceRunDir,
   });
   assert.deepEqual(claudeCalls, [
-    { model: "claude-sonnet-4-6", reasoningEffort: "max" },
     { model: "claude-sonnet-4-6", reasoningEffort: "max" },
   ]);
 
@@ -236,7 +227,6 @@ index 1111111..2222222 100644
     "analysis.attempt-1.generate-mini-trees",
     "analysis.attempt-1.evaluation",
     "analysis.attempt-1.evaluation.validate-candidate",
-    "analysis.attempt-1.evaluation.judge-candidate",
     "analysis.persist-artifacts",
     "render",
     "render.build",
@@ -246,6 +236,10 @@ index 1111111..2222222 100644
     assert.equal(finishes.get(stageId)?.status, "completed");
     assert.equal(typeof finishes.get(stageId)?.metrics?.elapsedMs, "number");
   }
+  assert.equal(
+    finishes.get("analysis.attempt-1.evaluation.judge-candidate")?.status,
+    "skipped",
+  );
 
   assert.equal(
     finishes.get("inventory.parse").parentStageId,
@@ -312,10 +306,10 @@ index 1111111..2222222 100644
   );
 
   assert.deepEqual(renderCancelError.usage, {
-    inputTokens: 24,
-    cachedInputTokens: 8,
-    outputTokens: 6,
-    totalTokens: 30,
+    inputTokens: 12,
+    cachedInputTokens: 4,
+    outputTokens: 3,
+    totalTokens: 15,
   });
   assert.equal(
     renderCancelEvents.find(

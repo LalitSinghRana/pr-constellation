@@ -225,7 +225,7 @@ export class DashboardService {
         ? source.run.metrics.model
         : undefined
     );
-    return this.enqueueBatch({
+    return this.enqueue({
       model: sourceModel,
       prUrl: source.run.url,
       sourceRunId: source.run.runId,
@@ -1051,7 +1051,11 @@ export class DashboardService {
       || this.#configuration.reasoningEfforts;
     const selected = typeof reasoningEffort === "string" && reasoningEffort.trim()
       ? reasoningEffort.trim()
-      : supported[0];
+      : supported.includes("xhigh")
+        ? "xhigh"
+        : supported.includes("max")
+          ? "max"
+          : supported.at(-1);
     if (!supported.includes(selected)) {
       const error = new Error(
         `Unsupported reasoning effort "${selected}" for ${model}.`,
