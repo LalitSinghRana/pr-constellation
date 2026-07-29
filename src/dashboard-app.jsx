@@ -14,7 +14,6 @@ import {
   GitCommitHorizontal,
   GitPullRequest,
   History,
-  Layers3,
   LoaderCircle,
   Play,
   RefreshCw,
@@ -52,7 +51,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select.jsx";
-import { groupRunsForDisplay } from "./dashboard-run-groups.js";
 
 const FAST_POLL_MS = 1_000;
 const IDLE_POLL_MS = 5_000;
@@ -85,17 +83,6 @@ export function DashboardApp({ apiBase = "/api" }) {
       ...(typeof defaultModel === "string" && defaultModel.trim() ? [defaultModel] : []),
     ])];
   }, [dashboard.configuration]);
-  const reasoningEfforts = useMemo(
-    () => {
-      const modelEfforts = dashboard.configuration?.modelReasoningEfforts?.[selectedModel];
-      return Array.isArray(modelEfforts)
-        ? modelEfforts
-        : Array.isArray(dashboard.configuration?.reasoningEfforts)
-          ? dashboard.configuration.reasoningEfforts
-          : [];
-    },
-    [dashboard.configuration, selectedModel],
-  );
   const hasActiveRun = useMemo(() => {
     if (dashboard.queue?.activeRunId || dashboard.queue?.queuedRunIds?.length) {
       return true;
@@ -183,10 +170,8 @@ export function DashboardApp({ apiBase = "/api" }) {
       if (!response.ok) {
         throw new Error(body?.error || body?.message || `Could not start analysis (${response.status})`);
       }
-      const runCount = Array.isArray(body?.runs) ? body.runs.length : 1;
       setNotice(
-        `${refresh ? "Fresh GitHub snapshot" : "Analysis"} queued for ${runCount} `
-        + `${runCount === 1 ? "reasoning effort" : "reasoning efforts"} on ${selectedModel}.`,
+        `${refresh ? "Fresh GitHub snapshot" : "Analysis"} queued on ${selectedModel}.`,
       );
       await loadDashboard({ quiet: true });
       return true;
@@ -198,14 +183,9 @@ export function DashboardApp({ apiBase = "/api" }) {
     }
   }, [apiBase, loadDashboard, selectedModel]);
 
-  const rerun = useCallback(async ({ batchId = "", prSlug = "", runId = "" }) => {
-    const isBatch = Boolean(batchId);
-    const mutationId = isBatch
-      ? `rerun:batch:${batchId}`
-      : `rerun:${prSlug}:${runId}`;
-    const endpoint = isBatch
-      ? `${apiBase}/batches/${encodeURIComponent(batchId)}/rerun`
-      : `${apiBase}/runs/${encodeURIComponent(prSlug)}/${encodeURIComponent(runId)}/rerun`;
+  const rerun = useCallback(async ({ prSlug = "", runId = "" }) => {
+    const mutationId = `rerun:${prSlug}:${runId}`;
+    const endpoint = `${apiBase}/runs/${encodeURIComponent(prSlug)}/${encodeURIComponent(runId)}/rerun`;
     setMutation(mutationId);
     setNotice("");
     try {
@@ -221,11 +201,7 @@ export function DashboardApp({ apiBase = "/api" }) {
       if (!response.ok) {
         throw new Error(body?.error || body?.message || `Could not queue rerun (${response.status})`);
       }
-      const runCount = Array.isArray(body?.runs) ? body.runs.length : 1;
-      setNotice(
-        `Frozen benchmark queued for ${runCount} `
-        + `${runCount === 1 ? "reasoning effort" : "reasoning efforts"} on ${selectedModel}.`,
-      );
+      setNotice(`Frozen benchmark queued on ${selectedModel}.`);
       await loadDashboard({ quiet: true });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : String(requestError));
@@ -234,14 +210,9 @@ export function DashboardApp({ apiBase = "/api" }) {
     }
   }, [apiBase, loadDashboard, selectedModel]);
 
-  const deleteHistory = useCallback(async ({ batchId = "", prSlug = "", runId = "" }) => {
-    const isBatch = Boolean(batchId);
-    const mutationId = isBatch
-      ? `delete:batch:${batchId}`
-      : `delete:run:${prSlug}:${runId}`;
-    const endpoint = isBatch
-      ? `${apiBase}/batches/${encodeURIComponent(batchId)}`
-      : `${apiBase}/runs/${encodeURIComponent(prSlug)}/${encodeURIComponent(runId)}`;
+  const deleteHistory = useCallback(async ({ prSlug = "", runId = "" }) => {
+    const mutationId = `delete:run:${prSlug}:${runId}`;
+    const endpoint = `${apiBase}/runs/${encodeURIComponent(prSlug)}/${encodeURIComponent(runId)}`;
 
     setMutation(mutationId);
     setError("");
@@ -257,11 +228,11 @@ export function DashboardApp({ apiBase = "/api" }) {
         throw new Error(
           body?.error
           || body?.message
-          || `Could not delete ${isBatch ? "batch" : "run"} history (${response.status})`,
+          || `Could not delete run history (${response.status})`,
         );
       }
       await loadDashboard({ quiet: true });
-      setNotice(isBatch ? "Analysis batch deleted from history." : "Analysis run deleted from history.");
+      setNotice("Analysis run deleted from history.");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : String(requestError));
     } finally {
@@ -269,14 +240,9 @@ export function DashboardApp({ apiBase = "/api" }) {
     }
   }, [apiBase, loadDashboard]);
 
-  const cancelAnalysis = useCallback(async ({ batchId, prSlug, runId }) => {
-    const isBatch = Boolean(batchId);
-    const mutationId = isBatch
-      ? `cancel:batch:${batchId}`
-      : `cancel:run:${prSlug}:${runId}`;
-    const endpoint = isBatch
-      ? `${apiBase}/batches/${encodeURIComponent(batchId)}/cancel`
-      : `${apiBase}/runs/${encodeURIComponent(prSlug)}/${encodeURIComponent(runId)}/cancel`;
+  const cancelAnalysis = useCallback(async ({ prSlug, runId }) => {
+    const mutationId = `cancel:run:${prSlug}:${runId}`;
+    const endpoint = `${apiBase}/runs/${encodeURIComponent(prSlug)}/${encodeURIComponent(runId)}/cancel`;
 
     setMutation(mutationId);
     setError("");
@@ -293,7 +259,7 @@ export function DashboardApp({ apiBase = "/api" }) {
         throw new Error(
           body?.error
           || body?.message
-          || `Could not cancel ${isBatch ? "batch" : "run"} (${response.status})`,
+          || `Could not cancel run (${response.status})`,
         );
       }
     } catch (requestError) {
@@ -304,7 +270,7 @@ export function DashboardApp({ apiBase = "/api" }) {
     if (actionError) {
       setError(actionError);
     } else {
-      setNotice(isBatch ? "Analysis batch cancelled." : "Analysis run cancelled.");
+      setNotice("Analysis run cancelled.");
     }
     setMutation("");
   }, [apiBase, loadDashboard]);
@@ -364,7 +330,6 @@ export function DashboardApp({ apiBase = "/api" }) {
           models={modelOptions}
           onModelChange={setSelectedModel}
           onSubmit={createRun}
-          reasoningEfforts={reasoningEfforts}
         />
 
         <div className="benchmark-feedback" aria-live="polite">
@@ -404,7 +369,6 @@ export function DashboardApp({ apiBase = "/api" }) {
               {prs.map((pr) => (
                 <PullRequestCard
                   key={pr.slug || `${pr.owner}/${pr.repo}/${pr.number}`}
-                  model={selectedModel}
                   mutation={mutation}
                   now={now}
                   onCancel={cancelAnalysis}
@@ -431,7 +395,6 @@ function NewAnalysisForm({
   models,
   onModelChange,
   onSubmit,
-  reasoningEfforts,
 }) {
   const [prUrl, setPrUrl] = useState("");
   const [validation, setValidation] = useState("");
@@ -457,11 +420,7 @@ function NewAnalysisForm({
       <div className="benchmark-launcher-copy">
         <h2 id="new-analysis-title">Generate a new analysis</h2>
         <p>
-          One frozen PR input, then{" "}
-          {reasoningEfforts.length
-            ? reasoningEfforts.map(formatReasoningEffort).join(" → ")
-            : "each reasoning effort"}{" "}
-          in sequence.
+          One review run with highest-effort mini-tree analysis.
         </p>
       </div>
       <form className="benchmark-launcher-form" onSubmit={submit}>
@@ -520,7 +479,7 @@ function NewAnalysisForm({
           disabled={busy || !model}
         >
           {busy ? <LoaderCircle className="benchmark-spin" /> : <Play />}
-          {busy ? "Adding…" : "Run all efforts"}
+          {busy ? "Adding…" : "Generate analysis"}
         </Button>
         {validation ? (
           <p className="benchmark-field-error" id="pull-request-url-error">{validation}</p>
@@ -550,7 +509,6 @@ function OverviewStats({ stats }) {
 }
 
 function PullRequestCard({
-  model,
   mutation,
   now,
   onCancel,
@@ -559,14 +517,7 @@ function PullRequestCard({
   onRerun,
   pr,
 }) {
-  const runGroups = useMemo(
-    () => groupRunsForDisplay(pr.runs || []),
-    [pr.runs],
-  );
-  const runs = useMemo(
-    () => runGroups.flatMap((group) => group.runs),
-    [runGroups],
-  );
+  const runs = useMemo(() => sortRuns(pr.runs || []), [pr.runs]);
   const runIndexes = useMemo(
     () => new Map(runs.map((run, index) => [run, index])),
     [runs],
@@ -577,30 +528,24 @@ function PullRequestCard({
   const fileCount = metricValue(latestRun, pr, ["fileCount", "filesChanged", "changedFiles"]);
   const prSlug = pr.slug || `${pr.owner}-${pr.repo}-${pr.number}`;
 
-  const renderRunCard = (run, {
-    batchId = "",
-    showCancel = false,
-  } = {}) => {
+  const renderRunCard = (run) => {
     const index = runIndexes.get(run) ?? 0;
     const runId = String(run.id || run.runId || `run-${index + 1}`);
     const previousSucceededRun = findPreviousComparableRun(runs, index);
 
     return (
       <RunCard
-        batchId={batchId}
         comparison={buildRunComparison(run, previousSucceededRun, now)}
         key={runId}
         mutation={mutation}
         now={now}
-        onCancel={() => onCancel({ batchId, prSlug, runId })}
+        onCancel={() => onCancel({ prSlug, runId })}
         onDelete={() => onDelete({ prSlug, runId })}
         onRerun={() => onRerun({ prSlug, runId })}
         pr={pr}
         prSlug={prSlug}
         run={run}
         runId={runId}
-        showCancel={showCancel}
-        showRerun={!batchId}
       />
     );
   };
@@ -656,147 +601,14 @@ function PullRequestCard({
       </div>
       <CollapsibleContent className="benchmark-pr-content">
         <div className="benchmark-run-list">
-          {runGroups.map((group) => {
-            if (!group.batchId) {
-              return renderRunCard(group.runs[0], { showCancel: true });
-            }
-
-            return (
-              <RunBatchGroup
-                batchId={group.batchId}
-                key={group.key}
-                mutation={mutation}
-                onCancel={() => onCancel({
-                  batchId: group.batchId,
-                  prSlug,
-                })}
-                onDelete={() => onDelete({
-                  batchId: group.batchId,
-                  prSlug,
-                })}
-                onRerun={() => onRerun({
-                  batchId: group.batchId,
-                  prSlug,
-                })}
-                selectedModel={model}
-                runs={group.runs}
-              >
-                {group.runs.map((run) => renderRunCard(run, {
-                  batchId: group.batchId,
-                }))}
-              </RunBatchGroup>
-            );
-          })}
+          {runs.slice(0, 4).map(renderRunCard)}
         </div>
       </CollapsibleContent>
     </Collapsible>
   );
 }
 
-function RunBatchGroup({
-  batchId,
-  children,
-  mutation,
-  onCancel,
-  onDelete,
-  onRerun,
-  runs,
-  selectedModel,
-}) {
-  const active = runs.some((run) => (
-    ACTIVE_STATUSES.has(normalizeStatus(run.status))
-  ));
-  const cancelMutation = `cancel:batch:${batchId}`;
-  const rerunMutation = `rerun:batch:${batchId}`;
-  const deleteMutation = `delete:batch:${batchId}`;
-  const headingId = `analysis-batch-${safeDomId(batchId)}`;
-  const createdAt = batchCreatedAt(runs);
-  const model = runs.map(modelLabel).find(Boolean) || "Model not recorded";
-  const expectedSize = batchSizeValue(runs);
-  const effortCount = runs.length;
-
-  return (
-    <section
-      aria-labelledby={headingId}
-      className={`benchmark-run-batch${active ? " benchmark-run-batch-active" : ""}`}
-      data-batch-id={batchId}
-    >
-      <header className="benchmark-run-batch-header" title={batchId}>
-        <span className="benchmark-run-batch-icon" aria-hidden="true">
-          <Layers3 />
-        </span>
-        <div className="benchmark-run-batch-identity">
-          <span>
-            Analysis batch
-            <code>{shortBatchLabel(batchId)}</code>
-          </span>
-          <h3 id={headingId}>
-            <span className="benchmark-visually-hidden">Analysis batch from </span>
-            {formatDateTime(createdAt)}
-          </h3>
-        </div>
-        <div className="benchmark-run-batch-facts">
-          <span>{model}</span>
-          <span>
-            {expectedSize && expectedSize !== effortCount
-              ? `${effortCount} of ${expectedSize}`
-              : effortCount}{" "}
-            {effortCount === 1 ? "effort" : "efforts"}
-          </span>
-          <span>{summarizeBatchStatuses(runs)}</span>
-        </div>
-        <div className="benchmark-run-batch-actions">
-          {active ? (
-            <Button
-              aria-label="Cancel analysis batch"
-              className="benchmark-cancel-button"
-              disabled={Boolean(mutation)}
-              onClick={onCancel}
-              size="sm"
-              title="Cancel the running analysis and every queued effort in this batch"
-              variant="destructive"
-            >
-              {mutation === cancelMutation
-                ? <LoaderCircle className="benchmark-spin" />
-                : <XCircle />}
-              {mutation === cancelMutation ? "Cancelling…" : "Cancel batch"}
-            </Button>
-          ) : (
-            <>
-              <Button
-                className="benchmark-rerun-button"
-                variant="outline"
-                size="sm"
-                disabled={Boolean(mutation) || !selectedModel}
-                onClick={onRerun}
-                title={`Rerun this frozen PR input across all efforts with ${selectedModel}`}
-              >
-                {mutation === rerunMutation
-                  ? <LoaderCircle className="benchmark-spin" />
-                  : <RotateCcw />}
-                Run all efforts
-              </Button>
-              <DeleteHistoryButton
-                description={`This permanently removes all ${effortCount} saved run ${
-                  effortCount === 1 ? "artifact" : "artifacts"
-                } in this batch. Generated graphs for these runs will stop working.`}
-                disabled={Boolean(mutation)}
-                label="Delete batch"
-                mutationActive={mutation === deleteMutation}
-                onDelete={onDelete}
-                title="Delete analysis batch?"
-              />
-            </>
-          )}
-        </div>
-      </header>
-      <div className="benchmark-run-batch-list">{children}</div>
-    </section>
-  );
-}
-
 function RunCard({
-  batchId,
   comparison,
   mutation,
   now,
@@ -807,8 +619,6 @@ function RunCard({
   prSlug,
   run,
   runId,
-  showCancel,
-  showRerun,
 }) {
   const status = normalizeStatus(run.status);
   const [open, setOpen] = useState(false);
@@ -820,9 +630,7 @@ function RunCard({
   const canOpenGraph = SUCCESS_STATUSES.has(status) || Boolean(run.graphUrl || run.reviewUrl || run.graphReady);
   const rerunMutation = `rerun:${prSlug}:${runId}`;
   const deleteMutation = `delete:run:${prSlug}:${runId}`;
-  const cancelMutation = batchId
-    ? `cancel:batch:${batchId}`
-    : `cancel:run:${prSlug}:${runId}`;
+  const cancelMutation = `cancel:run:${prSlug}:${runId}`;
 
   return (
     <Collapsible className={`benchmark-run benchmark-run-${status}`} open={open} onOpenChange={setOpen}>
@@ -861,27 +669,25 @@ function RunCard({
           <ChevronDown className="benchmark-chevron" aria-hidden="true" />
         </CollapsibleTrigger>
         <div className="benchmark-run-actions">
-          {showCancel && ACTIVE_STATUSES.has(status) ? (
+          {ACTIVE_STATUSES.has(status) ? (
             <Button
               className="benchmark-cancel-button"
               variant="destructive"
               size="sm"
               disabled={Boolean(mutation)}
               onClick={onCancel}
-              aria-label={batchId ? "Cancel analysis batch" : "Cancel analysis run"}
-              title={batchId
-                ? "Cancel the running analysis and every queued effort in this batch"
-                : "Cancel this analysis run"}
+              aria-label="Cancel analysis run"
+              title="Cancel this analysis run"
             >
               {mutation === cancelMutation
                 ? <LoaderCircle className="benchmark-spin" />
                 : <XCircle />}
               {mutation === cancelMutation
                 ? "Cancelling…"
-                : batchId ? "Cancel batch" : "Cancel run"}
+                : "Cancel run"}
             </Button>
           ) : null}
-          {showRerun ? (
+          {!ACTIVE_STATUSES.has(status) ? (
             <Button
               className="benchmark-rerun-button"
               variant="outline"
@@ -893,7 +699,7 @@ function RunCard({
               {mutation === rerunMutation
                 ? <LoaderCircle className="benchmark-spin" />
                 : <RotateCcw />}
-              Run all efforts
+              Run again
             </Button>
           ) : null}
           {!ACTIVE_STATUSES.has(status) ? (
@@ -1100,8 +906,6 @@ function RunMetadata({ pr, run }) {
   const headSha = run.headSha || run.input?.headSha || pr.headSha;
   const model = modelLabel(run);
   const reasoningEffort = reasoningEffortLabel(run);
-  const batchIndex = batchIndexValue(run);
-  const batchSize = numericValue(run.metrics?.batchSize, run.batchSize);
   const tokens = tokenCount(run);
 
   return (
@@ -1128,9 +932,6 @@ function RunMetadata({ pr, run }) {
         </MetadataRow>
         <MetadataRow icon={Gauge} label="Reasoning">
           {reasoningEffort ? formatReasoningEffort(reasoningEffort) : "—"}
-          {batchIndex != null && batchSize != null
-            ? ` · ${batchIndex + 1} of ${batchSize}`
-            : ""}
         </MetadataRow>
         <MetadataRow icon={Clock3} label="Tokens">
           {tokens == null ? "—" : formatNumber(tokens)}
@@ -1202,30 +1003,7 @@ function sortPullRequests(prs) {
 }
 
 function sortRuns(runs) {
-  const groupTimestamp = new Map();
-  for (const run of runs) {
-    const groupId = runBatchId(run) || `run:${run.runId || run.id || runTimestamp(run)}`;
-    groupTimestamp.set(
-      groupId,
-      Math.max(groupTimestamp.get(groupId) || 0, runTimestamp(run)),
-    );
-  }
-
-  return [...runs].sort((left, right) => {
-    const leftBatchId = runBatchId(left);
-    const rightBatchId = runBatchId(right);
-    if (leftBatchId && leftBatchId === rightBatchId) {
-      const leftIndex = batchIndexValue(left);
-      const rightIndex = batchIndexValue(right);
-      if (leftIndex != null && rightIndex != null && leftIndex !== rightIndex) {
-        return leftIndex - rightIndex;
-      }
-    }
-
-    const leftGroup = leftBatchId || `run:${left.runId || left.id || runTimestamp(left)}`;
-    const rightGroup = rightBatchId || `run:${right.runId || right.id || runTimestamp(right)}`;
-    return (groupTimestamp.get(rightGroup) || 0) - (groupTimestamp.get(leftGroup) || 0);
-  });
+  return [...runs].sort((left, right) => runTimestamp(right) - runTimestamp(left));
 }
 
 function latestRunTimestamp(pr) {
@@ -1425,85 +1203,6 @@ function reasoningEffortLabel(run) {
   return typeof effort === "string" ? effort : "";
 }
 
-function runBatchId(run) {
-  const batchId = run.batchId || run.metrics?.batchId;
-  return typeof batchId === "string" && batchId ? batchId : "";
-}
-
-function batchIndexValue(run) {
-  return numericValue(run.batchIndex, run.metrics?.batchIndex);
-}
-
-function batchSizeValue(runs) {
-  return Math.max(
-    0,
-    ...runs.map((run) => (
-      numericValue(run.batchSize, run.metrics?.batchSize) || 0
-    )),
-  );
-}
-
-function batchCreatedAt(runs) {
-  const timestamps = runs
-    .map((run) => parseTimestamp(
-      runTimestampValue(run, "createdAt")
-      || runTimestampValue(run, "queuedAt")
-      || runStartedAt(run),
-    ))
-    .filter(Boolean);
-  return timestamps.length ? Math.min(...timestamps) : 0;
-}
-
-function summarizeBatchStatuses(runs) {
-  const counts = new Map();
-  for (const run of runs) {
-    const normalized = normalizeStatus(run.status);
-    const status = SUCCESS_STATUSES.has(normalized)
-      ? "succeeded"
-      : normalized === "cancelled" || normalized === "canceled"
-        ? "canceled"
-        : normalized === "interrupted"
-          ? "interrupted"
-          : FAILURE_STATUSES.has(normalized)
-            ? "failed"
-            : normalized || "unknown";
-    counts.set(status, (counts.get(status) || 0) + 1);
-  }
-
-  const labels = {
-    running: "running",
-    queued: "queued",
-    succeeded: "complete",
-    failed: "failed",
-    canceled: "cancelled",
-    interrupted: "interrupted",
-    unknown: "unknown",
-  };
-  const order = [
-    "running",
-    "queued",
-    "succeeded",
-    "failed",
-    "canceled",
-    "interrupted",
-    "unknown",
-  ];
-  return order
-    .filter((status) => counts.has(status))
-    .map((status) => `${counts.get(status)} ${labels[status]}`)
-    .join(" · ");
-}
-
-function shortBatchLabel(batchId) {
-  const value = String(batchId);
-  const suffix = value.split("-").filter(Boolean).at(-1) || value;
-  return suffix.length > 8 ? suffix.slice(-8) : suffix;
-}
-
-function safeDomId(value) {
-  return String(value).replace(/[^a-zA-Z0-9_-]/g, "-");
-}
-
 function currentStageLabel(run, stages) {
   const explicit = run.currentStage?.label
     || run.currentStage?.name
@@ -1580,20 +1279,6 @@ function findPreviousComparableRun(runs, index) {
   const inputFingerprint = runInputFingerprint(run);
   if (!inputFingerprint) {
     return null;
-  }
-
-  const batchId = runBatchId(run);
-  const batchIndex = batchIndexValue(run);
-  if (batchId && batchIndex != null) {
-    if (batchIndex === 0) {
-      return null;
-    }
-    return runs.find((candidate) => (
-      runBatchId(candidate) === batchId
-      && batchIndexValue(candidate) === batchIndex - 1
-      && SUCCESS_STATUSES.has(normalizeStatus(candidate.status))
-      && runInputFingerprint(candidate) === inputFingerprint
-    )) || null;
   }
 
   return runs

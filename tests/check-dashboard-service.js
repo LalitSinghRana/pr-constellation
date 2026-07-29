@@ -290,7 +290,7 @@ try {
   assert.equal(executions[1].sourceRunDir, null);
   assert.equal(executions[0].model, "gpt-fixture");
   assert.equal(executions[0].provider, "codex");
-  assert.equal(executions[0].reasoningEffort, "low");
+  assert.equal(executions[0].reasoningEffort, "xhigh");
   const storedFirst = await service.store.readRun(first.slug, first.runId);
   const storedSecond = await service.store.readRun(second.slug, second.runId);
   assert.equal(storedFirst.status, "succeeded");
@@ -489,35 +489,29 @@ try {
     { code: "INVALID_REASONING_EFFORT" },
   );
 
-  const rerunBatch = await service.enqueueFrozenRerun({
+  const rerunRun = await service.enqueueFrozenRerun({
     model: "gpt-other",
     runId: first.runId,
     slug: first.slug,
   });
-  assert.equal(rerunBatch.model, "gpt-other");
-  assert.deepEqual(
-    rerunBatch.runs.map((run) => run.sourceRunId),
-    Array(4).fill(first.runId),
-  );
+  assert.equal(rerunRun.metrics.model, "gpt-other");
+  assert.equal(rerunRun.sourceRunId, first.runId);
   await service.waitForIdle();
-  assert.deepEqual(
-    executions.slice(-4).map((execution) => execution.sourceRunDir),
-    Array(4).fill(
-      await realpath(service.store.getRunDir(first.slug, first.runId)),
-    ),
+  assert.equal(
+    executions.at(-1).sourceRunDir,
+    await realpath(service.store.getRunDir(first.slug, first.runId)),
   );
 
   const batchRerun = await service.enqueueFrozenBatchRerun({
     batchId: batch.batchId,
     model: "gpt-fixture",
   });
-  assert.equal(batchRerun.model, "gpt-fixture");
-  assert.deepEqual(
-    batchRerun.runs.map((run) => run.metrics.model),
-    Array(4).fill("gpt-fixture"),
-  );
+  assert.equal(batchRerun.metrics.model, "gpt-fixture");
   await assert.rejects(
-    () => service.deleteBatchHistory({ batchId: batch.batchId }),
+    () => service.deleteRunHistory({
+      runId: batchRerun.runId,
+      slug: batchRerun.slug,
+    }),
     { code: "HISTORY_TARGET_ACTIVE" },
   );
   await service.waitForIdle();
@@ -1240,31 +1234,25 @@ async function checkApiMiddleware() {
         slug: input.slug,
       };
     },
-    enqueueBatch: async (input) => {
-      calls.push(["enqueueBatch", input]);
+    enqueue: async (input) => {
+      calls.push(["enqueue", input]);
       return {
-        batchId: "new-batch",
-        model: input.model,
-        reasoningEfforts: ["low", "medium", "high", "xhigh"],
-        runs: [{ runId: "new-run" }],
+        metrics: { model: input.model, reasoningEffort: "xhigh" },
+        runId: "new-run",
       };
     },
     enqueueFrozenRerun: async (input) => {
       calls.push(["rerun", input]);
       return {
-        batchId: "rerun-batch",
-        model: input.model,
-        reasoningEfforts: ["low", "medium", "high", "xhigh"],
-        runs: [{ runId: "rerun" }],
+        metrics: { model: input.model, reasoningEffort: "xhigh" },
+        runId: "rerun",
       };
     },
     enqueueFrozenBatchRerun: async (input) => {
       calls.push(["rerunBatch", input]);
       return {
-        batchId: "next-batch",
-        model: input.model,
-        reasoningEfforts: ["low", "medium", "high", "xhigh"],
-        runs: [{ runId: "next-run" }],
+        metrics: { model: input.model, reasoningEffort: "xhigh" },
+        runId: "next-run",
       };
     },
     snapshot: async () => ({ prs: [], queue: {} }),
@@ -1299,16 +1287,17 @@ async function checkApiMiddleware() {
     });
     assert.equal(createResponse.status, 202);
     assert.deepEqual(await createResponse.json(), {
-      batch: {
-        batchId: "new-batch",
-        model: "gpt-fixture",
-        reasoningEfforts: ["low", "medium", "high", "xhigh"],
-        runs: [{ runId: "new-run" }],
+      run: {
+        metrics: { model: "gpt-fixture", reasoningEffort: "xhigh" },
+        runId: "new-run",
       },
-      runs: [{ runId: "new-run" }],
+      runs: [{
+        metrics: { model: "gpt-fixture", reasoningEffort: "xhigh" },
+        runId: "new-run",
+      }],
     });
     assert.deepEqual(calls[0], [
-      "enqueueBatch",
+      "enqueue",
       {
         model: "gpt-fixture",
         prUrl: "https://github.com/example/alpha/pull/1",

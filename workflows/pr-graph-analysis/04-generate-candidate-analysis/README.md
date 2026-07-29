@@ -1,7 +1,7 @@
 # 04 Generate Candidate Analysis
 
-This step asks Codex to generate `pr-graph-mini-trees/v2` JSON from the PR
-metadata, diff file map, changed-line map, and cumulative patch.
+This step asks the selected model to generate `pr-graph-mini-trees/v2` JSON
+from PR metadata and one lossless structured diff.
 
 The active generation contract has two prompt parts:
 
@@ -19,6 +19,6 @@ the code attached to each node explains How. Prefer concise Markdown comments
 and bullet lists for multiple distinct points, but length or formatting alone
 never invalidates a useful explanation.
 
-A semantic mini-node may own multiple changed spans from one hunk when only
-unchanged context separates them. Its line ids remain source ordered and may
-not skip intervening changed work owned by another node.
+A semantic mini-node emits minimal inclusive `changedLineRanges`. Each range is
+confined to one hunk, while one cohesive node may use multiple ranges or hunks.
+The runner expands ranges into line ids and derives file ownership.

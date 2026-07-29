@@ -16,14 +16,12 @@ for (const marker of [
   "pr-dashboard-root",
   "Analysis benchmark",
   "Generate a new analysis",
-  "Run all efforts",
+  "highest-effort mini-tree analysis",
   "Timing breakdown",
   "Refresh from GitHub",
-  "Run all efforts",
-  "Analysis batch",
-  "Cancel batch",
+  "Generate analysis",
+  "Run again",
   "Cancel run",
-  "Delete batch",
   "Delete run",
   "Open graph",
 ]) {
@@ -45,8 +43,6 @@ assert.match(appSource, /from "\.\/components\/ui\/input\.jsx"/);
 assert.match(appSource, /from "\.\/components\/ui\/alert-dialog\.jsx"/);
 assert.match(appSource, /from "\.\/components\/ui\/progress\.jsx"/);
 assert.match(appSource, /from "\.\/components\/ui\/select\.jsx"/);
-assert.match(appSource, /from "\.\/dashboard-run-groups\.js"/);
-assert.match(appSource, /reasoningEfforts\.map\(formatReasoningEffort\)/);
 assert.match(appSource, /model:\s*selectedModel/);
 assert.match(appSource, /modelProviders=\{dashboard\.configuration\?\.modelProviders/);
 assert.match(
@@ -54,18 +50,10 @@ assert.match(
   /Claude \$\{titleCase\(family\)\} \$\{major\}\.\$\{minor\}/,
 );
 assert.match(appSource, /Claude · \$\{model\}/);
-assert.match(appSource, /groupRunsForDisplay/);
-assert.match(appSource, /function RunBatchGroup/);
-assert.match(appSource, /data-batch-id=\{batchId\}/);
-assert.match(appSource, /benchmark-run-batch-list/);
-assert.match(appSource, /benchmark-run-batch-actions/);
 assert.match(appSource, /variant="destructive"/);
-assert.match(appSource, /Cancel analysis batch/);
 assert.match(appSource, /Cancel analysis run/);
 assert.match(appSource, /function DeleteHistoryButton/);
 assert.match(appSource, /Delete permanently/);
-assert.match(appSource, /\/batches\/\$\{encodeURIComponent\(batchId\)\}\/cancel/);
-assert.match(appSource, /\/batches\/\$\{encodeURIComponent\(batchId\)\}\/rerun/);
 assert.match(
   appSource,
   /\/runs\/\$\{encodeURIComponent\(prSlug\)\}\/\$\{encodeURIComponent\(runId\)\}\/cancel/,
@@ -80,10 +68,9 @@ assert.equal(
 );
 assert.doesNotMatch(appSource, /API est\.|formatRunCost|runCost|batchCost/);
 assert.match(appSource, /reasoningEffortLabel/);
-assert.match(appSource, /metrics\?\.batchId/);
 assert.match(appSource, /buildRunComparison/);
 assert.match(appSource, /findPreviousComparableRun/);
-assert.match(appSource, /if \(batchIndex === 0\) \{\s*return null;/);
+assert.match(appSource, /runs\.slice\(0,\s*4\)\.map\(renderRunCard\)/);
 assert.match(appSource, /runInputFingerprint\(candidate\) === inputFingerprint/);
 assert.match(appSource, /modelLabel\(candidate\) === modelLabel\(run\)/);
 assert.match(
@@ -97,9 +84,7 @@ assert.match(appSource, /run\.timings\?\.totalDurationMs/);
 assert.match(appSource, /run\?\.timestamps\?\.\[key\]/);
 assert.match(styles, /\.benchmark-waterfall/);
 assert.match(styles, /\.benchmark-model-trigger/);
-assert.match(styles, /\.benchmark-run-batch-header/);
-assert.match(styles, /\.benchmark-run-batch-active/);
-assert.match(styles, /\.benchmark-run-batch-actions/);
+assert.doesNotMatch(styles, /\.benchmark-run-batch/);
 assert.match(styles, /\.benchmark-cancel-button/);
 assert.match(styles, /\.benchmark-delete-button/);
 assert.doesNotMatch(styles, /\.benchmark-run-cost/);

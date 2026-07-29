@@ -5,8 +5,8 @@
 - exactly one file entry and one mini-tree per changed file
 - exact file id and path ownership from `diff-inventory.json`
 - every changed line is assigned to exactly one mini-tree node
-- every node owns source-ordered changed spans from one hunk; unchanged context
-  gaps are allowed, but intervening changed lines may not be skipped
+- every AI range is forward and confined to one hunk, node ranges are
+  non-overlapping and source ordered, and materialized line ids match them
 - no node contains a line from another file
 - file `codeRefs` exactly match its inventory lines
 - ordered mini-tree review edges form one valid file-local tree

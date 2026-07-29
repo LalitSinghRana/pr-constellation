@@ -19,7 +19,9 @@ Current schema: `pr-graph-mini-trees/v2`.
 
 ```txt
 files[]: exactly one entry per changed file
-  miniTree.nodes[]: maximal cohesive sections partitioning that file's changed lines
+  codeRefs: runner-derived file and changed-line ownership
+  miniTree.nodes[]: maximal cohesive sections with AI-generated changedLineRanges
+    changedLineIds: runner-expanded ownership used by validation and rendering
   miniTree.reviewEdges[]: the ordered logical review hierarchy
   miniTree.relations[]: optional technical cross-links
 ```
@@ -69,8 +71,9 @@ The deterministic validator enforces:
 
 - every changed file appears exactly once and owns one mini-tree
 - every added/deleted changed line belongs to exactly one mini-tree node
-- each mini-tree node owns source-ordered changed spans from one hunk, may
-  bridge unchanged context, and cannot skip an intervening changed line
+- each AI range is forward, source-ordered, and confined to one hunk; a
+  cohesive node may own multiple ranges or hunks
+- each node's materialized changed-line ids exactly match its ranges
 - no mini-tree node contains a changed line from another file
 - file `codeRefs` exactly match that file's changed lines
 - each mini-tree has one root and every non-root node has one review parent
@@ -81,12 +84,13 @@ The deterministic validator enforces:
 - `reviewClass` and `changeRole` use the approved values
 - required titles, comments, and relation labels are non-empty strings
 
-The judge then checks classification and hierarchy direction, whether node
-boundaries preserve cohesive implementation sections, whether comments explain
-What/Why instead of narrating How, and whether each file-local flow is
-semantically useful.
-Step 07 exposes validation and judging as one evaluation phase. Every
-schema-usable candidate is judged even when deterministic validation fails, so
-one retry receives the combined structural and semantic feedback. A run makes
-at most three total attempts; later attempts repair only the affected
-file-local mini-trees when the feedback can be scoped safely.
+The semantic judge can check classification, hierarchy, cohesion, and comments
+for offline benchmarking, but deterministic validation is the active gate.
+Generation and targeted repair use `xhigh` reasoning by default; the semantic
+judge remains configured for `high` when enabled. Generation receives one
+lossless structured diff instead of separate file maps, line maps, and patch
+copies.
+Step 07 records deterministic validation and a skipped judge stage as one
+evaluation phase. A run makes at most three total attempts; later attempts
+repair only the affected file-local mini-trees when validation feedback can be
+scoped safely.

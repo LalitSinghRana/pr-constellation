@@ -10,10 +10,12 @@ import {
 import { createDiffInventory } from "../03-build-diff-inventory/diff-inventory.js";
 import {
   buildCodexExecArgs,
+  materializeLineOwnership,
   parseCodexJsonUsage,
   resolveCodexExecutionConfig,
   runCodexExec,
   runCodexGraphAnalysis,
+  validateMiniTreeAnalysis,
 } from "../07-run-retry-loop/codex-agent.js";
 
 const parsedPr = parseGitHubPrUrl(
@@ -212,11 +214,21 @@ const miniTreeSchema = JSON.parse(
     "utf8",
   ),
 );
+const judgeContract = await readFile(
+  new URL("../06-judge-candidate/prompt.md", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   miniTreeSchema.$defs.miniNode.properties.comment.description,
   /What this cohesive code section changes or proves and why/,
 );
+assert.ok(miniTreeSchema.$defs.miniNode.properties.changedLineRanges);
+assert.equal(
+  miniTreeSchema.$defs.miniNode.properties.changedLineIds,
+  undefined,
+);
+assert.equal(miniTreeSchema.$defs.file.properties.codeRefs, undefined);
 assert.match(
   miniTreeSchema.$defs.reviewEdge.properties.comment.description,
   /why the target belongs next/,
@@ -420,6 +432,87 @@ index 0000000..1111111 100644
  console.log(value);
 `;
 
+const multiHunkInventory = createDiffInventory(`diff --git a/src/multi.js b/src/multi.js
+index 0000000..1111111 100644
+--- a/src/multi.js
++++ b/src/multi.js
+@@ -1 +1 @@
+-const first = 1;
++const first = 2;
+@@ -10 +10 @@
+-const second = 1;
++const second = 2;
+`);
+const multiHunkFile = multiHunkInventory.files[0];
+const [firstHunk, secondHunk] = multiHunkFile.hunks;
+const multiHunkCandidate = {
+  schemaVersion: "pr-graph-mini-trees/v2",
+  intent: "Update both related constants.",
+  summary: "The constants change together.",
+  confidence: 1,
+  files: [{
+    id: multiHunkFile.id,
+    path: multiHunkFile.path,
+    reviewClass: "important",
+    changeRole: "runtime",
+    comment: "Both constants form one runtime contract.",
+    miniTree: {
+      nodes: [{
+        id: "update-constants",
+        title: "Update related constants",
+        reviewClass: "core",
+        changeRole: "runtime",
+        comment: "The related defaults must move together.",
+        changedLineRanges: [
+          {
+            start: firstHunk.changedLineIds[0],
+            end: firstHunk.changedLineIds.at(-1),
+          },
+          {
+            start: secondHunk.changedLineIds[0],
+            end: secondHunk.changedLineIds.at(-1),
+          },
+        ],
+      }],
+      reviewEdges: [],
+      relations: [],
+    },
+  }],
+};
+const materializedMultiHunk = materializeLineOwnership(multiHunkCandidate, {
+  inventory: multiHunkInventory,
+});
+validateMiniTreeAnalysis(materializedMultiHunk, {
+  inventory: multiHunkInventory,
+});
+assert.deepEqual(
+  materializedMultiHunk.files[0].miniTree.nodes[0].changedLineIds,
+  multiHunkFile.changedLineIds,
+);
+assert.deepEqual(
+  materializedMultiHunk.files[0].codeRefs.changedLineIds,
+  multiHunkFile.changedLineIds,
+);
+assert.throws(
+  () => materializeLineOwnership({
+    ...multiHunkCandidate,
+    files: [{
+      ...multiHunkCandidate.files[0],
+      miniTree: {
+        ...multiHunkCandidate.files[0].miniTree,
+        nodes: [{
+          ...multiHunkCandidate.files[0].miniTree.nodes[0],
+          changedLineRanges: [{
+            start: firstHunk.changedLineIds[0],
+            end: secondHunk.changedLineIds.at(-1),
+          }],
+        }],
+      },
+    }],
+  }, { inventory: multiHunkInventory }),
+  /stay within one hunk/,
+);
+
 const runDir = await mkdtemp(path.join(tmpdir(), "prc-analysis-pipeline-"));
 
 try {
@@ -435,6 +528,9 @@ try {
     coveredLineIds: changedLineIds,
     fileId: inventoryFile.id,
     filePath: inventoryFile.path,
+  });
+  const materializedValidCandidate = materializeLineOwnership(validCandidate, {
+    inventory,
   });
   const calls = [];
   const events = [];
@@ -522,17 +618,17 @@ try {
     onEvent: async (event) => {
       events.push(event);
     },
-    reasoningEffort: "high",
+    reasoningEffort: "xhigh",
     runDir,
   });
 
-  assert.deepEqual(calls, ["mini-1", "judge-1", "repair-1", "judge-2"]);
+  assert.deepEqual(calls, ["mini-1", "repair-1"]);
   assert.deepEqual(
     executionOptions,
-    Array.from({ length: 4 }, () => ({
-      model: "selected-model",
-      reasoningEffort: "high",
-    })),
+    [
+      { model: "selected-model", reasoningEffort: "xhigh" },
+      { model: "selected-model", reasoningEffort: "xhigh" },
+    ],
   );
   assertStageTimeline(events, [
     "stage-start:analysis",
@@ -543,7 +639,7 @@ try {
     "stage-start:analysis.attempt-1.evaluation.validate-candidate",
     "stage-finish:analysis.attempt-1.evaluation.validate-candidate:failed",
     "stage-start:analysis.attempt-1.evaluation.judge-candidate",
-    "stage-finish:analysis.attempt-1.evaluation.judge-candidate:failed",
+    "stage-finish:analysis.attempt-1.evaluation.judge-candidate:skipped",
     "stage-finish:analysis.attempt-1.evaluation:failed",
     "stage-finish:analysis.attempt-1:failed",
     "stage-start:analysis.attempt-2",
@@ -553,7 +649,7 @@ try {
     "stage-start:analysis.attempt-2.evaluation.validate-candidate",
     "stage-finish:analysis.attempt-2.evaluation.validate-candidate:completed",
     "stage-start:analysis.attempt-2.evaluation.judge-candidate",
-    "stage-finish:analysis.attempt-2.evaluation.judge-candidate:completed",
+    "stage-finish:analysis.attempt-2.evaluation.judge-candidate:skipped",
     "stage-finish:analysis.attempt-2.evaluation:completed",
     "stage-finish:analysis.attempt-2:completed",
     "stage-start:analysis.persist-artifacts",
@@ -582,18 +678,14 @@ try {
     ).error,
     /miniTree changedLineIds must exactly match covered diff ids/,
   );
+  assert.equal(judgePrompts.length, 0);
   assert.equal(
     findFinishEvent(
       events,
       "analysis.attempt-1.evaluation.judge-candidate",
-    ).metrics.verdict,
-    "fail",
+    ).metrics.reason,
+    "semantic-judge-disabled",
   );
-  assert.deepEqual(
-    extractJsonTag(judgePrompts[0], "analysis_candidate_json"),
-    incompleteCandidate,
-  );
-  assert.match(judgePrompts[0], /<validation_result>\s*FAIL/);
   assert.deepEqual(
     extractJsonTag(repairPrompts[0], "analysis_candidate_json"),
     incompleteCandidate,
@@ -607,17 +699,21 @@ try {
     "combined_evaluation_feedback_json",
   );
   assert.equal(combinedFeedback.deterministicValidation.status, "fail");
-  assert.equal(combinedFeedback.semanticJudge.status, "fail");
-  assert.equal(
-    combinedFeedback.semanticJudge.findings[0].targetId,
-    "validate-value",
-  );
+  assert.equal(combinedFeedback.semanticJudge.status, "skipped");
   const affectedDiff = extractJsonTag(repairPrompts[0], "affected_diff_json");
   assert.deepEqual(
     affectedDiff.files.map((file) => file.id),
     [inventoryFile.id],
   );
-  assert.match(miniPrompts[0], /<diff_line_map_json>/);
+  assert.match(miniPrompts[0], /<structured_diff_json>/);
+  assert.doesNotMatch(miniPrompts[0], /<diff_line_map_json>|<diff_patch>/);
+  assert.equal(
+    extractJsonTag(
+      miniPrompts[0],
+      "structured_diff_json",
+    ).schemaVersion,
+    "pr-graph-structured-diff/v1",
+  );
   assert.match(miniPrompts[0], /## Explanation Comments: What And Why/);
   assert.match(
     miniPrompts[0],
@@ -638,40 +734,34 @@ try {
     /Partition each file into cohesive review units before assigning/,
   );
   assert.match(miniPrompts[0], /Do not emit numeric node depths/);
-  assert.match(judgePrompts[0], /## Mandatory Section-Cohesion Audit/);
-  assert.match(judgePrompts[0], /## Mandatory Comment Audit/);
+  assert.match(judgeContract, /## Mandatory Section-Cohesion Audit/);
+  assert.match(judgeContract, /## Mandatory Comment Audit/);
   assert.match(
-    judgePrompts[0],
+    judgeContract,
     /attached code answers \*\*how\*\* the implementation works/,
   );
   assert.match(
-    judgePrompts[0],
+    judgeContract,
     /Length and Markdown formatting are advisory/,
   );
-  assert.match(judgePrompts[0], /never fail a useful comment solely/);
+  assert.match(judgeContract, /never fail a useful comment solely/);
   assert.match(
-    judgePrompts[0],
+    judgeContract,
     /contiguous JSX\/render phase split into separate loading/,
   );
-  assert.deepEqual(result.analysis, validCandidate);
+  assert.deepEqual(result.analysis, materializedValidCandidate);
   assert.deepEqual(result.execution, {
     model: "selected-model",
-    reasoningEffort: "high",
+    reasoningEffort: "xhigh",
   });
+  assert.equal(result.judge, null);
   assert.deepEqual(result.usage, {
-    inputTokens: 400,
-    cachedInputTokens: 80,
-    outputTokens: 40,
-    totalTokens: 440,
+    inputTokens: 200,
+    cachedInputTokens: 40,
+    outputTokens: 20,
+    totalTokens: 220,
   });
-  assert.equal(findFinishEvent(events, "analysis").metrics.totalTokens, 440);
-  assert.equal(
-    findFinishEvent(
-      events,
-      "analysis.attempt-2.evaluation.judge-candidate",
-    ).metrics.totalTokens,
-    110,
-  );
+  assert.equal(findFinishEvent(events, "analysis").metrics.totalTokens, 220);
   assert.deepEqual(
     JSON.parse(await readFile(path.join(runDir, "mini-trees.raw.json"), "utf8")),
     incompleteCandidate,
@@ -682,11 +772,15 @@ try {
   );
   assert.deepEqual(
     JSON.parse(await readFile(path.join(runDir, "analysis.raw.attempt-2.json"), "utf8")),
-    validCandidate,
+    materializedValidCandidate,
   );
   assert.deepEqual(
     JSON.parse(await readFile(path.join(runDir, "analysis.json"), "utf8")),
-    validCandidate,
+    materializedValidCandidate,
+  );
+  assert.equal(
+    JSON.parse(await readFile(path.join(runDir, "judge.json"), "utf8")),
+    null,
   );
   await assert.rejects(
     readFile(path.join(runDir, "middle-trees.raw.json"), "utf8"),
@@ -859,17 +953,14 @@ try {
   );
   assert.deepEqual(calls, [
     "mini-1",
-    "judge-1",
     "repair-1",
-    "judge-2",
     "repair-2",
-    "judge-3",
   ]);
   assert.deepEqual(terminalError.usage, {
-    inputTokens: 60,
-    cachedInputTokens: 12,
-    outputTokens: 6,
-    totalTokens: 66,
+    inputTokens: 30,
+    cachedInputTokens: 6,
+    outputTokens: 3,
+    totalTokens: 33,
   });
   assertStagePairs(events);
   assert.equal(findFinishEvent(events, "analysis").status, "failed");
@@ -877,7 +968,7 @@ try {
     findFinishEvent(events, "analysis").error,
     /failed after 3 complete attempts/,
   );
-  assert.equal(findFinishEvent(events, "analysis").metrics.totalTokens, 66);
+  assert.equal(findFinishEvent(events, "analysis").metrics.totalTokens, 33);
   assert.equal(
     events.some((event) => event.stageId === "analysis.persist-artifacts"),
     false,
@@ -901,7 +992,7 @@ try {
     );
     assert.equal(
       findFinishEvent(events, `${stageId}.evaluation.judge-candidate`).status,
-      "failed",
+      "skipped",
     );
   }
   await assert.rejects(
@@ -996,13 +1087,13 @@ function buildCandidate({ coveredLineIds, fileId, filePath }) {
   const rootLineIds = coveredLineIds.slice(0, 2);
   const supportingLineIds = coveredLineIds.slice(2);
   const nodes = [
-    {
-      id: "change-value",
+      {
+        id: "change-value",
       title: "Change the value",
       reviewClass: "core",
       changeRole: "runtime",
       comment: "The value change is the core runtime behavior.",
-      changedLineIds: rootLineIds,
+      changedLineRanges: toRanges(rootLineIds),
     },
   ];
   const reviewEdges = [];
@@ -1014,7 +1105,7 @@ function buildCandidate({ coveredLineIds, fileId, filePath }) {
       reviewClass: "supporting",
       changeRole: "runtime",
       comment: "Validation is required by the changed runtime value.",
-      changedLineIds: supportingLineIds,
+      changedLineRanges: toRanges(supportingLineIds),
     });
     reviewEdges.push({
       from: "change-value",
@@ -1036,10 +1127,6 @@ function buildCandidate({ coveredLineIds, fileId, filePath }) {
         reviewClass: "important",
         changeRole: "runtime",
         comment: "This file owns the value update and its validation.",
-        codeRefs: {
-          fileIds: [fileId],
-          changedLineIds: coveredLineIds,
-        },
         miniTree: {
           nodes,
           reviewEdges,
@@ -1048,6 +1135,12 @@ function buildCandidate({ coveredLineIds, fileId, filePath }) {
       },
     ],
   };
+}
+
+function toRanges(lineIds) {
+  return lineIds.length === 0
+    ? []
+    : [{ start: lineIds[0], end: lineIds.at(-1) }];
 }
 
 async function writeRunInputs({ inventory, metadata, runDir }) {
