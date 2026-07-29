@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PR Graph Analysis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "intent",
+    "summary",
+    "confidence",
+    "files",
+    "superTree"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "pr-graph-analysis/v3"
+    },
+    "intent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "files": {
+      "description": "Changed files. Each changed file appears exactly once and owns a file-local mini-tree.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/file"
+      }
+    },
+    "superTree": {
+      "$ref": "#/$defs/superTree"
+    }
+  },
+  "$defs": {
+    "reviewClass": {
+      "type": "string",
+      "enum": [
+        "important",
+        "supporting",
+        "mechanical"
+      ]
+    },
+    "changeRole": {
+      "type": "string",
+      "enum": [
+        "runtime",
+        "test",
+        "storybook",
+        "snapshot",
+        "type",
+        "docs",
+        "config",
+        "dependency",
+        "generated",
+        "formatting",
+        "imports"
+      ]
+    },
+    "codeRefs": {
+      "description": "Deterministic references to diff inventory files and changed lines covered by this node.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fileIds",
+        "changedLineIds"
+      ],
+      "properties": {
+        "fileIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "changedLineIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "reviewClass",
+        "changeRole",
+        "comment",
+        "codeRefs",
+        "miniTree"
+      ],
+      "properties": {
+        "id": {
+          "description": "Use the matching diff-inventory file id.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewClass": {
+          "$ref": "#/$defs/reviewClass"
+        },
+        "changeRole": {
+          "$ref": "#/$defs/changeRole"
+        },
+        "comment": {
+          "description": "Why this file belongs in the review and how to approach it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "codeRefs": {
+          "$ref": "#/$defs/codeRefs"
+        },
+        "miniTree": {
+          "$ref": "#/$defs/miniTree"
+        }
+      }
+    },
+    "miniTree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "properties": {
+        "nodes": {
+          "description": "Single-file mini-tree nodes. These cover every changed line id for this file exactly once.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/miniNode"
+          }
+        },
+        "edges": {
+          "description": "Causal edges between miniNodes inside this one file.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/edge"
+          }
+        }
+      }
+    },
+    "miniNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "reviewClass",
+        "changeRole",
+        "depth",
+        "comment",
+        "changedLineIds"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewClass": {
+          "$ref": "#/$defs/reviewClass"
+        },
+        "changeRole": {
+          "$ref": "#/$defs/changeRole"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        },
+        "comment": {
+          "description": "Why this file-local change was needed or how it supports the file's main change.",
+          "type": "string",
+          "minLength": 1
+        },
+        "changedLineIds": {
+          "description": "Changed line ids from diff-inventory.json. Across all miniNodes in all files, every changed line id must appear exactly once.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "superTree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "properties": {
+        "nodes": {
+          "description": "Top-level review groups. Each super-node owns a tree of file/file-group nodes.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/superNode"
+          }
+        },
+        "edges": {
+          "description": "Causal edges between super-nodes.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/edge"
+          }
+        }
+      }
+    },
+    "superNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "reviewClass",
+        "changeRole",
+        "depth",
+        "comment",
+        "confidence",
+        "codeRefs",
+        "tree"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewClass": {
+          "$ref": "#/$defs/reviewClass"
+        },
+        "changeRole": {
+          "$ref": "#/$defs/changeRole"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        },
+        "comment": {
+          "description": "Why this top-level group exists and why it sits at this point in the super-tree.",
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "codeRefs": {
+          "$ref": "#/$defs/codeRefs"
+        },
+        "tree": {
+          "$ref": "#/$defs/tree"
+        }
+      }
+    },
+    "tree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "properties": {
+        "nodes": {
+          "description": "Middle-level tree nodes. Each node references one or more files that should be reviewed together.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/treeNode"
+          }
+        },
+        "edges": {
+          "description": "Causal edges between middle-level tree nodes inside one super-node.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/edge"
+          }
+        }
+      }
+    },
+    "treeNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "reviewClass",
+        "changeRole",
+        "depth",
+        "comment",
+        "confidence",
+        "codeRefs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewClass": {
+          "$ref": "#/$defs/reviewClass"
+        },
+        "changeRole": {
+          "$ref": "#/$defs/changeRole"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        },
+        "comment": {
+          "description": "Why this file or file-group change belongs here in the middle tree.",
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "codeRefs": {
+          "$ref": "#/$defs/codeRefs"
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "relation",
+        "comment"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relation": {
+          "description": "Short causal label for why the target follows the source.",
+          "type": "string",
+          "minLength": 1
+        },
+        "comment": {
+          "description": "Explanation of why the target change/group was caused, enabled, or required by the source.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

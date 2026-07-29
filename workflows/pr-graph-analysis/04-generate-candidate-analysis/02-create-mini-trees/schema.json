@@ -1,0 +1,272 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PR Graph Mini Trees",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "intent",
+    "summary",
+    "confidence",
+    "files"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "pr-graph-mini-trees/v2"
+    },
+    "intent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/file"
+      }
+    }
+  },
+  "$defs": {
+    "fileReviewClass": {
+      "type": "string",
+      "enum": [
+        "important",
+        "supporting",
+        "mechanical"
+      ]
+    },
+    "miniNodeReviewClass": {
+      "type": "string",
+      "enum": [
+        "core",
+        "important",
+        "supporting",
+        "mechanical"
+      ]
+    },
+    "changeRole": {
+      "type": "string",
+      "enum": [
+        "runtime",
+        "test",
+        "storybook",
+        "snapshot",
+        "type",
+        "docs",
+        "config",
+        "dependency",
+        "generated",
+        "formatting",
+        "imports"
+      ]
+    },
+    "codeRefs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fileIds",
+        "changedLineIds"
+      ],
+      "properties": {
+        "fileIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "changedLineIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "reviewClass",
+        "changeRole",
+        "comment",
+        "codeRefs",
+        "miniTree"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewClass": {
+          "$ref": "#/$defs/fileReviewClass"
+        },
+        "changeRole": {
+          "$ref": "#/$defs/changeRole"
+        },
+        "comment": {
+          "description": "What responsibility changed in this file and why the file matters to the PR. The code explains how. Prefer concise Markdown prose and use bullet lists for multiple distinct points, but preserve useful context regardless of length or formatting.",
+          "type": "string",
+          "minLength": 1
+        },
+        "codeRefs": {
+          "$ref": "#/$defs/codeRefs"
+        },
+        "miniTree": {
+          "$ref": "#/$defs/miniTree"
+        }
+      }
+    },
+    "miniTree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodes",
+        "reviewEdges",
+        "relations"
+      ],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/miniNode"
+          }
+        },
+        "reviewEdges": {
+          "description": "Ordered parent-child edges that define the human review hierarchy.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reviewEdge"
+          }
+        },
+        "relations": {
+          "description": "Optional technical relationships that do not determine review parentage or layout.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relation"
+          }
+        }
+      }
+    },
+    "miniNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "reviewClass",
+        "changeRole",
+        "comment",
+        "changedLineIds"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewClass": {
+          "$ref": "#/$defs/miniNodeReviewClass"
+        },
+        "changeRole": {
+          "$ref": "#/$defs/changeRole"
+        },
+        "comment": {
+          "description": "What this cohesive code section changes or proves and why it is needed or consequential. The attached code explains how. Prefer concise Markdown prose and use bullet lists for multiple distinct points, but preserve useful context regardless of length or formatting.",
+          "type": "string",
+          "minLength": 1
+        },
+        "changedLineIds": {
+          "description": "Source-ordered changed line ids from one hunk. A cohesive node may bridge unchanged context, but it must include every intervening changed line between its first and last owned ids.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "reviewEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "order",
+        "comment"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "comment": {
+          "description": "What requirement or review relationship connects the source to the target and why the target belongs next. Do not narrate implementation mechanics. Prefer concise Markdown prose and use bullet lists for multiple distinct points, but preserve useful context regardless of length or formatting.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "relation",
+        "comment"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "comment": {
+          "description": "What secondary technical relationship exists and why knowing it helps the reviewer. The code explains how it is wired. Prefer concise Markdown prose and use bullet lists for multiple distinct points, but preserve useful context regardless of length or formatting.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

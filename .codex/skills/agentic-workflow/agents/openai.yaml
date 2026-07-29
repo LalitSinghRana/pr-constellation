@@ -1,0 +1,3 @@
+display_name: Agentic Workflow
+short_description: Iterative verify-and-fix loop
+default_prompt: Use @agentic-workflow to implement this task, verify it, inspect browser UI when relevant, and keep fixing until accepted or blocked.
