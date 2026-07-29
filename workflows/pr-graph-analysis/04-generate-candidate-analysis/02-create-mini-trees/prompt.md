@@ -149,13 +149,13 @@ Required construction order:
 
 - Split a file into mini-nodes only when it contains multiple cohesive review
   sections.
-- Every mini-node must own exactly one continuous range in exactly one hunk.
-  List its changed line ids in source order, and require every adjacent pair to
-  occupy consecutive positions in that hunk's complete `lines[]` array.
-- An unchanged context line, another node's changed line, or a hunk boundary
-  ends a range. Split separated ranges into separate mini-nodes even when they
-  support the same semantic concept. Never place line 1 and line 20 in one
-  mini-node.
+- Every mini-node's changed line ids must come from exactly one hunk and appear
+  in source order.
+- A cohesive mini-node may own multiple changed spans separated by unchanged
+  context lines. Between its first and last owned line ids, it must include
+  every changed line in the hunk; never skip changed work assigned to another
+  node. A hunk boundary or intervening changed line owned by another node ends
+  the section, while unchanged context alone does not.
 - Assign every changed line id listed for the file in `diff-inventory.json` to
   exactly one mini-node.
 - Treat `changedLineIds` as an ownership partition: the same changed line id
@@ -164,11 +164,12 @@ Required construction order:
   `changedLineIds` array.
 - Describe internal variants and details in the node title/comment rather than
   extracting them from their cohesive section solely to create more concepts.
-- Put imports, types, formatting, and generated churn in mechanical
-  mini-nodes.
-- Deterministically classify every non-root `imports`, `type`, `formatting`,
-  and `generated` node as `mechanical`. The root node is always `core`,
-  including the primary contract in a type-only file.
+- Put imports, formatting, and generated churn in mechanical mini-nodes.
+- Classify type sections by review value. Primary behavioral or public
+  contracts can be `core/type` or `important/type`; routine supporting
+  declarations can be `supporting/type` or `mechanical/type`.
+- The root node is always `core`, including the primary contract in a
+  type-only file.
 - Put runtime behavior in important or supporting mini-nodes.
 - `important` means the reviewer should see that node on the first pass.
   Secondary states, decorative variants, style implementation, analytics
@@ -191,10 +192,10 @@ Required construction order:
 - Every mini-node needs a `comment` explaining what the cohesive section changes
   or proves and why that file-local change is needed or consequential. The code
   in the node already explains how it works.
-- Do not force comments to be concise. Use Markdown bullet points when a node
-  has multiple distinct effects, reasons, constraints, or reviewer checks. A
-  comment longer than 280 characters must contain at least two Markdown bullet
-  lines. Never discard useful detail merely to stay under that threshold.
+- Prefer concise comments, and use Markdown bullet points when a node has
+  multiple distinct effects, reasons, constraints, or reviewer checks. Never
+  discard useful detail to meet a length target, and never treat length or
+  Markdown formatting alone as a quality failure.
 - `miniTree.reviewEdges[]` and `miniTree.relations[]` connect mini-nodes within
   the same file only.
 - Before returning the file, compare hierarchy order with changed-line

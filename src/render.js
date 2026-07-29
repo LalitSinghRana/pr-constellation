@@ -521,12 +521,23 @@ function buildCodeChunksForMiniNode({ file, inventoryIndex, miniNode, syntaxHigh
       .slice()
       .sort((left, right) => left.lineIndex - right.lineIndex);
     const runs = [];
+    const allOwnedLineIds = new Set(
+      sortedLines.map((entry) => entry.line.id),
+    );
 
     for (const indexedLine of sortedLines) {
       const currentRun = runs.at(-1);
       const previousLine = currentRun?.at(-1);
+      const crossesUnownedChange = previousLine
+        ? indexedLine.hunk.lines
+            .slice(previousLine.lineIndex + 1, indexedLine.lineIndex)
+            .some((line) => (
+              (line.kind === "insert" || line.kind === "delete")
+              && !allOwnedLineIds.has(line.id)
+            ))
+        : false;
 
-      if (!previousLine || indexedLine.lineIndex !== previousLine.lineIndex + 1) {
+      if (!previousLine || crossesUnownedChange) {
         runs.push([indexedLine]);
       } else {
         currentRun.push(indexedLine);

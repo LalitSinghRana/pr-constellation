@@ -2,8 +2,9 @@
 
 This workflow generates headless, file-local review trees for a PR. AI handles
 semantic grouping and review explanations. Deterministic validation owns file
-coverage, changed-line ownership, and tree structure. Failed attempts are never
-repaired or replaced with a generic fallback.
+coverage, changed-line ownership, and tree structure. Failed candidates are
+repaired by a later model attempt when the findings have a safe file-local
+scope; the validator itself never edits them or substitutes a generic fallback.
 
 All analysis implementation, contracts, and tests live in this directory.
 Run its focused suite with:
@@ -68,25 +69,24 @@ The deterministic validator enforces:
 
 - every changed file appears exactly once and owns one mini-tree
 - every added/deleted changed line belongs to exactly one mini-tree node
-- each mini-tree node owns one continuous, source-ordered range in one hunk
+- each mini-tree node owns source-ordered changed spans from one hunk, may
+  bridge unchanged context, and cannot skip an intervening changed line
 - no mini-tree node contains a changed line from another file
 - file `codeRefs` exactly match that file's changed lines
 - each mini-tree has one root and every non-root node has one review parent
 - sibling review edges use contiguous order values starting at zero
-- review edges stay inside their file and flow toward
-  supporting/mechanical work
+- review edges stay inside their file
 - technical relations reference valid file-local nodes without affecting the
   review hierarchy
-- every root is the tree's only `core` node
-- review priority is `core > important > supporting > mechanical`
-- imports, types, generated output, and formatting are deterministically
-  mechanical outside the core root
 - `reviewClass` and `changeRole` use the approved values
-- every file, node, review edge, and technical relation has a non-empty
-  What/Why comment
-- comments longer than 280 characters use at least two Markdown bullet lines
+- required titles, comments, and relation labels are non-empty strings
 
-The judge then checks whether node boundaries preserve cohesive implementation
-sections, whether comments explain What/Why instead of narrating How, and
-whether each file-local flow is semantically useful.
-Step 07 retries only after validation and judging have both run.
+The judge then checks classification and hierarchy direction, whether node
+boundaries preserve cohesive implementation sections, whether comments explain
+What/Why instead of narrating How, and whether each file-local flow is
+semantically useful.
+Step 07 exposes validation and judging as one evaluation phase. Every
+schema-usable candidate is judged even when deterministic validation fails, so
+one retry receives the combined structural and semantic feedback. A run makes
+at most three total attempts; later attempts repair only the affected
+file-local mini-trees when the feedback can be scoped safely.

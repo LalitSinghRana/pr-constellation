@@ -55,10 +55,12 @@ semantic mini-node.
   understand nearby code.
 - Every mini-node is file-local: all changed line ids in a mini-node must come
   from that file's `path`.
-- A mini-node may own only one continuous changed-line range from one hunk.
-  Its `changedLineIds` must appear in source order at consecutive positions in
-  that hunk's complete `lines[]` array. An unchanged context line, another
-  mini-node's changed line, or a hunk boundary ends the range.
+- A mini-node's `changedLineIds` must come from one hunk and appear in source
+  order. It may own multiple changed spans separated only by unchanged context
+  lines when those spans form one cohesive review section.
+- Between a mini-node's first and last owned line ids, include every changed
+  line from that hunk. An intervening changed line owned by another mini-node,
+  or a hunk boundary, ends the section; unchanged context alone does not.
 - Every changed file path with added/deleted changed lines must have exactly one
   file entry in `files`.
 - `codeRefs.fileIds` must only contain file ids from `diff-inventory.json`.
@@ -102,21 +104,21 @@ No file summary or non-root mini-node may use `core`.
 - Formatting-only churn uses `formatting`.
 - Config/dependency/docs changes use `config`, `dependency`, or `docs`.
 
-The following role mappings are deterministic for file summaries and non-root
-mini-nodes:
+The following roles normally represent mechanical review work for file
+summaries and non-root mini-nodes:
 
 - `imports` -> `mechanical`
-- `type` -> `mechanical`
 - `generated` -> `mechanical`
 - `formatting` -> `mechanical`
 
-The root's structural `core` class overrides those mappings. For
-example, the main contract in a type-only file is `core/type`, while every
-downstream type node is `mechanical/type`.
+The root's structural `core` class overrides those mappings. Classify type
+changes by their actual review value: a primary contract can be `core/type` or
+`important/type`, while routine supporting declarations may be
+`supporting/type` or `mechanical/type`.
 
-Do not automatically mark tests, stories, or snapshots as mechanical. Classify
-them by review value. A test can be `supporting/test`; a snapshot can be
-`mechanical/snapshot` when it only reflects already-reviewed behavior.
+Do not automatically mark types, tests, stories, or snapshots as mechanical.
+Classify them by review value. A test can be `supporting/test`; a snapshot can
+be `mechanical/snapshot` when it only reflects already-reviewed behavior.
 
 ## Explanation Comments: What And Why
 
@@ -145,13 +147,10 @@ describe control flow that is already visible in the node's diff. Mention an
 implementation detail only when it is necessary context for explaining impact,
 intent, risk, or rationale.
 
-There is no target or maximum comment length. Do not shorten a useful
-explanation merely to save tokens, latency, or cost. Use enough detail to make
-the review decision clear. For comments with multiple distinct reasons,
-effects, constraints, or reviewer checks, use Markdown bullet points inside the
-string instead of compressing everything into one dense sentence. A short
-opening paragraph followed by bullets is valid. As a deterministic formatting
-rule, every comment longer than 280 characters must contain at least two
-Markdown bullet lines beginning with `-`, `*`, or `+`. Do not omit useful
-context or compress a naturally multi-point explanation below 280 characters
-just to avoid bullets; preserve the explanation and format it clearly.
+Prefer concise comments while preserving the context needed for a review
+decision. For comments with multiple distinct reasons, effects, constraints,
+or reviewer checks, use Markdown bullet points inside the string instead of
+compressing everything into one dense sentence. A short opening paragraph
+followed by bullets is valid. Length and Markdown formatting are advisory:
+never omit useful context merely to reach a length target.
+never treat formatting alone as a quality failure.

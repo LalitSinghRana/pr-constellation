@@ -31,16 +31,18 @@ When validation passes, it has checked:
 
 - every added/deleted changed line is covered by exactly one file mini-tree node
 - every mini-tree node references valid changed line ids from its file
-- every mini-tree node owns one source-ordered continuous range in one hunk
+- every mini-tree node owns source-ordered changed spans from one hunk, may
+  bridge unchanged context, and does not skip an intervening changed line
 - every changed file appears exactly once and owns exactly one mini-tree
 - each file's `codeRefs` exactly matches that file's changed lines
 - every file mini-tree's `reviewEdges` form one ordered rooted tree
 - every technical relation is file-local and references valid mini-nodes
-- every mini-tree has exactly one `core` reviewClass at its root
-- deterministic role mappings are enforced for non-root nodes and file
-  summaries (`imports`, `type`, `generated`, and `formatting` are mechanical)
-- every comment longer than 280 characters contains at least two Markdown
-  bullet lines
+- `reviewClass` and `changeRole` use schema-approved values
+- required titles, comments, and relation labels are non-empty strings
+
+Validation does not decide whether classifications, hierarchy direction,
+role-to-priority choices, or explanations are semantically useful. Judge those
+qualities below.
 
 If the validation result is `FAIL`, your verdict must also be `fail`. Still
 inspect semantic quality and report useful semantic findings so the retry step
@@ -55,8 +57,9 @@ would miss important review work.
 Look for:
 
 - important runtime behavior marked as `mechanical`
-- separated source ranges combined into one mini-node, even when they relate to
-  the same broad concept
+- changed spans from different hunks, or spans that skip intervening changed
+  work, combined into one mini-node; unchanged context gaps within one cohesive
+  hunk section are allowed
 - one cohesive source section fragmented into multiple mini-nodes, forcing the
   reviewer to jump between nodes to understand one render, handler, state,
   computation, style, type, test, or story unit
@@ -148,13 +151,13 @@ the reviewer intent, impact, rationale, risk, or a concrete review question. A
 useful review-edge comment states the requirement or consequence that makes the
 target follow from the source.
 
-Do not reward artificial brevity and do not fail a useful comment for being
-long. When an explanation contains multiple distinct reasons, effects,
-constraints, or reviewer checks, expect a readable Markdown bullet list rather
-than one compressed sentence. A comment longer than 280 characters without at
-least two Markdown bullet lines is a deterministic validation failure. Also
-fail artificial threshold avoidance when useful rationale, consequences, or
-review checks were clearly omitted merely to keep prose below 280 characters.
+Prefer concise comments when they preserve the needed review context. When an
+explanation contains multiple distinct reasons, effects, constraints, or
+reviewer checks, prefer a readable Markdown bullet list over one compressed
+sentence. Length and Markdown formatting are advisory:
+never fail a useful comment solely for its length or formatting, and do not
+reward artificial brevity that omits useful rationale, consequences, or review
+checks.
 
 ## Mandatory Root Audit
 

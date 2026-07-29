@@ -123,6 +123,96 @@ assert.deepEqual(
   ["const value = 1;", "const value = 2;"],
 );
 
+const semanticSpanHtml = await renderDiffHtml({
+  analysis: {
+    schemaVersion: "pr-graph-mini-trees/v2",
+    intent: "Keep one cohesive render change together",
+    summary: "A context-only gap must not split one semantic mini-node.",
+    confidence: 1,
+    files: [
+      {
+        id: "file-1",
+        path: "src/example.tsx",
+        reviewClass: "important",
+        changeRole: "runtime",
+        comment: "This file changes the complete interactive wrapper.",
+        codeRefs: {
+          fileIds: ["file-1"],
+          changedLineIds: [
+            "file-1:hunk-1:line-1",
+            "file-1:hunk-1:line-2",
+            "file-1:hunk-1:line-4",
+            "file-1:hunk-1:line-5",
+            "file-1:hunk-1:line-6",
+          ],
+        },
+        miniTree: {
+          nodes: [
+            {
+              id: "replace-wrapper",
+              title: "Replace the interactive wrapper",
+              reviewClass: "core",
+              changeRole: "runtime",
+              comment: "The opening tag, ref wiring, and closing tag form one cohesive render change.",
+              changedLineIds: [
+                "file-1:hunk-1:line-1",
+                "file-1:hunk-1:line-2",
+                "file-1:hunk-1:line-4",
+                "file-1:hunk-1:line-5",
+                "file-1:hunk-1:line-6",
+              ],
+            },
+          ],
+          reviewEdges: [],
+          relations: [],
+        },
+      },
+    ],
+  },
+  diff: `diff --git a/src/example.tsx b/src/example.tsx
+index 0000000..1111111 100644
+--- a/src/example.tsx
++++ b/src/example.tsx
+@@ -1,3 +1,4 @@
+-<View>
++<Pressable>
+   <Content />
++  <HiddenInput ref={inputRef} />
+-</View>
++</Pressable>
+`,
+  pr: {
+    additions: 3,
+    author: { login: "check" },
+    baseRefName: "main",
+    changedFiles: 1,
+    deletions: 2,
+    headRefName: "branch",
+    number: 3,
+    state: "OPEN",
+    title: "Check semantic spans",
+    url: "https://github.com/example/repo/pull/3",
+  },
+});
+const semanticSpanGraphData = extractJsonScript(
+  semanticSpanHtml,
+  "pr-analysis-data",
+);
+const semanticSpanChunks =
+  semanticSpanGraphData.files[0].miniTree.nodes[0].codeChunks;
+assert.equal(semanticSpanChunks.length, 1);
+assert.deepEqual(
+  semanticSpanChunks[0].lines.map((line) => line.content),
+  [
+    "<View>",
+    "<Pressable>",
+    "  <Content />",
+    "  <HiddenInput ref={inputRef} />",
+    "</View>",
+    "</Pressable>",
+  ],
+);
+
 const [collapsibleSource, graphAppSource, webStyles] = await Promise.all([
   readFile(new URL("../../src/components/ui/collapsible.jsx", import.meta.url), "utf8"),
   readFile(new URL("../../src/graph-app.jsx", import.meta.url), "utf8"),

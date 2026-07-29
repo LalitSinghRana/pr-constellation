@@ -86,6 +86,45 @@ const validAnalysis = {
 expectValid(validAnalysis);
 expectValid(asLegacyV1(validAnalysis));
 
+const contextGapInventory = createDiffInventory(`diff --git a/src/context-gap.js b/src/context-gap.js
+index 4444444..5555555 100644
+--- a/src/context-gap.js
++++ b/src/context-gap.js
+@@ -1,3 +1,3 @@
+-const value = 1;
++const value = 2;
+ keepContext();
+-run(1);
++run(2);
+`);
+const [contextGapFile] = contextGapInventory.files;
+const contextGapAnalysis = {
+  schemaVersion: "pr-graph-mini-trees/v2",
+  intent: "Keep one semantic change together across unchanged context",
+  summary: "The value update and its use remain one review unit.",
+  confidence: 1,
+  files: [
+    buildFile({
+      file: contextGapFile,
+      miniTree: {
+        nodes: [
+          miniNode({
+            changedLineIds: contextGapFile.changedLineIds,
+            changeRole: "runtime",
+            id: "update-value-and-use",
+            reviewClass: "core",
+            title: "Update value and use",
+          }),
+        ],
+        reviewEdges: [],
+        relations: [],
+      },
+    }),
+  ],
+};
+
+expectValid(contextGapAnalysis, contextGapInventory);
+
 const legacyWithInvalidDepth = asLegacyV1(validAnalysis);
 legacyWithInvalidDepth.files[0].miniTree.nodes[1].depth = 3;
 expectInvalid({
@@ -156,8 +195,8 @@ expectInvalid({
       },
     ],
   }),
-  message: "must be one continuous range in source order",
-  name: "mini-node combines disconnected changed-line ranges",
+  message: `cannot skip intervening changed line ${runtimeFile.changedLineIds[1]}`,
+  name: "mini-node skips changed lines owned by another node",
 });
 
 expectInvalid({
@@ -176,7 +215,7 @@ expectInvalid({
       },
     ],
   }),
-  message: "must be one continuous range in source order",
+  message: "must appear in source order",
   name: "mini-node changed lines are not in source order",
 });
 
@@ -215,19 +254,15 @@ expectInvalid({
   name: "disconnected mini-tree node",
 });
 
-expectInvalid({
-  analysis: patchMiniTree(validAnalysis, 0, {
-    reviewEdges: [
-      reviewEdge({
-        from: "validate-runtime-value",
-        order: 0,
-        to: "change-runtime-value",
-      }),
-    ],
-  }),
-  message: "must flow from core changes toward supporting/mechanical changes",
-  name: "supporting node points to important core change",
-});
+expectValid(patchMiniTree(validAnalysis, 0, {
+  reviewEdges: [
+    reviewEdge({
+      from: "validate-runtime-value",
+      order: 0,
+      to: "change-runtime-value",
+    }),
+  ],
+}));
 
 expectInvalid({
   analysis: patchMiniTree(validAnalysis, 0, {
@@ -256,68 +291,68 @@ expectInvalid({
   name: "technical relation to unknown mini-node",
 });
 
-expectInvalid({
-  analysis: patchMiniNode(validAnalysis, 0, 0, {
-    reviewClass: "important",
-  }),
-  message: "root must use reviewClass core",
-  name: "root without core review class",
-});
+expectValid(patchMiniNode(validAnalysis, 0, 0, {
+  reviewClass: "important",
+}));
 
-expectInvalid({
-  analysis: patchMiniNode(validAnalysis, 0, 1, {
-    reviewClass: "core",
-  }),
-  message: "only its root may use reviewClass core",
-  name: "non-root core node",
-});
+expectValid(patchMiniNode(validAnalysis, 0, 1, {
+  reviewClass: "core",
+}));
 
-expectInvalid({
-  analysis: patchMiniNode(validAnalysis, 0, 1, {
-    changeRole: "imports",
-    reviewClass: "supporting",
-  }),
-  message: "changeRole imports must use reviewClass mechanical",
-  name: "imports role without mechanical review class",
-});
+expectValid(patchMiniNode(validAnalysis, 0, 1, {
+  changeRole: "imports",
+  reviewClass: "supporting",
+}));
 
-expectInvalid({
-  analysis: patchFile(validAnalysis, 0, {
-    changeRole: "type",
-    reviewClass: "important",
-  }),
-  message: "changeRole type must use reviewClass mechanical",
-  name: "type file summary without mechanical review class",
-});
+expectValid(patchFile(validAnalysis, 0, {
+  changeRole: "type",
+  reviewClass: "important",
+}));
 
 expectValid(patchMiniNode(validAnalysis, 1, 0, {
   changeRole: "type",
   reviewClass: "core",
 }));
 
+expectInvalid({
+  analysis: patchMiniNode(validAnalysis, 0, 0, {
+    reviewClass: "urgent",
+  }),
+  message: "must use reviewClass",
+  name: "mini-node with unknown review class value",
+});
+
+expectInvalid({
+  analysis: patchMiniNode(validAnalysis, 0, 0, {
+    changeRole: "behavior",
+  }),
+  message: "has invalid changeRole",
+  name: "mini-node with unknown change role value",
+});
+
+expectInvalid({
+  analysis: patchMiniNode(validAnalysis, 0, 0, {
+    comment: "",
+  }),
+  message: "comment must be a non-empty string",
+  name: "mini-node with an empty required comment value",
+});
+
 const longExplanationWithoutBullets = (
   "This explanation covers the changed responsibility, why the PR needs it, "
   + "the reviewer-facing consequence, and the contract that downstream work must preserve. "
 ).repeat(3).trim();
 
-expectInvalid({
-  analysis: patchMiniNode(validAnalysis, 0, 0, {
-    comment: longExplanationWithoutBullets,
-  }),
-  message: "comments longer than 280 characters must use at least two Markdown bullet points",
-  name: "long mini-node explanation without bullets",
-});
+expectValid(patchMiniNode(validAnalysis, 0, 0, {
+  comment: longExplanationWithoutBullets,
+}));
 
-expectInvalid({
-  analysis: patchMiniTree(validAnalysis, 0, {
-    reviewEdges: [{
-      ...validAnalysis.files[0].miniTree.reviewEdges[0],
-      comment: longExplanationWithoutBullets,
-    }],
-  }),
-  message: "comments longer than 280 characters must use at least two Markdown bullet points",
-  name: "long review-edge explanation without bullets",
-});
+expectValid(patchMiniTree(validAnalysis, 0, {
+  reviewEdges: [{
+    ...validAnalysis.files[0].miniTree.reviewEdges[0],
+    comment: longExplanationWithoutBullets,
+  }],
+}));
 
 expectValid(patchMiniNode(validAnalysis, 0, 0, {
   comment: `${longExplanationWithoutBullets}
@@ -451,8 +486,8 @@ function deriveDepths(miniTree) {
   return depths;
 }
 
-function expectValid(analysis) {
-  validateMiniTreeAnalysis(analysis, { inventory });
+function expectValid(analysis, targetInventory = inventory) {
+  validateMiniTreeAnalysis(analysis, { inventory: targetInventory });
 }
 
 function expectInvalid({ analysis, message, name }) {

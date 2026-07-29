@@ -8,10 +8,13 @@ browser-facing implementation.
 - `src/render.js`: builds the standalone review HTML and transforms analysis
   plus diff data for the browser.
 - `src/graph-app.jsx`: React Flow review application.
+- `src/dashboard-app.jsx`: local PR/run benchmark dashboard.
+- `src/dashboard-render.js`: builds the standalone dashboard HTML.
 - `src/mini-tree-model.js`: deterministic presentation-only tree folding.
 - `src/styles.css`: Tailwind entry and website styling.
+- `src/dashboard.css`: dashboard layout and timing-waterfall styling.
 - `src/components/ui/`: shadcn components used by the application.
-- `vite.config.js`: serves generated pages directly from `.reviews/`.
+- `vite.config.js`: serves the dashboard and generated pages from `.reviews/`.
 - `tests/webview/`: renderer, hosting, and presentation-model regression checks.
 - `docs/dev-agent-browser.md`: browser-development guidance.
 
@@ -34,9 +37,12 @@ Run the root shadcn wrapper so `components.json` remains the single UI registry:
 pnpm ui:add <component>
 ```
 
-Generate or re-render a review before starting Vite. Rendering writes the
-timestamped page and a stable `.reviews/<review-slug>/index.html`:
+Start the local dashboard and review server:
 
 ```sh
 pnpm web
 ```
+
+Open `http://127.0.0.1:4173/reviews/`. The dashboard can queue new analyses,
+while generated graphs remain available at both their run-specific URL and the
+stable `.reviews/<review-slug>/index.html` route.

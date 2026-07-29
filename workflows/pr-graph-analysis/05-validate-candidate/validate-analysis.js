@@ -13,35 +13,9 @@ const CHANGE_ROLES = new Set([
   "formatting",
   "imports",
 ]);
-const REVIEW_CLASS_PRIORITY = new Map([
-  ["core", 0],
-  ["important", 1],
-  ["supporting", 2],
-  ["mechanical", 3],
-]);
-const DETERMINISTIC_ROLE_REVIEW_CLASS = new Map([
-  ["generated", "mechanical"],
-  ["formatting", "mechanical"],
-  ["imports", "mechanical"],
-  ["type", "mechanical"],
-]);
-const ROOT_CHANGE_ROLE_PRIORITY = new Map([
-  ["runtime", 0],
-  ["test", 1],
-  ["storybook", 2],
-  ["type", 3],
-  ["snapshot", 4],
-  ["docs", 5],
-  ["config", 6],
-  ["dependency", 7],
-  ["generated", 8],
-  ["formatting", 9],
-  ["imports", 10],
-]);
 const MINI_TREE_SCHEMA_V1 = "pr-graph-mini-trees/v1";
 const MINI_TREE_SCHEMA_V2 = "pr-graph-mini-trees/v2";
 const MINI_TREE_SCHEMA_VERSIONS = new Set([MINI_TREE_SCHEMA_V1, MINI_TREE_SCHEMA_V2]);
-const LONG_EXPLANATION_BULLET_THRESHOLD = 280;
 
 export function validateMiniTreeAnalysis(analysis, { inventory = null } = {}) {
   const errors = [];
@@ -138,15 +112,14 @@ function validateFiles({ analysis, errors, inventory }) {
       errors.push(`analysis.json references file path that is not changed in diff-inventory.json: ${file.path}`);
     }
 
-    validateReviewClassAndRole({
-      allowCoreOverride: false,
+    validateReviewClassAndRoleValues({
       allowedReviewClasses: FILE_REVIEW_CLASSES,
       errors,
       targetId: `file ${file.id}`,
       value: file,
     });
 
-    validateExplanationComment({
+    validateRequiredText({
       errors,
       label: `file ${file.id} comment`,
       value: file.comment,
@@ -247,8 +220,7 @@ function validateMiniTree({
     childrenById.set(miniNode.id, []);
 
     const owner = `${file.id}/${miniNode.id}`;
-    validateReviewClassAndRole({
-      allowCoreOverride: true,
+    validateReviewClassAndRoleValues({
       allowedReviewClasses: MINI_NODE_REVIEW_CLASSES,
       errors,
       targetId: `miniNode ${owner}`,
@@ -266,7 +238,7 @@ function validateMiniTree({
       errors.push(`analysis.json miniNode ${owner} must have integer depth 0-6.`);
     }
 
-    validateExplanationComment({
+    validateRequiredText({
       errors,
       label: `miniNode ${owner} comment`,
       value: miniNode.comment,
@@ -307,7 +279,7 @@ function validateMiniTree({
       fileChangedLineIds.add(changedLineId);
     }
 
-    validateContinuousChangedLines({
+    validateChangedLineSequence({
       changedLineIds: miniNode.changedLineIds,
       errors,
       inventoryLinePositionById,
@@ -320,7 +292,7 @@ function validateMiniTree({
     ? file.miniTree.reviewEdges
     : file.miniTree.edges;
 
-  const rootNode = validateTreeEdges({
+  validateTreeEdges({
     edgeLabel: `file ${file.id} miniTree.${usesReviewEdges ? "reviewEdges" : "edges"}`,
     edges: reviewEdges,
     errors,
@@ -339,13 +311,6 @@ function validateMiniTree({
       relations: file.miniTree.relations,
     });
   }
-  validateReviewPriorityFlow({
-    errors,
-    nodeById: miniNodeById,
-    rootNode,
-    rootLabel: `file ${file.id} miniTree`,
-  });
-
   return fileChangedLineIds;
 }
 
@@ -394,7 +359,7 @@ function validateTreeEdges({
       }
     }
 
-    validateExplanationComment({
+    validateRequiredText({
       errors,
       label: `${edgeLabel} ${edgeId} comment`,
       value: edge.comment,
@@ -422,21 +387,6 @@ function validateTreeEdges({
     if (!ordered && toNode.depth !== fromNode.depth + 1) {
       errors.push(
         `analysis.json ${edgeLabel} must connect adjacent depths only: ${edge.from} depth ${fromNode.depth} -> ${edge.to} depth ${toNode.depth}`,
-      );
-    }
-
-    if (reviewClassPriority(toNode.reviewClass) < reviewClassPriority(fromNode.reviewClass)) {
-      errors.push(
-        `analysis.json ${edgeLabel} must flow from core changes toward supporting/mechanical changes; ${edge.from} is ${fromNode.reviewClass} but ${edge.to} is ${toNode.reviewClass}.`,
-      );
-    }
-
-    if (
-      fromNode.reviewClass === toNode.reviewClass
-      && rootChangeRolePriority(toNode.changeRole) < rootChangeRolePriority(fromNode.changeRole)
-    ) {
-      errors.push(
-        `analysis.json ${edgeLabel} must flow from core change roles toward contracts/support work; ${edge.from} is ${fromNode.changeRole} but ${edge.to} is ${toNode.changeRole}.`,
       );
     }
 
@@ -534,41 +484,11 @@ function validateTechnicalRelations({
     if (!isNonEmptyString(relation.relation)) {
       errors.push(`analysis.json ${relationLabel} ${relationId} is missing relation.`);
     }
-    validateExplanationComment({
+    validateRequiredText({
       errors,
       label: `${relationLabel} ${relationId} comment`,
       value: relation.comment,
     });
-  }
-}
-
-function validateReviewPriorityFlow({ errors, nodeById, rootNode, rootLabel }) {
-  const nodes = [...nodeById.values()];
-
-  if (!rootNode || nodes.length === 0) {
-    return;
-  }
-
-  const coreNodes = nodes.filter((node) => node.reviewClass === "core");
-
-  if (rootNode.reviewClass !== "core") {
-    errors.push(
-      `analysis.json ${rootLabel} root must use reviewClass core; root ${rootNode.id} is ${rootNode.reviewClass}.`,
-    );
-  }
-
-  if (coreNodes.length !== 1) {
-    errors.push(
-      `analysis.json ${rootLabel} must contain exactly one core reviewClass node; found ${coreNodes.length}.`,
-    );
-  }
-
-  for (const node of coreNodes) {
-    if (node.id !== rootNode.id) {
-      errors.push(
-        `analysis.json ${rootLabel} only its root may use reviewClass core; ${node.id} is not the root.`,
-      );
-    }
   }
 }
 
@@ -639,8 +559,7 @@ function validateExactIdSet({ actualIds, errors, expectedIds, label }) {
   }
 }
 
-function validateReviewClassAndRole({
-  allowCoreOverride,
+function validateReviewClassAndRoleValues({
   allowedReviewClasses,
   errors,
   targetId,
@@ -656,42 +575,12 @@ function validateReviewClassAndRole({
     errors.push(
       `analysis.json ${targetId} has invalid changeRole: ${value?.changeRole || "<missing>"}.`,
     );
-    return;
-  }
-
-  const deterministicReviewClass = DETERMINISTIC_ROLE_REVIEW_CLASS.get(value.changeRole);
-  const hasCoreOverride = allowCoreOverride && value.reviewClass === "core";
-
-  if (
-    deterministicReviewClass
-    && value.reviewClass !== deterministicReviewClass
-    && !hasCoreOverride
-  ) {
-    errors.push(
-      `analysis.json ${targetId} changeRole ${value.changeRole} must use reviewClass ${deterministicReviewClass}.`,
-    );
   }
 }
 
-function validateExplanationComment({ errors, label, value }) {
+function validateRequiredText({ errors, label, value }) {
   if (!isNonEmptyString(value)) {
-    errors.push(`analysis.json ${label} is missing a What/Why explanation.`);
-    return;
-  }
-
-  const comment = value.trim();
-  const markdownBulletCount = (
-    comment.match(/^\s*[-*+]\s+\S.*$/gm)
-    || []
-  ).length;
-
-  if (
-    comment.length > LONG_EXPLANATION_BULLET_THRESHOLD
-    && markdownBulletCount < 2
-  ) {
-    errors.push(
-      `analysis.json ${label} is ${comment.length} characters; comments longer than ${LONG_EXPLANATION_BULLET_THRESHOLD} characters must use at least two Markdown bullet points.`,
-    );
+    errors.push(`analysis.json ${label} must be a non-empty string.`);
   }
 }
 
@@ -700,6 +589,8 @@ function indexInventoryChangedLinePositions(inventory) {
 
   for (const file of inventory?.files || []) {
     for (const hunk of file.hunks || []) {
+      let changedIndex = 0;
+
       for (const [lineIndex, line] of (hunk.lines || []).entries()) {
         if (line.kind !== "insert" && line.kind !== "delete") {
           continue;
@@ -708,8 +599,10 @@ function indexInventoryChangedLinePositions(inventory) {
         positions.set(line.id, {
           file: file.path,
           hunkId: hunk.id,
+          changedIndex,
           lineIndex,
         });
+        changedIndex += 1;
       }
     }
   }
@@ -717,7 +610,7 @@ function indexInventoryChangedLinePositions(inventory) {
   return positions;
 }
 
-function validateContinuousChangedLines({
+function validateChangedLineSequence({
   changedLineIds,
   errors,
   inventoryLinePositionById,
@@ -738,10 +631,12 @@ function validateContinuousChangedLines({
     return;
   }
 
-  const hunkIds = new Set(positions.map((entry) => entry.position.hunkId));
-  if (hunkIds.size !== 1) {
+  const hunkLocations = new Set(positions.map((entry) => {
+    return `${entry.position.file}\0${entry.position.hunkId}`;
+  }));
+  if (hunkLocations.size !== 1) {
     errors.push(
-      `analysis.json miniNode ${owner} changedLineIds must belong to one hunk and one continuous range.`,
+      `analysis.json miniNode ${owner} changedLineIds must belong to one hunk; unchanged context gaps within that hunk are allowed.`,
     );
     return;
   }
@@ -750,21 +645,30 @@ function validateContinuousChangedLines({
     const previous = positions[index - 1];
     const current = positions[index];
 
-    if (current.position.lineIndex !== previous.position.lineIndex + 1) {
+    if (current.position.lineIndex <= previous.position.lineIndex) {
       errors.push(
-        `analysis.json miniNode ${owner} changedLineIds must be one continuous range in source order; ${previous.changedLineId} is followed by ${current.changedLineId}.`,
+        `analysis.json miniNode ${owner} changedLineIds must appear in source order; ${previous.changedLineId} is followed by ${current.changedLineId}.`,
+      );
+      return;
+    }
+
+    if (current.position.changedIndex !== previous.position.changedIndex + 1) {
+      const skippedChangedLine = [...inventoryLinePositionById.entries()].find(
+        ([, position]) => {
+          return (
+            position.file === previous.position.file
+            && position.hunkId === previous.position.hunkId
+            && position.changedIndex === previous.position.changedIndex + 1
+          );
+        },
+      );
+
+      errors.push(
+        `analysis.json miniNode ${owner} changedLineIds may bridge context-only lines but cannot skip intervening changed line ${skippedChangedLine?.[0] || "<unknown>"}; ${previous.changedLineId} is followed by ${current.changedLineId}.`,
       );
       return;
     }
   }
-}
-
-function reviewClassPriority(reviewClass) {
-  return REVIEW_CLASS_PRIORITY.get(reviewClass) ?? REVIEW_CLASS_PRIORITY.size;
-}
-
-function rootChangeRolePriority(changeRole) {
-  return ROOT_CHANGE_ROLE_PRIORITY.get(changeRole) ?? ROOT_CHANGE_ROLE_PRIORITY.size;
 }
 
 function collectReachableNodeIds(rootId, childrenById) {

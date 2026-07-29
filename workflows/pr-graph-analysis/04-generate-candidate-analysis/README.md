@@ -15,6 +15,10 @@ middle-tree, super-tree, or v3 assembly directories while those hierarchy
 levels are paused.
 
 File, node, review-edge, and technical-relation comments explain What and Why;
-the code attached to each node explains How. Comments may use Markdown
-paragraphs and lists, and comments longer than 280 characters must contain at
-least two bullet lines.
+the code attached to each node explains How. Prefer concise Markdown comments
+and bullet lists for multiple distinct points, but length or formatting alone
+never invalidates a useful explanation.
+
+A semantic mini-node may own multiple changed spans from one hunk when only
+unchanged context separates them. Its line ids remain source ordered and may
+not skip intervening changed work owned by another node.

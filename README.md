@@ -49,7 +49,7 @@ Render an existing run directory, including the graph when `analysis.json`
 exists:
 
 ```sh
-pnpm prc -- view .reviews/REPO-123/2026-01-01T00-00-00-000Z --open
+pnpm prc -- view .reviews/REVIEW-SLUG/2026-01-01T00-00-00-000Z --open
 ```
 
 Serve generated reviews with Vite on the fixed local port:
@@ -58,20 +58,40 @@ Serve generated reviews with Vite on the fixed local port:
 pnpm web
 ```
 
+This starts the local benchmark dashboard:
+
+```text
+http://127.0.0.1:4173/reviews/
+```
+
+Choose an OpenAI or Claude model and paste a GitHub pull request URL to queue a
+benchmark batch. The dashboard freezes the PR input once, then runs that
+model's native reasoning efforts sequentially: low through xhigh for Codex, or
+low through max for Claude. Each reasoning run remains grouped under its pull
+request and analysis batch with its timings and token usage. Re-running from
+the dashboard uses the exact saved PR metadata and diff by default. **Refresh
+from GitHub** deliberately fetches the current PR state before the first
+reasoning run. **Cancel batch** terminates the active process tree and removes
+the remaining queued efforts without deleting completed history.
+
 The latest generated run for each PR is available at a stable URL:
 
 ```text
-http://127.0.0.1:4173/reviews/REPO-123/
+http://127.0.0.1:4173/reviews/REVIEW-SLUG/
 ```
 
 Timestamped revision URLs remain available for historical runs:
 
 ```text
-http://127.0.0.1:4173/reviews/REPO-123/2026-01-01T00-00-00-000Z/
+http://127.0.0.1:4173/reviews/REVIEW-SLUG/2026-01-01T00-00-00-000Z/
 ```
 
 The CLI uses local `gh` authentication, fetches PR metadata and the cumulative
 diff, then writes a timestamped run under `.reviews/<repo-pr-number>/`.
+Dashboard history and timing data are persisted in those run directories and
+survive stopping or restarting the local server. See
+[`docs/benchmark-dashboard.md`](docs/benchmark-dashboard.md) for the storage
+layout and benchmark semantics.
 
 The `analyze` command is headless. It invokes `codex exec` in read-only mode and
 writes one file-local mini-tree per changed file to `analysis.json`; it does not
