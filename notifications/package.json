@@ -8,7 +8,9 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "dev": "node --watch server.mjs",
+    "dev": "node server.mjs",
+    "sync": "node server.mjs --sync",
+    "install:sync": "node install-sync.mjs",
     "build": "vite build",
     "test": "node --test"
   },

@@ -660,13 +660,22 @@ input:focus-visible {
 }
 
 .pr-row {
+  position: relative;
   display: grid;
   grid-template-columns: 4.5rem minmax(0, 1fr) auto;
   gap: 1.15rem;
   align-items: center;
   padding: 1.35rem 1.2rem;
   border-bottom: 1px solid var(--border);
-  transition: background 150ms ease;
+  transition: background 150ms ease, opacity 150ms ease;
+}
+
+.pr-row.is-read {
+  opacity: 0.58;
+}
+
+.pr-row.is-read:hover {
+  opacity: 0.82;
 }
 
 .pr-row:last-child {
@@ -675,6 +684,51 @@ input:focus-visible {
 
 .pr-row:hover {
   background: rgb(255 255 255 / 42%);
+}
+
+.pr-update-popover {
+  position: absolute;
+  z-index: 2;
+  top: 0.75rem;
+  left: 50%;
+  width: min(24rem, calc(100% - 2rem));
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 0.6rem;
+  background: rgb(42 32 48 / 96%);
+  padding: 0.7rem 0.85rem;
+  color: white;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 0.25rem);
+  visibility: hidden;
+  box-shadow: 0 12px 30px rgb(42 32 48 / 24%);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+}
+
+.pr-row:hover .pr-update-popover,
+.pr-row:focus-within .pr-update-popover {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  visibility: visible;
+}
+
+.pr-update-popover strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pr-update-popover p,
+.pr-update-popover ul {
+  margin: 0;
+}
+
+.pr-update-popover ul {
+  padding-left: 1rem;
 }
 
 .notification-row {

@@ -275,7 +275,9 @@ try {
   await firstExecutionStarted;
   const second = await service.enqueue({
     prUrl: "https://github.com/example/beta/pull/2",
+    title: "Beta queued title",
   });
+  assert.equal(second.title, "Beta queued title");
   currentCodeVersion = {
     commit: "def456",
     dirty: false,
@@ -1281,6 +1283,7 @@ async function checkApiMiddleware() {
         model: "gpt-fixture",
         prUrl: "https://github.com/example/alpha/pull/1",
         refresh: true,
+        title: "Alpha pull request",
       }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
@@ -1302,6 +1305,7 @@ async function checkApiMiddleware() {
         model: "gpt-fixture",
         prUrl: "https://github.com/example/alpha/pull/1",
         refresh: true,
+        title: "Alpha pull request",
       },
     ]);
 

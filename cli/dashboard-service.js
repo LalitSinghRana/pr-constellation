@@ -112,6 +112,7 @@ export class DashboardService {
     refresh = false,
     sourceRunId = null,
     sourceSlug = null,
+    title = "",
   }) {
     await this.initialize();
     this.#assertOpen();
@@ -154,6 +155,7 @@ export class DashboardService {
         runId: runIds[batchIndex],
         sourceRun,
         sourceRunId: effectiveSourceRunId,
+        title,
       });
       runs.push(manifest);
     }
@@ -175,6 +177,7 @@ export class DashboardService {
     refresh = false,
     sourceRunId = null,
     sourceSlug = null,
+    title = "",
   }) {
     await this.initialize();
     this.#assertOpen();
@@ -207,6 +210,7 @@ export class DashboardService {
       runId,
       sourceRun,
       sourceRunId: frozenSource?.run.runId || null,
+      title,
     });
 
     this.#startDrain();
@@ -955,6 +959,7 @@ export class DashboardService {
     runId,
     sourceRun,
     sourceRunId,
+    title,
   }) {
     const sourceMode = sourceRunId ? "frozen" : "fresh";
     const metrics = {
@@ -984,7 +989,7 @@ export class DashboardService {
       sourceMode,
       sourceRunId,
       status: "queued",
-      title: sourceRun?.title || "",
+      title: sourceRun?.title || title,
       url: sourceRun?.url || prUrl,
     });
 
