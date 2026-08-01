@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { foldMiniTree } from "../../src/mini-tree-model.js";
+import { foldMiniTree } from "../../src/review/mini-tree-model.js";
 
 const file = {
   id: "file-1",

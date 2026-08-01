@@ -39,13 +39,13 @@ pnpm web
 The canonical user-facing route is stable across generated revisions:
 
 ```text
-http://127.0.0.1:4173/reviews/<review-slug>/
+http://127.0.0.1:4397/reviews/<review-slug>/
 ```
 
 Do not give `file://` or timestamped URLs as the main handoff URL. The stable
 route serves the stable `index.html` generated for that review slug. Historical
 revisions remain addressable by their `/reviews/<review-slug>/<run-id>/`
-subpaths on the same Vite server. If port `4173` is already in use,
+subpaths on the same server. If port `4397` is already in use,
 reuse that server when it is serving this workspace, or stop it before starting
 a new one; do not switch to a random port.
 

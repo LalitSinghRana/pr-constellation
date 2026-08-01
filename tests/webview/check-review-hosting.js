@@ -3,16 +3,6 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { renderExistingRun } from "../../cli/review-run.js";
-import viteConfig from "../../vite.config.js";
-
-assert.equal(viteConfig.appType, "mpa");
-assert.equal(viteConfig.base, "/reviews/");
-assert.equal(viteConfig.root, ".reviews");
-assert.deepEqual(viteConfig.server, {
-  host: "127.0.0.1",
-  port: 4173,
-  strictPort: true,
-});
 
 const reviewsDir = await mkdtemp(path.join(os.tmpdir(), "pr-review-hosting-"));
 const slugDir = path.join(reviewsDir, "example-repo-1");

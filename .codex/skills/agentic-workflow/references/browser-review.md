@@ -8,14 +8,14 @@ For generated PR review pages, prefer the fixed local review server:
 
 ```sh
 pnpm web <run-dir>
-pnpm ab -- open --enable react-devtools http://127.0.0.1:4173/reviews/<review-slug>/<run-id>/
+pnpm ab -- open --enable react-devtools http://127.0.0.1:4397/reviews/<review-slug>/<run-id>/
 ```
 
-The review URL must stay on port `4173`. Each review revision should use its own
+The review URL must stay on port `4397`. Each review revision should use its own
 subpath:
 
 ```text
-http://127.0.0.1:4173/reviews/<review-slug>/<run-id>/
+http://127.0.0.1:4397/reviews/<review-slug>/<run-id>/
 ```
 
 Only use a direct `file://` URL when specifically debugging static-file loading

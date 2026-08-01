@@ -12,7 +12,7 @@ import { createDiffInventory, createDiffSummary } from "../workflows/pr-graph-an
 import { runCodexGraphAnalysis } from "../workflows/pr-graph-analysis/07-run-retry-loop/codex-agent.js";
 import { runClaudeExec } from "../workflows/pr-graph-analysis/07-run-retry-loop/claude-agent.js";
 import { fetchPullRequest, parseGitHubPrUrl } from "../workflows/pr-graph-analysis/02-fetch-pr/github.js";
-import { renderDiffHtml } from "../src/render.js";
+import { renderDiffHtml } from "../src/review/render.js";
 
 export async function createReviewRun({ prUrl, reviewsDir }) {
   const { diff, metadata, paths, runDir } = await createPrInputRun({ prUrl, reviewsDir });

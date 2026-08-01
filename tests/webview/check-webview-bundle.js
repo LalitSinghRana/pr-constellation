@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { renderDiffHtml } from "../../src/render.js";
+import { renderDiffHtml } from "../../src/review/render.js";
 
 const html = await renderDiffHtml({
   analysis: {
@@ -215,8 +215,8 @@ assert.deepEqual(
 
 const [collapsibleSource, graphAppSource, webStyles] = await Promise.all([
   readFile(new URL("../../src/components/ui/collapsible.jsx", import.meta.url), "utf8"),
-  readFile(new URL("../../src/graph-app.jsx", import.meta.url), "utf8"),
-  readFile(new URL("../../src/styles.css", import.meta.url), "utf8"),
+  readFile(new URL("../../src/review/graph-app.jsx", import.meta.url), "utf8"),
+  readFile(new URL("../../src/review/styles.css", import.meta.url), "utf8"),
 ]);
 
 assert.match(collapsibleSource, /CollapsiblePrimitive/);
