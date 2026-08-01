@@ -40,7 +40,7 @@ Read these resources before making task edits:
 
    ```sh
    pnpm web <run-dir>
-   pnpm ab -- open --enable react-devtools http://127.0.0.1:4173/reviews/<review-slug>/<run-id>/
+   pnpm ab -- open --enable react-devtools http://127.0.0.1:4397/reviews/<review-slug>/<run-id>/
    pnpm ab -- snapshot
    pnpm ab -- errors
    pnpm ab -- console
@@ -65,12 +65,12 @@ pnpm web <run-dir>
 The canonical URL shape is:
 
 ```text
-http://127.0.0.1:4173/reviews/<review-slug>/<run-id>/
+http://127.0.0.1:4397/reviews/<review-slug>/<run-id>/
 ```
 
 Keep all review revisions under the same server and port. A new generated
 revision gets a new `<run-id>` subpath under the same `<review-slug>`. If port
-`4173` is already occupied, reuse that server if it is serving this workspace,
+`4397` is already occupied, reuse that server if it is serving this workspace,
 or stop it before starting a new one; do not switch to another port.
 
 ## Acceptance
@@ -92,6 +92,6 @@ At handoff, include:
 - Attempts used.
 - Verification commands and results.
 - Agent Browser signals when UI was inspected.
-- The live `http://127.0.0.1:4173/reviews/<review-slug>/<run-id>/` URL for the
+- The live `http://127.0.0.1:4397/reviews/<review-slug>/<run-id>/` URL for the
   generated review when applicable.
 - Any remaining risk or skipped validation.

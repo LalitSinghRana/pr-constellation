@@ -24,11 +24,18 @@ export function createDashboardApiMiddleware({ service }) {
         if (typeof body.prUrl !== "string" || body.prUrl.trim() === "") {
           throw createHttpError(400, "prUrl is required.");
         }
+        if (
+          body.title != null
+          && (typeof body.title !== "string" || body.title.trim().length > 500)
+        ) {
+          throw createHttpError(400, "title must be a string of at most 500 characters.");
+        }
         validateOptionalModel(body.model);
         const run = await service.enqueue({
           model: body.model?.trim(),
           prUrl: body.prUrl.trim(),
           refresh: body.refresh === true,
+          title: body.title?.trim(),
         });
         sendJson(response, 202, { run, runs: [run] });
         return;

@@ -1,20 +1,20 @@
 # Review Website
 
-The `src/` directory owns the generated PR review website and all
-browser-facing implementation.
+The `src/` directory owns the complete local cockpit and generated review
+website.
 
 ## Layout
 
-- `src/render.js`: builds the standalone review HTML and transforms analysis
+- `src/App.jsx` and `src/main.jsx`: root cockpit application and browser entry.
+- `src/pages/`: review queue, analysis queue, and scoring pages.
+- `src/components/`, `src/hooks/`, and `src/lib/`: shared UI, state, and helpers.
+- `src/review/render.js`: builds the standalone review HTML and transforms analysis
   plus diff data for the browser.
-- `src/graph-app.jsx`: React Flow review application.
-- `src/dashboard-app.jsx`: local PR/run benchmark dashboard.
-- `src/dashboard-render.js`: builds the standalone dashboard HTML.
-- `src/mini-tree-model.js`: deterministic presentation-only tree folding.
-- `src/styles.css`: Tailwind entry and website styling.
-- `src/dashboard.css`: dashboard layout and timing-waterfall styling.
+- `src/review/graph-app.jsx`: React Flow review application.
+- `src/review/mini-tree-model.js`: deterministic presentation-only tree folding.
+- `src/index.css`: cockpit Tailwind entry; `src/review/styles.css` styles generated reviews.
 - `src/components/ui/`: shadcn components used by the application.
-- `vite.config.js`: serves the dashboard and generated pages from `.reviews/`.
+- `server.mjs`: serves the cockpit, APIs, and generated pages on one port.
 - `tests/webview/`: renderer, hosting, and presentation-model regression checks.
 - `docs/dev-agent-browser.md`: browser-development guidance.
 
@@ -37,12 +37,12 @@ Run the root shadcn wrapper so `components.json` remains the single UI registry:
 pnpm ui:add <component>
 ```
 
-Start the local dashboard and review server:
+Start the local cockpit and review server:
 
 ```sh
 pnpm web
 ```
 
-Open `http://127.0.0.1:4173/reviews/`. The dashboard can queue new analyses,
-while generated graphs remain available at both their run-specific URL and the
-stable `.reviews/<review-slug>/index.html` route.
+Open `http://127.0.0.1:4397/` for the inbox or `/analysis` for analysis status.
+Generated graphs remain available at both their run-specific URL and the stable
+`.reviews/<review-slug>/index.html` route.
