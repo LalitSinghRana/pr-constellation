@@ -90,7 +90,8 @@ const requiredWebviewMarkers = [
   "Collapse entire JSON tree",
   "flow-reader",
   "react-flow",
-  "code-row",
+  "diff-tailwindcss-wrapper",
+  "mini-diff-gap-divider",
   "file-page-label",
   "file-page-view-tabs",
   "mini-node-label",
@@ -246,6 +247,8 @@ assert.match(
   /foldMiniTree\(file, \{ expandedGroupIds \}\)/,
 );
 assert.match(graphAppSource, /type:\s*item\.node\.collapsedGroup \? "collapsedGroup" : "miniDiff"/);
+assert.match(graphAppSource, /nextLine\.oldLine - prevLine\.oldLine - 1/);
+assert.match(graphAppSource, /unchanged lines/);
 assert.ok((graphAppSource.match(/\bforceMount\b/g) || []).length >= 4);
 assert.match(
   webStyles,
@@ -331,8 +334,8 @@ const tsxGraphData = extractJsonScript(tsxHtml, "pr-analysis-data");
 const tsxLines = tsxGraphData.files[0].miniTree.nodes[0].codeChunks[0].lines;
 const openingView = tsxLines.find((line) => line.content.trim() === "<View>");
 const closingView = tsxLines.find((line) => line.content.trim() === "</View>");
-const openingViewStyle = tokenStyleForContent(openingView?.highlightedHtml, "View");
-const closingViewStyle = tokenStyleForContent(closingView?.highlightedHtml, "View");
+const openingViewStyle = tokenStyleForContent(openingView?.syntaxTokens, "View");
+const closingViewStyle = tokenStyleForContent(closingView?.syntaxTokens, "View");
 
 assert.ok(openingViewStyle);
 assert.equal(closingViewStyle, openingViewStyle);
@@ -347,9 +350,6 @@ function extractJsonScript(documentHtml, id) {
   return JSON.parse(match[1]);
 }
 
-function tokenStyleForContent(highlightedHtml, content) {
-  const match = String(highlightedHtml || "").match(
-    new RegExp(`<span class="shiki-token" style="([^"]+)">${content}<\\/span>`),
-  );
-  return match?.[1] || "";
+function tokenStyleForContent(syntaxTokens, content) {
+  return (syntaxTokens || []).find((token) => token.content === content)?.style || "";
 }

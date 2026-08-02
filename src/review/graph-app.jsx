@@ -17,6 +17,7 @@ import {
   RotateCcw,
   UserRound,
 } from "lucide-react";
+import { DiffModeEnum, DiffView } from "@git-diff-view/react";
 import { JsonView, allExpanded, collapseAllNested, defaultStyles } from "react-json-view-lite";
 import {
   Background,
@@ -30,6 +31,8 @@ import {
   ReactFlow,
   ReactFlowProvider,
   getSmoothStepPath,
+  useNodes,
+  useNodesInitialized,
   useReactFlow,
 } from "@xyflow/react";
 import { Badge } from "../components/ui/badge.jsx";
@@ -119,6 +122,24 @@ function App() {
   const [fileOrderViewIds, setFileOrderViewIds] = usePersistentStringSet(fileOrderViewStorageKey);
   const stacks = reactFlowData?.reviewStack?.stacks || [];
   const [activeStackId, setActiveStackId] = useState(() => stacks[0]?.id ?? null);
+  // First-pass layout uses the estimated miniNodeHeight() formula; once
+  // GraphCanvas measures real rendered heights that drift from the estimate,
+  // this re-runs layout with real numbers. Node ids are globally unique and
+  // content is static, so measurements never need to be invalidated.
+  const [measuredHeights, setMeasuredHeights] = useState(() => new Map());
+  const handleMeasuredHeightsChange = useCallback((updates) => {
+    setMeasuredHeights((current) => {
+      let changed = false;
+      const next = new Map(current);
+      for (const [id, height] of updates) {
+        if (next.get(id) !== height) {
+          next.set(id, height);
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, []);
   const graph = useMemo(() => {
     // Always scope the canvas to one stack at a time, even when there is
     // only one: review stacks render independently, never as one combined
@@ -128,8 +149,9 @@ function App() {
       activeStackId,
       expandedGroupIds,
       fileOrderViewIds,
+      measuredHeights,
     });
-  }, [activeStackId, expandedGroupIds, fileOrderViewIds, reactFlowData]);
+  }, [activeStackId, expandedGroupIds, fileOrderViewIds, measuredHeights, reactFlowData]);
   const toggleCollapsedGroup = useCallback((groupId) => {
     setExpandedGroupIds((current) => {
       const next = new Set(current);
@@ -166,6 +188,7 @@ function App() {
                   graph={graph}
                   onActiveStackChange={setActiveStackId}
                   onFileViewModeChange={setFileViewMode}
+                  onMeasuredHeightsChange={handleMeasuredHeightsChange}
                   onToggleCollapsedGroup={toggleCollapsedGroup}
                   stacks={stacks}
                 />
@@ -254,10 +277,13 @@ function GraphCanvas({
   graph,
   onActiveStackChange,
   onFileViewModeChange,
+  onMeasuredHeightsChange,
   onToggleCollapsedGroup,
   stacks,
 }) {
   const reactFlow = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
+  const liveNodes = useNodes();
   const defaultViewport = graph.defaultViewport || FALLBACK_GRAPH_VIEWPORT;
   useEffect(() => {
     reactFlow.setViewport(defaultViewport, { duration: 200 });
@@ -265,6 +291,26 @@ function GraphCanvas({
     // recompute, since that would fight the user's own pan/zoom.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStackId]);
+  useEffect(() => {
+    if (!nodesInitialized) {
+      return;
+    }
+
+    const updates = new Map();
+    for (const node of liveNodes) {
+      if (node.type !== "miniDiff" || !node.measured?.height || !node.data?.miniNode) {
+        continue;
+      }
+      const estimatedHeight = miniNodeHeight(node.data.miniNode);
+      if (Math.abs(node.measured.height - estimatedHeight) > 2) {
+        updates.set(node.id, node.measured.height);
+      }
+    }
+
+    if (updates.size > 0) {
+      onMeasuredHeightsChange(updates);
+    }
+  }, [liveNodes, nodesInitialized, onMeasuredHeightsChange]);
   const interactiveNodes = useMemo(() => {
     return graph.nodes.map((node) => {
       if (node.type === "collapsedGroup") {
@@ -587,17 +633,11 @@ function MiniDiffNode({ data }) {
         </header>
       </ExplanationHoverCard>
       <div className="mini-diff-scroll">
-        {(data.miniNode.codeChunks || []).map((chunk, chunkIndex) => (
-          <pre className="code-diff mini-diff-code" key={`${data.miniNode.id}-${chunkIndex}`}>
-            {(chunk.lines || []).map((line, lineIndex) => (
-              <span className={`code-row mini-code-row is-${line.type}`} key={`${line.oldLine}-${line.newLine}-${lineIndex}`}>
-                <span className="code-line-number">{line.oldLine ?? ""}</span>
-                <span className="code-line-number">{line.newLine ?? ""}</span>
-                <span className="code-prefix">{line.prefix}</span>
-                <CodeContent line={line} />
-              </span>
-            ))}
-          </pre>
+        {(data.miniNode.codeChunks || []).map((chunk, chunkIndex, chunks) => (
+          <React.Fragment key={`${data.miniNode.id}-${chunkIndex}`}>
+            <UnchangedLinesGap nextChunk={chunk} prevChunk={chunks[chunkIndex - 1]} />
+            <DiffChunkView chunk={chunk} />
+          </React.Fragment>
         ))}
       </div>
       {showHandles ? <Handle className="node-handle" position={Position.Bottom} type="source" /> : null}
@@ -696,27 +736,212 @@ function plainTextComment(comment) {
     .trim();
 }
 
-function CodeContent({ line }) {
-  if (line.highlightedHtml) {
-    return (
-      <span
-        className="code-content shiki-inline-code"
-        dangerouslySetInnerHTML={{ __html: line.highlightedHtml }}
-      />
-    );
+function UnchangedLinesGap({ nextChunk, prevChunk }) {
+  const gap = unchangedLineGap(prevChunk, nextChunk);
+
+  if (!gap) {
+    return null;
   }
 
-  return <span className="code-content">{line.content}</span>;
+  return <div className="mini-diff-gap-divider">⋯ {gap} unchanged lines</div>;
+}
+
+function unchangedLineGap(prevChunk, nextChunk) {
+  const prevLine = prevChunk?.lines?.at(-1);
+  const nextLine = nextChunk?.lines?.[0];
+
+  if (prevLine?.oldLine == null || nextLine?.oldLine == null) {
+    return 0;
+  }
+
+  return Math.max(0, nextLine.oldLine - prevLine.oldLine - 1);
+}
+
+function DiffChunkView({ chunk }) {
+  const { data, registerHighlighter } = useMemo(() => buildChunkDiffData(chunk), [chunk]);
+
+  return (
+    <DiffView
+      className="mini-diff-code"
+      data={data}
+      diffViewFontSize={11}
+      diffViewHighlight
+      diffViewMode={DiffModeEnum.Unified}
+      diffViewWrap={false}
+      registerHighlighter={registerHighlighter}
+    />
+  );
+}
+
+function buildChunkDiffData(chunk) {
+  const lines = chunk.lines || [];
+  const oldLines = lines.filter((line) => line.type !== "add");
+  const newLines = lines.filter((line) => line.type !== "del");
+  const oldFileContent = oldLines.map((line) => line.content).join("\n");
+  const newFileContent = newLines.map((line) => line.content).join("\n");
+  // oldFile/newFile.content IS the whole synthetic "file" handed to the library, so the
+  // hunk must claim to start at line 1 on each side (its own line count), not the real PR
+  // line number — the library indexes hunk positions against the given content's own
+  // length, and a real (larger) line number here makes it fall back to an empty diff.
+  const oldStart = oldLines.length > 0 ? 1 : 0;
+  const newStart = newLines.length > 0 ? 1 : 0;
+  const hunkHeader = `@@ -${oldStart},${oldLines.length} +${newStart},${newLines.length} @@`;
+  const hunkBody = lines
+    .map((line) => `${line.type === "add" ? "+" : line.type === "del" ? "-" : " "}${line.content}`)
+    .join("\n");
+  // The parser also looks for a "--- a/... \n+++ b/..." file header before it will read any
+  // "@@ ... @@" hunks; without it every hunk is silently discarded as an empty diff.
+  const hunkText = `--- a/${chunk.file}\n+++ b/${chunk.file}\n${hunkHeader}\n${hunkBody}`;
+
+  return {
+    data: {
+      hunks: [hunkText],
+      newFile: { content: newFileContent, fileLang: "plaintext", fileName: chunk.file },
+      oldFile: { content: oldFileContent, fileLang: "plaintext", fileName: chunk.file },
+    },
+    registerHighlighter: createPreHighlightedHighlighter({
+      newAst: { children: buildLineAstNodes(newLines), type: "root" },
+      newFileContent,
+      oldAst: { children: buildLineAstNodes(oldLines), type: "root" },
+      oldFileContent,
+    }),
+  };
+}
+
+function buildLineAstNodes(lines) {
+  const children = [];
+
+  lines.forEach((line, index) => {
+    children.push(...tokensToAstNodes(line.syntaxTokens));
+
+    if (index < lines.length - 1) {
+      children.push({ type: "text", value: "\n" });
+    }
+  });
+
+  return children;
+}
+
+function tokensToAstNodes(tokens) {
+  return (tokens || []).map((token) => (
+    token.style
+      ? {
+          children: [{ type: "text", value: token.content }],
+          properties: { style: token.style },
+          tagName: "span",
+          type: "element",
+        }
+      : { type: "text", value: token.content }
+  ));
+}
+
+// The shiki tokens are highlighted server-side (render.js); this highlighter just hands
+// pre-built per-file ASTs back to @git-diff-view/react instead of running a highlighter
+// engine (e.g. lowlight) in the browser.
+function createPreHighlightedHighlighter({ newAst, newFileContent, oldAst, oldFileContent }) {
+  return {
+    getAST: (raw) => (raw === newFileContent ? newAst : oldAst),
+    hasRegisteredCurrentLang: () => true,
+    ignoreSyntaxHighlightList: [],
+    maxLineToIgnoreSyntax: Number.POSITIVE_INFINITY,
+    name: "pre-highlighted",
+    processAST: processPreHighlightedAst,
+    setIgnoreSyntaxHighlightList: () => {},
+    setMaxLineToIgnoreSyntax: () => {},
+    type: "style",
+  };
+}
+
+// Splits a per-file AST (built by buildLineAstNodes) into per-line syntax records.
+// Adapted from @git-diff-view/lowlight's processAST: line breaks are detected purely
+// from literal "\n" characters inside text node values, not from AST node boundaries.
+function processPreHighlightedAst(ast) {
+  let lineNumber = 1;
+  const syntaxObj = {};
+
+  const loopAst = (nodes, wrapper) => {
+    nodes.forEach((node) => {
+      if (node.type === "text") {
+        if (!node.value.includes("\n")) {
+          const valueLength = node.value.length;
+
+          if (!syntaxObj[lineNumber]) {
+            node.startIndex = 0;
+            node.endIndex = valueLength - 1;
+            syntaxObj[lineNumber] = { lineNumber, nodeList: [{ node, wrapper }], value: node.value, valueLength };
+          } else {
+            node.startIndex = syntaxObj[lineNumber].valueLength;
+            node.endIndex = node.startIndex + valueLength - 1;
+            syntaxObj[lineNumber].value += node.value;
+            syntaxObj[lineNumber].valueLength += valueLength;
+            syntaxObj[lineNumber].nodeList.push({ node, wrapper });
+          }
+
+          node.lineNumber = lineNumber;
+          return;
+        }
+
+        const segments = node.value.split("\n");
+
+        segments.forEach((segment, segmentIndex) => {
+          const isLastSegment = segmentIndex === segments.length - 1;
+          const segmentValue = isLastSegment ? segment : `${segment}\n`;
+          const segmentLineNumber = segmentIndex === 0 ? lineNumber : ++lineNumber;
+          const segmentValueLength = segmentValue.length;
+          const segmentNode = { endIndex: Infinity, lineNumber: segmentLineNumber, startIndex: Infinity, type: "text", value: segmentValue };
+
+          if (!syntaxObj[segmentLineNumber]) {
+            segmentNode.startIndex = 0;
+            segmentNode.endIndex = segmentValueLength - 1;
+            syntaxObj[segmentLineNumber] = {
+              lineNumber: segmentLineNumber,
+              nodeList: [{ node: segmentNode, wrapper }],
+              value: segmentValue,
+              valueLength: segmentValueLength,
+            };
+          } else {
+            segmentNode.startIndex = syntaxObj[segmentLineNumber].valueLength;
+            segmentNode.endIndex = segmentNode.startIndex + segmentValueLength - 1;
+            syntaxObj[segmentLineNumber].value += segmentValue;
+            syntaxObj[segmentLineNumber].valueLength += segmentValueLength;
+            syntaxObj[segmentLineNumber].nodeList.push({ node: segmentNode, wrapper });
+          }
+        });
+
+        node.lineNumber = lineNumber;
+        return;
+      }
+
+      if (node.children) {
+        loopAst(node.children, node);
+        node.lineNumber = lineNumber;
+      }
+    });
+  };
+
+  loopAst(ast.children);
+
+  return { syntaxFileLineNumber: lineNumber, syntaxFileObject: syntaxObj };
 }
 
 function buildMiniDiffGraph(
   analysis,
-  { activeStackId = null, expandedGroupIds = new Set(), fileOrderViewIds = new Set() } = {},
+  {
+    activeStackId = null,
+    expandedGroupIds = new Set(),
+    fileOrderViewIds = new Set(),
+    measuredHeights = null,
+  } = {},
 ) {
   const nodes = [];
   const edges = [];
   const filePages = [];
-  const fileSpecs = buildFilePageSpecs(analysis, { activeStackId, expandedGroupIds, fileOrderViewIds });
+  const fileSpecs = buildFilePageSpecs(analysis, {
+    activeStackId,
+    expandedGroupIds,
+    fileOrderViewIds,
+    measuredHeights,
+  });
 
   for (const spec of fileSpecs) {
     const { file, miniNodes, miniTree, pageHeight, pageId, pageWidth, viewMode, x, y } = spec;
@@ -812,7 +1037,12 @@ function buildMiniDiffGraph(
 
 function buildFilePageSpecs(
   analysis,
-  { activeStackId = null, expandedGroupIds = new Set(), fileOrderViewIds = new Set() } = {},
+  {
+    activeStackId = null,
+    expandedGroupIds = new Set(),
+    fileOrderViewIds = new Set(),
+    measuredHeights = null,
+  } = {},
 ) {
   const activeFileIds = activeStackId
     ? new Set(
@@ -824,6 +1054,9 @@ function buildFilePageSpecs(
     .filter((file) => !activeFileIds || activeFileIds.has(file.id))
     .map((file) => buildFileLayout(file, {
       expandedGroupIds,
+      getMiniNodeHeight: measuredHeights
+        ? (node) => measuredHeights.get(miniNodeId(file, node.id)) ?? miniNodeHeight(node)
+        : miniNodeHeight,
       viewMode: fileOrderViewIds.has(file.id) ? "file" : "tree",
     }));
 
@@ -964,13 +1197,13 @@ function buildMiddleGroupLayout({ files, order, superNode, treeNode }) {
 
 function buildFileLayout(
   file,
-  { expandedGroupIds = new Set(), viewMode = "tree" } = {},
+  { expandedGroupIds = new Set(), getMiniNodeHeight = miniNodeHeight, viewMode = "tree" } = {},
 ) {
   const miniTree = viewMode === "file"
     ? buildFileOrderMiniTree(file)
     : foldMiniTree(file, { expandedGroupIds });
   const miniNodes = miniTree.nodes;
-  const layout = layoutMiniNodes(miniNodes, miniTree.reviewEdges);
+  const layout = layoutMiniNodes(miniNodes, miniTree.reviewEdges, getMiniNodeHeight);
 
   return {
     file,
@@ -1399,9 +1632,9 @@ function fileChangeRolePriority(changeRole) {
   return FILE_CHANGE_ROLE_PRIORITY.get(changeRole) ?? FILE_CHANGE_ROLE_PRIORITY.size;
 }
 
-function layoutMiniNodes(miniNodes, miniEdges) {
+function layoutMiniNodes(miniNodes, miniEdges, getMiniNodeHeight = miniNodeHeight) {
   const items = miniNodes.map((node, order) => ({
-    height: miniNodeHeight(node),
+    height: getMiniNodeHeight(node),
     node,
     order,
     width: miniNodeWidth(node),

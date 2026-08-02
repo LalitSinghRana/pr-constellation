@@ -156,8 +156,10 @@ async function buildGraphAssets() {
     throw new Error("Failed to build graph website bundle.");
   }
 
+  const diffViewCss = await readFile(require.resolve("@git-diff-view/react/styles/diff-view.css"), "utf8");
+
   return {
-    css: `${await readFile(require.resolve("@xyflow/react/dist/style.css"), "utf8")}\n${jsonViewCss}\n${webCss}`,
+    css: `${await readFile(require.resolve("@xyflow/react/dist/style.css"), "utf8")}\n${diffViewCss}\n${jsonViewCss}\n${webCss}`,
     js,
   };
 }
@@ -517,7 +519,7 @@ function buildCodeChunksForMiniNode({ file, inventoryIndex, miniNode, syntaxHigh
     changedLinesByHunk.set(indexedLine.hunk.id, hunkLines);
   }
 
-  return [...changedLinesByHunk.values()].flatMap((changedLines) => {
+  const chunks = [...changedLinesByHunk.values()].flatMap((changedLines) => {
     const sortedLines = changedLines
       .slice()
       .sort((left, right) => left.lineIndex - right.lineIndex);
@@ -578,6 +580,11 @@ function buildCodeChunksForMiniNode({ file, inventoryIndex, miniNode, syntaxHigh
       };
     });
   });
+
+  return chunks.sort((left, right) => (
+    (left.lines[0].oldLine ?? left.lines[0].newLine)
+    - (right.lines[0].oldLine ?? right.lines[0].newLine)
+  ));
 }
 
 function buildCodeChunksForFile({ file, inventoryIndex, syntaxHighlighter }) {
@@ -758,6 +765,8 @@ function indexDiffInventory(inventory) {
 function inventoryLineToSnippetLine(line) {
   return {
     content: line.content,
+    hunkId: line.hunkId,
+    id: line.id,
     newLine: line.newLine,
     oldLine: line.oldLine,
     prefix: line.prefix,
@@ -776,12 +785,12 @@ function highlightSnippetLines({
     ...contextLines.map((line) => ({ displayIndex: null, line })),
     ...lines.map((line, displayIndex) => ({ displayIndex, line })),
   ];
-  const oldLineHtml = highlightDiffSide({
+  const oldLineTokens = highlightDiffSideTokens({
     entries: entries.filter((entry) => entry.line.type !== "add"),
     lang,
     syntaxHighlighter,
   });
-  const newLineHtml = highlightDiffSide({
+  const newLineTokens = highlightDiffSideTokens({
     entries: entries.filter((entry) => entry.line.type !== "del"),
     lang,
     syntaxHighlighter,
@@ -789,22 +798,18 @@ function highlightSnippetLines({
 
   return lines.map((line, displayIndex) => ({
     ...line,
-    highlightedHtml: (
+    syntaxTokens: (
       line.type === "del"
-        ? oldLineHtml.get(displayIndex)
-        : newLineHtml.get(displayIndex)
-    ) ?? highlightCodeLine({
-      code: line.content,
-      lang,
-      syntaxHighlighter,
-    }),
+        ? oldLineTokens.get(displayIndex)
+        : newLineTokens.get(displayIndex)
+    ) ?? tokensForLine({ code: line.content, lang, syntaxHighlighter }).map(toSyntaxToken),
   }));
 }
 
-function highlightDiffSide({ entries, lang, syntaxHighlighter }) {
-  const htmlByDisplayIndex = new Map();
+function highlightDiffSideTokens({ entries, lang, syntaxHighlighter }) {
+  const tokensByDisplayIndex = new Map();
   if (entries.length === 0) {
-    return htmlByDisplayIndex;
+    return tokensByDisplayIndex;
   }
 
   const tokenLines = tokensForSource({
@@ -818,13 +823,18 @@ function highlightDiffSide({ entries, lang, syntaxHighlighter }) {
       return;
     }
 
-    htmlByDisplayIndex.set(
+    tokensByDisplayIndex.set(
       entry.displayIndex,
-      renderTokenLine(tokenLines[tokenLineIndex] || []),
+      (tokenLines[tokenLineIndex] || []).map(toSyntaxToken),
     );
   });
 
-  return htmlByDisplayIndex;
+  return tokensByDisplayIndex;
+}
+
+function toSyntaxToken(token) {
+  const style = shikiTokenStyle(token.htmlStyle);
+  return style ? { content: token.content, style } : { content: token.content };
 }
 
 function highlightDiffHtml({ diffHtml, syntaxHighlighter }) {
@@ -870,16 +880,6 @@ function highlightInlineDiffHtml({ inlineHtml, lang, syntaxHighlighter }) {
     .join("");
 }
 
-function highlightCodeLine({ code, lang, syntaxHighlighter }) {
-  const tokens = tokensForLine({ code, lang, syntaxHighlighter });
-
-  return renderTokenRange({
-    end: String(code).length,
-    start: 0,
-    tokens,
-  });
-}
-
 function tokensForLine({ code, lang, syntaxHighlighter }) {
   return tokensForSource({ code, lang, syntaxHighlighter })[0] || [];
 }
@@ -901,12 +901,6 @@ function tokensForSource({ code, lang, syntaxHighlighter }) {
       themes: SHIKI_THEMES,
     }).tokens;
   }
-}
-
-function renderTokenLine(tokens) {
-  return tokens
-    .map((token) => renderShikiToken(token.content, token.htmlStyle))
-    .join("");
 }
 
 function renderTokenRange({ end, start, tokens }) {
