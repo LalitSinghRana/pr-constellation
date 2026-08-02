@@ -187,7 +187,7 @@
   -webkit-user-select: text;
 }
 
-.mini-diff-node * {
+.mini-diff-node *:not(.code-line-number):not(.code-prefix) {
   user-select: text;
   -webkit-user-select: text;
 }
@@ -276,10 +276,6 @@
 
 .mini-node-label.is-review-important .mini-node-label-value {
   color: var(--destructive);
-}
-
-.mini-node-label.is-review-core .mini-node-label-value {
-  color: color-mix(in oklab, var(--mini-tree-color) 88%, var(--foreground));
 }
 
 .mini-node-label.is-review-supporting .mini-node-label-value {
@@ -1059,6 +1055,16 @@
     height: 100%;
     min-width: 0;
     min-height: 0;
+  }
+
+  .stack-select-trigger {
+    position: absolute;
+    top: 16px;
+    left: 18px;
+    z-index: 11;
+    max-width: 320px;
+    background: color-mix(in oklab, var(--card) 90%, transparent) !important;
+    backdrop-filter: blur(12px);
   }
 
   .flow-canvas .react-flow__node-reviewGroup {

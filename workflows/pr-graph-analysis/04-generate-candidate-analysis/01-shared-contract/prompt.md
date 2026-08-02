@@ -69,13 +69,12 @@ to reduce tokens, latency, or cost.
 Every file and mini-node must include:
 
 - File `reviewClass`: `important`, `supporting`, or `mechanical`.
-- Mini-node `reviewClass`: `core`, `important`, `supporting`, or `mechanical`.
+- Mini-node `reviewClass`: `important`, `supporting`, or `mechanical`.
 - `changeRole`: `runtime`, `test`, `storybook`, `snapshot`, `type`, `docs`,
   `config`, `dependency`, `generated`, `formatting`, or `imports`.
 
 `reviewClass` tells the human how to review the change:
 
-- `core`: the single root starting node in a mini-tree.
 - `important`: this is central behavior that belongs in the reviewer's first
   pass.
 - `supporting`: this is secondary behavior or implementation needed to make or
@@ -83,9 +82,10 @@ Every file and mini-node must include:
 - `mechanical`: this is mostly skim/verify work, such as imports, formatting,
   generated output, dependency churn, or low-signal snapshots.
 
-Review priority is always `core > important > supporting > mechanical`. Each
-mini-tree must contain exactly one `core` node, and it must be the root.
-No file summary or non-root mini-node may use `core`.
+Review priority is always `important > supporting > mechanical`. A mini-tree's
+root is whichever node has no incoming `reviewEdges`; nothing about a node's
+`reviewClass` makes it the root, and nothing about being the root forces its
+`reviewClass`. Classify the root on the same merit as any other node.
 
 `changeRole` tells the human what kind of change it is:
 
@@ -104,8 +104,7 @@ summaries and non-root mini-nodes:
 - `generated` -> `mechanical`
 - `formatting` -> `mechanical`
 
-The root's structural `core` class overrides those mappings. Classify type
-changes by their actual review value: a primary contract can be `core/type` or
+Classify type changes by their actual review value: a primary contract can be
 `important/type`, while routine supporting declarations may be
 `supporting/type` or `mechanical/type`.
 

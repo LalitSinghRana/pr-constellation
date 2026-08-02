@@ -1,5 +1,4 @@
 const FILE_REVIEW_CLASSES = new Set(["important", "supporting", "mechanical"]);
-const MINI_NODE_REVIEW_CLASSES = new Set(["core", ...FILE_REVIEW_CLASSES]);
 const CHANGE_ROLES = new Set([
   "runtime",
   "test",
@@ -221,7 +220,7 @@ function validateMiniTree({
 
     const owner = `${file.id}/${miniNode.id}`;
     validateReviewClassAndRoleValues({
-      allowedReviewClasses: MINI_NODE_REVIEW_CLASSES,
+      allowedReviewClasses: FILE_REVIEW_CLASSES,
       errors,
       targetId: `miniNode ${owner}`,
       value: miniNode,
@@ -788,6 +787,63 @@ function collectReachableNodeIds(rootId, childrenById) {
   }
 
   return visited;
+}
+
+const REVIEW_STACK_SCHEMA_VERSION = "pr-graph-review-stack/v1";
+
+export function validateReviewStack(stack, { inventory = null } = {}) {
+  const errors = [];
+
+  if (stack?.schemaVersion !== REVIEW_STACK_SCHEMA_VERSION) {
+    errors.push("review-stack.json has an invalid or missing schemaVersion.");
+  }
+  if (!Array.isArray(stack?.stacks) || stack.stacks.length === 0) {
+    errors.push("review-stack.json must contain at least one stack.");
+  }
+  if (errors.length > 0) {
+    throwValidationError(errors);
+  }
+
+  const stackIds = stack.stacks.map((entry) => entry.id);
+  validateNoDuplicates({ errors, ids: stackIds, label: "review-stack.json stacks[].id" });
+
+  const allFileIds = [];
+  for (const [index, entry] of stack.stacks.entries()) {
+    validateRequiredText({
+      errors,
+      label: `review-stack.json stack ${entry?.id ?? index} title`,
+      value: entry?.title,
+    });
+    validateRequiredText({
+      errors,
+      label: `review-stack.json stack ${entry?.id ?? index} comment`,
+      value: entry?.comment,
+    });
+
+    if (!Array.isArray(entry?.fileIds) || entry.fileIds.length === 0) {
+      errors.push(`review-stack.json stack ${entry?.id ?? index} must contain at least one file id.`);
+      continue;
+    }
+    allFileIds.push(...entry.fileIds);
+  }
+
+  validateNoDuplicates({ errors, ids: allFileIds, label: "review-stack.json stacks[].fileIds" });
+
+  if (inventory) {
+    const inventoryChangedFileIds = (inventory.files || [])
+      .filter((file) => Array.isArray(file.changedLineIds) && file.changedLineIds.length > 0)
+      .map((file) => file.id);
+    validateExactIdSet({
+      actualIds: allFileIds,
+      errors,
+      expectedIds: inventoryChangedFileIds,
+      label: "review-stack.json stacks[].fileIds",
+    });
+  }
+
+  if (errors.length > 0) {
+    throwValidationError(errors);
+  }
 }
 
 function throwValidationError(errors) {

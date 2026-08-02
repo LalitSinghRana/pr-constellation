@@ -36,6 +36,13 @@ import { Badge } from "../components/ui/badge.jsx";
 import { Button } from "../components/ui/button.jsx";
 import { Collapsible, CollapsibleTrigger } from "../components/ui/collapsible.jsx";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "../components/ui/hover-card.jsx";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select.jsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs.jsx";
 import { foldMiniTree, normalizeMiniTree } from "./mini-tree-model.js";
 
@@ -110,9 +117,19 @@ function App() {
   }, []);
   const [expandedGroupIds, setExpandedGroupIds] = usePersistentStringSet(expansionStorageKey);
   const [fileOrderViewIds, setFileOrderViewIds] = usePersistentStringSet(fileOrderViewStorageKey);
+  const stacks = reactFlowData?.reviewStack?.stacks || [];
+  const [activeStackId, setActiveStackId] = useState(() => stacks[0]?.id ?? null);
   const graph = useMemo(() => {
-    return buildMiniDiffGraph(reactFlowData, { expandedGroupIds, fileOrderViewIds });
-  }, [expandedGroupIds, fileOrderViewIds, reactFlowData]);
+    // Always scope the canvas to one stack at a time, even when there is
+    // only one: review stacks render independently, never as one combined
+    // whole-PR graph. Falls back to unfiltered only for old runs with no
+    // reviewStack at all (activeStackId stays null in that case).
+    return buildMiniDiffGraph(reactFlowData, {
+      activeStackId,
+      expandedGroupIds,
+      fileOrderViewIds,
+    });
+  }, [activeStackId, expandedGroupIds, fileOrderViewIds, reactFlowData]);
   const toggleCollapsedGroup = useCallback((groupId) => {
     setExpandedGroupIds((current) => {
       const next = new Set(current);
@@ -145,9 +162,12 @@ function App() {
             <section className="graph-panel" aria-label="PR review tree">
               <ReactFlowProvider>
                 <GraphCanvas
+                  activeStackId={activeStackId}
                   graph={graph}
+                  onActiveStackChange={setActiveStackId}
                   onFileViewModeChange={setFileViewMode}
                   onToggleCollapsedGroup={toggleCollapsedGroup}
+                  stacks={stacks}
                 />
               </ReactFlowProvider>
             </section>
@@ -229,9 +249,22 @@ function ReviewHeader({ hasGraph, review }) {
   );
 }
 
-function GraphCanvas({ graph, onFileViewModeChange, onToggleCollapsedGroup }) {
+function GraphCanvas({
+  activeStackId,
+  graph,
+  onActiveStackChange,
+  onFileViewModeChange,
+  onToggleCollapsedGroup,
+  stacks,
+}) {
   const reactFlow = useReactFlow();
   const defaultViewport = graph.defaultViewport || FALLBACK_GRAPH_VIEWPORT;
+  useEffect(() => {
+    reactFlow.setViewport(defaultViewport, { duration: 200 });
+    // Re-center whenever the selected stack changes; not on every viewport
+    // recompute, since that would fight the user's own pan/zoom.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStackId]);
   const interactiveNodes = useMemo(() => {
     return graph.nodes.map((node) => {
       if (node.type === "collapsedGroup") {
@@ -271,13 +304,15 @@ function GraphCanvas({ graph, onFileViewModeChange, onToggleCollapsedGroup }) {
           nodesDraggable={false}
           nodes={interactiveNodes}
           nodeTypes={nodeTypes}
-          panOnDrag
+          panOnDrag={[1, 2]}
+          panOnScroll
+          panOnScrollMode="free"
           proOptions={{ hideAttribution: true }}
           selectNodesOnDrag={false}
           selectionOnDrag={false}
           zoomOnDoubleClick
           zoomOnPinch
-          zoomOnScroll
+          zoomOnScroll={false}
         >
           <Background
             bgColor="color-mix(in oklab, var(--muted) 34%, var(--background))"
@@ -297,8 +332,30 @@ function GraphCanvas({ graph, onFileViewModeChange, onToggleCollapsedGroup }) {
             </ControlButton>
           </Controls>
         </ReactFlow>
+        <StackSelect activeStackId={activeStackId} onActiveStackChange={onActiveStackChange} stacks={stacks} />
       </div>
     </div>
+  );
+}
+
+function StackSelect({ activeStackId, onActiveStackChange, stacks }) {
+  if (stacks.length < 2) {
+    return null;
+  }
+
+  return (
+    <Select onValueChange={onActiveStackChange} value={activeStackId ?? undefined}>
+      <SelectTrigger aria-label="Review stack" className="stack-select-trigger">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {stacks.map((stack) => (
+          <SelectItem key={stack.id} value={stack.id}>
+            {stack.title}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -408,7 +465,7 @@ function FilePageNode({ data }) {
           </Badge>
         </ExplanationHoverCard>
         <Tabs
-          className="file-page-view-tabs nodrag nopan nowheel"
+          className="file-page-view-tabs nodrag nopan"
           onValueChange={(nextMode) => data.onFileViewModeChange?.(data.file.id, nextMode)}
           value={viewMode}
         >
@@ -448,7 +505,7 @@ function CollapsedReviewGroupNode({ data }) {
         }}
         open={group.expanded}
       >
-        <article className={`collapsed-review-group is-${data.miniNode.reviewClass} nodrag nopan nowheel`}>
+        <article className={`collapsed-review-group is-${data.miniNode.reviewClass} nodrag nopan`}>
           <Handle className="node-handle" position={Position.Top} type="target" />
           <CollapsibleTrigger asChild>
             <Button
@@ -493,7 +550,7 @@ function MiniDiffNode({ data }) {
   return (
     <article
       aria-label={`Code diff mini node for ${filePath}: ${data.miniNode.title}. ${plainTextComment(nodeComment)}`}
-      className="mini-diff-node nodrag nopan nowheel"
+      className="mini-diff-node nodrag nopan"
       data-file-path={filePath}
     >
       {showHandles ? <Handle className="node-handle" position={Position.Top} type="target" /> : null}
@@ -654,12 +711,12 @@ function CodeContent({ line }) {
 
 function buildMiniDiffGraph(
   analysis,
-  { expandedGroupIds = new Set(), fileOrderViewIds = new Set() } = {},
+  { activeStackId = null, expandedGroupIds = new Set(), fileOrderViewIds = new Set() } = {},
 ) {
   const nodes = [];
   const edges = [];
   const filePages = [];
-  const fileSpecs = buildFilePageSpecs(analysis, { expandedGroupIds, fileOrderViewIds });
+  const fileSpecs = buildFilePageSpecs(analysis, { activeStackId, expandedGroupIds, fileOrderViewIds });
 
   for (const spec of fileSpecs) {
     const { file, miniNodes, miniTree, pageHeight, pageId, pageWidth, viewMode, x, y } = spec;
@@ -755,10 +812,16 @@ function buildMiniDiffGraph(
 
 function buildFilePageSpecs(
   analysis,
-  { expandedGroupIds = new Set(), fileOrderViewIds = new Set() } = {},
+  { activeStackId = null, expandedGroupIds = new Set(), fileOrderViewIds = new Set() } = {},
 ) {
+  const activeFileIds = activeStackId
+    ? new Set(
+        (analysis?.reviewStack?.stacks || []).find((stack) => stack.id === activeStackId)?.fileIds || [],
+      )
+    : null;
   const fileLayouts = (analysis?.files || [])
     .filter((file) => miniTreeNodes(file).length > 0)
+    .filter((file) => !activeFileIds || activeFileIds.has(file.id))
     .map((file) => buildFileLayout(file, {
       expandedGroupIds,
       viewMode: fileOrderViewIds.has(file.id) ? "file" : "tree",

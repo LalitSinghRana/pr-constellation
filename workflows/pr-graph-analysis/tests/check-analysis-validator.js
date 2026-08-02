@@ -1,5 +1,8 @@
 import { createDiffInventory } from "../03-build-diff-inventory/diff-inventory.js";
-import { validateMiniTreeAnalysis } from "../05-validate-candidate/validate-analysis.js";
+import {
+  validateMiniTreeAnalysis,
+  validateReviewStack,
+} from "../05-validate-candidate/validate-analysis.js";
 
 const diff = `diff --git a/src/example.js b/src/example.js
 index 0000000..1111111 100644
@@ -36,7 +39,7 @@ const validAnalysis = {
             changedLineIds: runtimeFile.changedLineIds.slice(0, 2),
             changeRole: "runtime",
             id: "change-runtime-value",
-            reviewClass: "core",
+            reviewClass: "important",
             title: "Change runtime value",
           }),
           miniNode({
@@ -71,7 +74,7 @@ const validAnalysis = {
             changedLineIds: testFile.changedLineIds,
             changeRole: "test",
             id: "update-value-expectation",
-            reviewClass: "core",
+            reviewClass: "important",
             title: "Update value expectation",
           }),
         ],
@@ -112,7 +115,7 @@ const contextGapAnalysis = {
             changedLineIds: contextGapFile.changedLineIds,
             changeRole: "runtime",
             id: "update-value-and-use",
-            reviewClass: "core",
+            reviewClass: "important",
             title: "Update value and use",
           }),
         ],
@@ -296,7 +299,7 @@ expectValid(patchMiniNode(validAnalysis, 0, 0, {
 }));
 
 expectValid(patchMiniNode(validAnalysis, 0, 1, {
-  reviewClass: "core",
+  reviewClass: "mechanical",
 }));
 
 expectValid(patchMiniNode(validAnalysis, 0, 1, {
@@ -311,7 +314,7 @@ expectValid(patchFile(validAnalysis, 0, {
 
 expectValid(patchMiniNode(validAnalysis, 1, 0, {
   changeRole: "type",
-  reviewClass: "core",
+  reviewClass: "supporting",
 }));
 
 expectInvalid({
@@ -493,6 +496,64 @@ function expectValid(analysis, targetInventory = inventory) {
 function expectInvalid({ analysis, message, name }) {
   try {
     validateMiniTreeAnalysis(analysis, { inventory });
+  } catch (error) {
+    if (error.message.includes(message)) {
+      return;
+    }
+
+    throw new Error(`Expected ${name} to fail with "${message}", got:\n${error.message}`);
+  }
+
+  throw new Error(`Expected ${name} to fail validation.`);
+}
+
+const validReviewStack = {
+  schemaVersion: "pr-graph-review-stack/v1",
+  stacks: [
+    { id: "runtime-value", title: "Runtime value change", comment: "The core behavior change.", fileIds: [runtimeFile.id] },
+    { id: "value-tests", title: "Value tests", comment: "Coverage for the runtime change.", fileIds: [testFile.id] },
+  ],
+};
+
+expectReviewStackValid(validReviewStack);
+
+expectReviewStackInvalid({
+  message: "must exactly match covered diff ids",
+  name: "review stack missing a changed file id",
+  stack: {
+    ...validReviewStack,
+    stacks: [validReviewStack.stacks[0]],
+  },
+});
+
+expectReviewStackInvalid({
+  message: "contains duplicate id",
+  name: "review stack with a duplicated file id",
+  stack: {
+    ...validReviewStack,
+    stacks: [
+      { ...validReviewStack.stacks[0], fileIds: [runtimeFile.id, testFile.id] },
+      validReviewStack.stacks[1],
+    ],
+  },
+});
+
+expectReviewStackInvalid({
+  message: "must be a non-empty string",
+  name: "review stack with a missing comment",
+  stack: {
+    ...validReviewStack,
+    stacks: [{ ...validReviewStack.stacks[0], comment: "" }, validReviewStack.stacks[1]],
+  },
+});
+
+function expectReviewStackValid(stack, targetInventory = inventory) {
+  validateReviewStack(stack, { inventory: targetInventory });
+}
+
+function expectReviewStackInvalid({ message, name, stack }) {
+  try {
+    validateReviewStack(stack, { inventory });
   } catch (error) {
     if (error.message.includes(message)) {
       return;

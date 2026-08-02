@@ -5,7 +5,7 @@ const file = {
   id: "file-1",
   miniTree: {
     nodes: [
-      node("root", "core", "runtime", 8),
+      node("root", "important", "runtime", 8),
       node("press", "important", "runtime", 10),
       node("loading", "supporting", "runtime", 7),
       node("loading-styles", "supporting", "runtime", 5),

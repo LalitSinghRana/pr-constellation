@@ -460,7 +460,7 @@ const multiHunkCandidate = {
       nodes: [{
         id: "update-constants",
         title: "Update related constants",
-        reviewClass: "core",
+        reviewClass: "important",
         changeRole: "runtime",
         comment: "The related defaults must move together.",
         changedLineRanges: [
@@ -538,7 +538,17 @@ try {
   const judgePrompts = [];
   const miniPrompts = [];
   const repairPrompts = [];
+  const reviewStackPrompts = [];
   let judgeAttempt = 0;
+  const reviewStackResult = {
+    schemaVersion: "pr-graph-review-stack/v1",
+    stacks: [{
+      id: "core-change",
+      title: "Example value update",
+      comment: "Single cohesive change to the example file.",
+      fileIds: [inventoryFile.id],
+    }],
+  };
 
   await writeRunInputs({
     inventory,
@@ -554,6 +564,20 @@ try {
     schemaPath,
   }) => {
     executionOptions.push({ model, reasoningEffort });
+
+    if (schemaPath.includes("03-create-review-stack")) {
+      calls.push("review-stack-1");
+      reviewStackPrompts.push(prompt);
+      await writeFile(outputPath, `${JSON.stringify(reviewStackResult)}\n`, "utf8");
+      return {
+        usage: {
+          inputTokens: 100,
+          cachedInputTokens: 20,
+          outputTokens: 10,
+          totalTokens: 110,
+        },
+      };
+    }
 
     if (schemaPath.includes("06-judge-candidate")) {
       judgeAttempt += 1;
@@ -622,16 +646,19 @@ try {
     runDir,
   });
 
-  assert.deepEqual(calls, ["mini-1", "repair-1"]);
+  assert.deepEqual(calls, ["review-stack-1", "mini-1", "repair-1"]);
   assert.deepEqual(
     executionOptions,
     [
+      { model: "selected-model", reasoningEffort: "xhigh" },
       { model: "selected-model", reasoningEffort: "xhigh" },
       { model: "selected-model", reasoningEffort: "xhigh" },
     ],
   );
   assertStageTimeline(events, [
     "stage-start:analysis",
+    "stage-start:analysis.review-stack",
+    "stage-finish:analysis.review-stack:completed",
     "stage-start:analysis.attempt-1",
     "stage-start:analysis.attempt-1.generate-mini-trees",
     "stage-finish:analysis.attempt-1.generate-mini-trees:completed",
@@ -749,19 +776,22 @@ try {
     judgeContract,
     /contiguous JSX\/render phase split into separate loading/,
   );
-  assert.deepEqual(result.analysis, materializedValidCandidate);
+  assert.deepEqual(result.analysis, {
+    ...materializedValidCandidate,
+    reviewStack: reviewStackResult,
+  });
   assert.deepEqual(result.execution, {
     model: "selected-model",
     reasoningEffort: "xhigh",
   });
   assert.equal(result.judge, null);
   assert.deepEqual(result.usage, {
-    inputTokens: 200,
-    cachedInputTokens: 40,
-    outputTokens: 20,
-    totalTokens: 220,
+    inputTokens: 300,
+    cachedInputTokens: 60,
+    outputTokens: 30,
+    totalTokens: 330,
   });
-  assert.equal(findFinishEvent(events, "analysis").metrics.totalTokens, 220);
+  assert.equal(findFinishEvent(events, "analysis").metrics.totalTokens, 330);
   assert.deepEqual(
     JSON.parse(await readFile(path.join(runDir, "mini-trees.raw.json"), "utf8")),
     incompleteCandidate,
@@ -776,7 +806,11 @@ try {
   );
   assert.deepEqual(
     JSON.parse(await readFile(path.join(runDir, "analysis.json"), "utf8")),
-    materializedValidCandidate,
+    { ...materializedValidCandidate, reviewStack: reviewStackResult },
+  );
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(runDir, "review-stack.json"), "utf8")),
+    reviewStackResult,
   );
   assert.equal(
     JSON.parse(await readFile(path.join(runDir, "judge.json"), "utf8")),
@@ -853,13 +887,9 @@ try {
     totalTokens: 20,
   });
   assert.equal(
-    findFinishEvent(
-      events,
-      "analysis.attempt-1.generate-mini-trees",
-    ).status,
+    findFinishEvent(events, "analysis.review-stack").status,
     "canceled",
   );
-  assert.equal(findFinishEvent(events, "analysis.attempt-1").status, "canceled");
   assert.equal(findFinishEvent(events, "analysis").status, "canceled");
   assert.equal(findFinishEvent(events, "analysis").metrics.totalTokens, 20);
   assertStagePairs(events);
@@ -889,6 +919,31 @@ try {
   });
 
   const executeCodex = async ({ outputPath, prompt, schemaPath }) => {
+    if (schemaPath.includes("03-create-review-stack")) {
+      calls.push("review-stack-1");
+      await writeFile(
+        outputPath,
+        `${JSON.stringify({
+          schemaVersion: "pr-graph-review-stack/v1",
+          stacks: [{
+            id: "core-change",
+            title: "Example value update",
+            comment: "Single cohesive change to the example file.",
+            fileIds: [inventoryFile.id],
+          }],
+        })}\n`,
+        "utf8",
+      );
+      return {
+        usage: {
+          inputTokens: 10,
+          cachedInputTokens: 2,
+          outputTokens: 1,
+          totalTokens: 11,
+        },
+      };
+    }
+
     if (schemaPath.includes("02-create-mini-trees")) {
       if (prompt.includes("# Targeted PR Mini-Tree Repair")) {
         repairAttempt += 1;
@@ -952,15 +1007,16 @@ try {
     },
   );
   assert.deepEqual(calls, [
+    "review-stack-1",
     "mini-1",
     "repair-1",
     "repair-2",
   ]);
   assert.deepEqual(terminalError.usage, {
-    inputTokens: 30,
-    cachedInputTokens: 6,
-    outputTokens: 3,
-    totalTokens: 33,
+    inputTokens: 40,
+    cachedInputTokens: 8,
+    outputTokens: 4,
+    totalTokens: 44,
   });
   assertStagePairs(events);
   assert.equal(findFinishEvent(events, "analysis").status, "failed");
@@ -968,7 +1024,7 @@ try {
     findFinishEvent(events, "analysis").error,
     /failed after 3 complete attempts/,
   );
-  assert.equal(findFinishEvent(events, "analysis").metrics.totalTokens, 33);
+  assert.equal(findFinishEvent(events, "analysis").metrics.totalTokens, 44);
   assert.equal(
     events.some((event) => event.stageId === "analysis.persist-artifacts"),
     false,
@@ -1090,7 +1146,7 @@ function buildCandidate({ coveredLineIds, fileId, filePath }) {
       {
         id: "change-value",
       title: "Change the value",
-      reviewClass: "core",
+      reviewClass: "important",
       changeRole: "runtime",
       comment: "The value change is the core runtime behavior.",
       changedLineRanges: toRanges(rootLineIds),

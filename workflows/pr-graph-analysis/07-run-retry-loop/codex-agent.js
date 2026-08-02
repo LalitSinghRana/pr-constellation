@@ -10,6 +10,7 @@ import {
 import {
   validateGraphAnalysis,
   validateMiniTreeAnalysis,
+  validateReviewStack,
 } from "../05-validate-candidate/validate-analysis.js";
 
 const WORKFLOW_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -29,12 +30,27 @@ const MINI_TREES_SCHEMA_PATH = path.join(
   "02-create-mini-trees",
   "schema.json",
 );
+const REVIEW_STACK_PROMPT_PATH = path.join(
+  CANDIDATE_WORKFLOW_DIR,
+  "03-create-review-stack",
+  "prompt.md",
+);
+const REVIEW_STACK_SCHEMA_PATH = path.join(
+  CANDIDATE_WORKFLOW_DIR,
+  "03-create-review-stack",
+  "schema.json",
+);
 const JUDGE_PROMPT_PATH = path.join(WORKFLOW_DIR, "06-judge-candidate", "prompt.md");
 const JUDGE_SCHEMA_PATH = path.join(WORKFLOW_DIR, "06-judge-candidate", "schema.json");
 const MAX_ANALYSIS_ATTEMPTS = 3;
 const CODEX_EXEC_TIMEOUT_MS = Number(process.env.PRC_CODEX_TIMEOUT_MS || 900000);
 const DEFAULT_ANALYSIS_REASONING_EFFORT = "xhigh";
 const JUDGE_REASONING_EFFORT = "high";
+const MINI_TREES_SHARD_CONCURRENCY = 3;
+// ponytail: flat file-count cap per shard; an oversized stack can still
+// overflow the model's context window in one call. Replace with a line/token
+// budget if a smaller-but-still-oversized stack overflows.
+const MAX_FILES_PER_MINI_TREES_SHARD = 15;
 // Retained for offline benchmarking; deterministic validation is the active gate.
 const SEMANTIC_JUDGE_ENABLED = false;
 
@@ -93,10 +109,11 @@ export async function runCodexGraphAnalysis({
       run: async () => {
       await mkdir(resolvedRunDir, { recursive: true });
 
-      const [sharedPrompt, miniTreesPrompt, judgePrompt] = await Promise.all([
+      const [sharedPrompt, miniTreesPrompt, judgePrompt, reviewStackPrompt] = await Promise.all([
         readFile(SHARED_PROMPT_PATH, "utf8"),
         readFile(MINI_TREES_PROMPT_PATH, "utf8"),
         readFile(JUDGE_PROMPT_PATH, "utf8"),
+        readFile(REVIEW_STACK_PROMPT_PATH, "utf8"),
       ]);
       throwIfAborted(signal);
       const inventory = await readJson(path.join(resolvedRunDir, "diff-inventory.json"));
@@ -105,6 +122,39 @@ export async function runCodexGraphAnalysis({
         "utf8",
       );
       const structuredDiffText = `${JSON.stringify(buildStructuredDiff(inventory))}\n`;
+      const reviewStack = await runInstrumentedStage({
+        emitEvent,
+        label: "Review stack",
+        metricsForResult: (stack) => ({
+          stackCount: stack.stacks.length,
+        }),
+        parentStageId: "analysis",
+        run: async () => {
+          const reviewStackPromptPath = path.join(resolvedRunDir, "review-stack-prompt.md");
+          const reviewStackRawPath = path.join(resolvedRunDir, "review-stack.raw.json");
+          const stack = await runJsonStage({
+            cwd: resolvedRunDir,
+            executionConfig,
+            executeCodex: executeCodexWithUsage,
+            outputPath: reviewStackRawPath,
+            prompt: buildReviewStackPrompt({
+              metadataText,
+              reviewStackPrompt,
+              structuredDiffText,
+            }),
+            promptPath: reviewStackPromptPath,
+            schemaPath: REVIEW_STACK_SCHEMA_PATH,
+          });
+          validateReviewStack(stack, { inventory });
+          await writeFile(
+            path.join(resolvedRunDir, "review-stack.json"),
+            `${JSON.stringify(stack, null, 2)}\n`,
+            "utf8",
+          );
+          return stack;
+        },
+        stageId: "analysis.review-stack",
+      });
       const analysisPath = path.join(resolvedRunDir, "analysis.json");
       const candidatePath = path.join(resolvedRunDir, "analysis.candidate.json");
       const judgePath = path.join(resolvedRunDir, "judge.json");
@@ -155,6 +205,7 @@ export async function runCodexGraphAnalysis({
             previousEvaluation,
             previousFailure: failures.at(-1),
             resolvedRunDir,
+            reviewStack,
             sharedPrompt,
             structuredDiffText,
             usage,
@@ -191,6 +242,7 @@ export async function runCodexGraphAnalysis({
       }
 
       throwIfAborted(signal);
+      analysis = { ...analysis, reviewStack };
       await runInstrumentedStage({
         emitEvent,
         label: "Persist final analysis artifacts",
@@ -240,6 +292,7 @@ async function runAnalysisAttempt({
   previousEvaluation,
   previousFailure,
   resolvedRunDir,
+  reviewStack,
   sharedPrompt,
   structuredDiffText,
   usage,
@@ -308,21 +361,34 @@ async function runAnalysisAttempt({
 
         promptPath = artifacts.miniTreesPromptPath;
         candidateRawOutputPath = artifacts.miniTreesRawPath;
-        const generated = await runJsonStage({
-          cwd: resolvedRunDir,
-          executionConfig,
-          executeCodex,
-          outputPath: artifacts.miniTreesRawPath,
-          prompt: buildMiniTreesPrompt({
-            metadataText,
-            miniTreesPrompt,
-            previousFailure,
-            sharedPrompt,
-            structuredDiffText,
-          }),
-          promptPath: artifacts.miniTreesPromptPath,
-          schemaPath: MINI_TREES_SCHEMA_PATH,
-        });
+        const generated = reviewStack.stacks.length > 1
+          ? await runShardedMiniTrees({
+              artifacts,
+              cwd: resolvedRunDir,
+              executionConfig,
+              executeCodex,
+              inventory,
+              metadataText,
+              miniTreesPrompt,
+              previousFailure,
+              sharedPrompt,
+              stacks: reviewStack.stacks,
+            })
+          : await runJsonStage({
+              cwd: resolvedRunDir,
+              executionConfig,
+              executeCodex,
+              outputPath: artifacts.miniTreesRawPath,
+              prompt: buildMiniTreesPrompt({
+                metadataText,
+                miniTreesPrompt,
+                previousFailure,
+                sharedPrompt,
+                structuredDiffText,
+              }),
+              promptPath: artifacts.miniTreesPromptPath,
+              schemaPath: MINI_TREES_SCHEMA_PATH,
+            });
         return materializeLineOwnership(generated, { inventory });
       },
       stageId: generationStageId,
@@ -378,6 +444,138 @@ async function runAnalysisAttempt({
     repairScope,
     strategy,
   };
+}
+
+async function runShardedMiniTrees({
+  artifacts,
+  cwd,
+  executionConfig,
+  executeCodex,
+  inventory,
+  metadataText,
+  miniTreesPrompt,
+  previousFailure,
+  sharedPrompt,
+  stacks,
+}) {
+  const outputBase = artifacts.miniTreesRawPath.replace(/\.json$/, "");
+  const promptBase = artifacts.miniTreesPromptPath.replace(/\.md$/, "");
+  const shards = buildGenerationShards(stacks, MAX_FILES_PER_MINI_TREES_SHARD);
+  const results = new Array(shards.length);
+  let nextIndex = 0;
+
+  const runWorker = async () => {
+    while (nextIndex < shards.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const shard = shards[index];
+      const otherStacks = stacks.filter((stack) => stack.id !== shard.stack.id);
+      const hunkIdsByFileId = new Map(shard.fileIds.map((fileId) => [fileId, null]));
+      const structuredDiffText = `${JSON.stringify(
+        buildStructuredDiff(inventory, { hunkIdsByFileId }),
+      )}\n`;
+
+      results[index] = await runJsonStage({
+        cwd,
+        executionConfig,
+        executeCodex,
+        outputPath: `${outputBase}.${shard.id}.json`,
+        prompt: buildStackShardPrompt({
+          metadataText,
+          miniTreesPrompt,
+          otherStacks,
+          previousFailure,
+          sharedPrompt,
+          stack: { ...shard.stack, fileIds: shard.fileIds },
+          structuredDiffText,
+        }),
+        promptPath: `${promptBase}.${shard.id}.md`,
+        schemaPath: MINI_TREES_SCHEMA_PATH,
+      });
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(MINI_TREES_SHARD_CONCURRENCY, shards.length) }, runWorker),
+  );
+
+  const merged = {
+    ...results[0],
+    files: results.flatMap((result) => result.files || []),
+  };
+
+  await Promise.all([
+    writeFile(artifacts.miniTreesRawPath, `${JSON.stringify(merged, null, 2)}\n`, "utf8"),
+    writeFile(
+      artifacts.miniTreesPromptPath,
+      `Sharded across ${shards.length} calls over ${stacks.length} review stacks: ${shards
+        .map((shard) => `${shard.id} (${promptBase}.${shard.id}.md)`)
+        .join(", ")}\n`,
+      "utf8",
+    ),
+  ]);
+
+  return merged;
+}
+
+function buildGenerationShards(stacks, maxFilesPerShard) {
+  return stacks.flatMap((stack) => {
+    const chunks = chunkArray(stack.fileIds, maxFilesPerShard);
+    return chunks.map((fileIds, index) => ({
+      fileIds,
+      id: chunks.length > 1 ? `${stack.id}-${index + 1}` : stack.id,
+      stack,
+    }));
+  });
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function buildStackShardPrompt({
+  metadataText,
+  miniTreesPrompt,
+  otherStacks,
+  previousFailure,
+  sharedPrompt,
+  stack,
+  structuredDiffText,
+}) {
+  const basePrompt = buildMiniTreesPrompt({
+    metadataText,
+    miniTreesPrompt,
+    previousFailure,
+    sharedPrompt,
+    structuredDiffText,
+  });
+  const scopeInstruction = `## Review-Stack Scope
+
+This call is restricted to the "${stack.title}" review stack
+(${stack.fileIds.length} file${stack.fileIds.length === 1 ? "" : "s"}). The
+structured diff below is the complete and exclusive source scope for this
+call; return exactly one \`files[]\` entry for each of its files and no
+others.
+
+The top-level \`intent\`, \`summary\`, and \`confidence\` still describe the
+whole pull request, not only this stack.
+
+Other review stacks are covered by separate calls and exist here for
+reference only, so you know what you are not responsible for: ${
+    otherStacks.length > 0 ? otherStacks.map((other) => `"${other.title}"`).join(", ") : "none"
+  }.
+
+`;
+  const inlineInputHeading = "## Inline Input";
+  const insertAt = basePrompt.indexOf(inlineInputHeading);
+  if (insertAt < 0) {
+    throw new Error("Mini-tree prompt is missing its Inline Input heading.");
+  }
+  return `${basePrompt.slice(0, insertAt)}${scopeInstruction}${basePrompt.slice(insertAt)}`;
 }
 
 async function runCandidateEvaluation({
@@ -1235,6 +1433,17 @@ function compactLineOwnership(analysis) {
       },
     })),
   };
+}
+
+function buildReviewStackPrompt({ metadataText, reviewStackPrompt, structuredDiffText }) {
+  return `${reviewStackPrompt.trim()}
+${buildSourceInput({
+    metadataText,
+    structuredDiffText,
+  })}
+
+Decide the review stack split as your final answer.
+`;
 }
 
 function buildMiniTreesPrompt({

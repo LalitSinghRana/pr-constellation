@@ -237,6 +237,7 @@ function buildGraphDataMiniTrees({ analysis, inventoryIndex, syntaxHighlighter }
     intent: analysis.intent || "",
     summary: analysis.summary || "",
     confidence: analysis.confidence ?? null,
+    reviewStack: analysis.reviewStack || null,
     files: (analysis.files || []).map((file) => {
       const miniTree = {
         relations: file.miniTree?.relations || [],

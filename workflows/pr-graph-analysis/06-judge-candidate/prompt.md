@@ -75,9 +75,9 @@ Look for:
 - a file mini-tree whose root is imports, formatting, generated output,
   or other setup/mechanical work while the same file contains important
   runtime/test/type behavior
-- a mini-tree edge direction that makes the core important change appear caused
-  by supporting/mechanical code, instead of showing the core change first and
-  downstream required/supporting changes after it
+- a mini-tree edge direction that makes the primary important change appear
+  caused by supporting/mechanical code, instead of showing that change first
+  and downstream required/supporting changes after it
 - review edges that reproduce a shallow technical-dependency star instead of
   assigning each node to the nearest reviewer question it explains
 - weak review-edge comments that do not explain what requirement or review
@@ -162,9 +162,9 @@ checks.
 Before choosing a verdict, inspect the root, outgoing review edges, and
 branch structure of every multi-node mini-tree.
 
-The root must be the sole `core` node and have no incoming review edge. Every
-other node must have exactly one incoming review edge. Review priority is
-`core > important > supporting > mechanical`.
+The root is whichever node has no incoming review edge; it is not marked by
+`reviewClass`. Every other node must have exactly one incoming review edge.
+Review priority is `important > supporting > mechanical`.
 
 Fail when roots mostly follow changed-line order or implementation dependency
 order rather than the order a human should review that file. A candidate that
@@ -184,9 +184,9 @@ setup, loading, interaction, visual, contract, or test branches. Do not pass
 such a candidate with only a warning because the initial UI can fold it; the
 expanded review hierarchy itself must remain navigable.
 
-Audit the default projection that keeps only `core` and `important/runtime`
-nodes visible. Normally fail when one parent exposes more than three sibling
-first-pass questions, especially when those siblings are image blocks,
+Audit the default projection that keeps only the root and other
+`important/runtime` nodes visible. Normally fail when one parent exposes more
+than three sibling first-pass questions, especially when those siblings are image blocks,
 badge/laurel/title variants, loading placeholders, styling, analytics, or
 setup. Those are supporting unless the PR intent specifically centers them.
 

@@ -26,6 +26,15 @@ const codexCalls = [];
 const runController = new AbortController();
 const stableHtmlPath = path.join(reviewsDir, reviewSlug, "index.html");
 const previousStableHtml = "<p>previous successful graph</p>";
+const reviewStackFixtureResult = {
+  schemaVersion: "pr-graph-review-stack/v1",
+  stacks: [{
+    id: "core-change",
+    title: "Fixture value update",
+    comment: "Single cohesive change to the example file.",
+    fileIds: ["file-1"],
+  }],
+};
 
 try {
   await mkdir(sourceRunDir, { recursive: true });
@@ -73,7 +82,9 @@ index 1111111..2222222 100644
     }) => {
       assert.equal(signal, runController.signal);
       codexCalls.push({ model, reasoningEffort, schemaPath });
-      const value = schemaPath.includes("06-judge-candidate")
+      const value = schemaPath.includes("03-create-review-stack")
+        ? reviewStackFixtureResult
+        : schemaPath.includes("06-judge-candidate")
         ? {
             schemaVersion: "pr-graph-judge/v1",
             verdict: "pass",
@@ -98,7 +109,7 @@ index 1111111..2222222 100644
                     {
                       id: "replace-value",
                       title: "Replace the fixture value",
-                      reviewClass: "core",
+                      reviewClass: "important",
                       changeRole: "runtime",
                       comment: "The changed assignment is the complete runtime contract.",
                       changedLineRanges: [{
@@ -131,13 +142,14 @@ index 1111111..2222222 100644
   assert.equal(result.metadata.headRefOid, "head-sha");
   assert.equal(result.diffSummary.changedLineCount, 2);
   assert.equal(result.runDir, targetRunDir);
-  assert.equal(codexCalls.length, 1);
+  assert.equal(codexCalls.length, 2);
   assert.deepEqual(
     codexCalls.map(({ model, reasoningEffort }) => ({
       model,
       reasoningEffort,
     })),
     [
+      { model: "gpt-fixture", reasoningEffort: "low" },
       { model: "gpt-fixture", reasoningEffort: "low" },
     ],
   );
@@ -157,16 +169,12 @@ index 1111111..2222222 100644
       schemaPath,
     }) => {
       claudeCalls.push({ model, reasoningEffort });
-      await writeFile(
-        outputPath,
-        await readFile(
-          schemaPath.includes("06-judge-candidate")
-            ? result.judgePath
-            : result.analysisPath,
-          "utf8",
-        ),
-        "utf8",
-      );
+      const sourcePath = schemaPath.includes("03-create-review-stack")
+        ? path.join(result.runDir, "review-stack.json")
+        : schemaPath.includes("06-judge-candidate")
+          ? result.judgePath
+          : result.analysisPath;
+      await writeFile(outputPath, await readFile(sourcePath, "utf8"), "utf8");
     },
     model: "claude-sonnet-4-6",
     prUrl,
@@ -177,6 +185,7 @@ index 1111111..2222222 100644
     sourceRunDir,
   });
   assert.deepEqual(claudeCalls, [
+    { model: "claude-sonnet-4-6", reasoningEffort: "max" },
     { model: "claude-sonnet-4-6", reasoningEffort: "max" },
   ]);
 
@@ -223,6 +232,7 @@ index 1111111..2222222 100644
     "inventory.summary",
     "input.persist",
     "analysis",
+    "analysis.review-stack",
     "analysis.attempt-1",
     "analysis.attempt-1.generate-mini-trees",
     "analysis.attempt-1.evaluation",
@@ -254,9 +264,10 @@ index 1111111..2222222 100644
     reviewSlug,
     "canceled-render-run",
   );
-  const [analysisFixture, judgeFixture] = await Promise.all([
+  const [analysisFixture, judgeFixture, reviewStackFixture] = await Promise.all([
     readFile(result.analysisPath, "utf8"),
     readFile(result.judgePath, "utf8"),
+    readFile(path.join(result.runDir, "review-stack.json"), "utf8"),
   ]);
   let renderCancelError;
 
@@ -266,9 +277,11 @@ index 1111111..2222222 100644
         assert.equal(signal, renderCancelController.signal);
         await writeFile(
           outputPath,
-          schemaPath.includes("06-judge-candidate")
-            ? judgeFixture
-            : analysisFixture,
+          schemaPath.includes("03-create-review-stack")
+            ? reviewStackFixture
+            : schemaPath.includes("06-judge-candidate")
+              ? judgeFixture
+              : analysisFixture,
           "utf8",
         );
         return {
@@ -306,10 +319,10 @@ index 1111111..2222222 100644
   );
 
   assert.deepEqual(renderCancelError.usage, {
-    inputTokens: 12,
-    cachedInputTokens: 4,
-    outputTokens: 3,
-    totalTokens: 15,
+    inputTokens: 24,
+    cachedInputTokens: 8,
+    outputTokens: 6,
+    totalTokens: 30,
   });
   assert.equal(
     renderCancelEvents.find(

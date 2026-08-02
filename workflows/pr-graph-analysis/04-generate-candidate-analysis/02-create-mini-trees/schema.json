@@ -48,7 +48,6 @@
     "miniNodeReviewClass": {
       "type": "string",
       "enum": [
-        "core",
         "important",
         "supporting",
         "mechanical"

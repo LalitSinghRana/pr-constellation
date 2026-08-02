@@ -24,7 +24,7 @@ const html = await renderDiffHtml({
             {
               id: "replace-old-value",
               title: "Replace old value",
-              reviewClass: "core",
+              reviewClass: "important",
               changeRole: "runtime",
               comment: "The runtime contract now exposes the replacement value.\n\n- Why: callers must observe the updated behavior.\n- Review: confirm the new value matches the PR intent.",
               changedLineIds: ["file-1:hunk-1:line-1"],
@@ -94,7 +94,7 @@ const requiredWebviewMarkers = [
   "file-page-label",
   "file-page-view-tabs",
   "mini-node-label",
-  "is-review-core",
+  "is-review-important",
   "reviewClass",
   "changeRole",
   "mini-tree-edge",
@@ -151,7 +151,7 @@ const semanticSpanHtml = await renderDiffHtml({
             {
               id: "replace-wrapper",
               title: "Replace the interactive wrapper",
-              reviewClass: "core",
+              reviewClass: "important",
               changeRole: "runtime",
               comment: "The opening tag, ref wiring, and closing tag form one cohesive render change.",
               changedLineIds: [
@@ -284,7 +284,7 @@ const tsxHtml = await renderDiffHtml({
             {
               id: "render-example",
               title: "Render example",
-              reviewClass: "core",
+              reviewClass: "important",
               changeRole: "runtime",
               comment: "The complete TSX range preserves grammar state.",
               changedLineIds: [
