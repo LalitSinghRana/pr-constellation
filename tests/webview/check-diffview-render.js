@@ -14,6 +14,7 @@ global.Element = dom.window.Element;
 global.getComputedStyle = dom.window.getComputedStyle;
 global.requestAnimationFrame = (cb) => setTimeout(cb, 0);
 global.cancelAnimationFrame = (id) => clearTimeout(id);
+global.MutationObserver = dom.window.MutationObserver;
 
 dom.window.HTMLCanvasElement.prototype.getContext = () => ({
   measureText: (text) => ({ width: String(text).length * 7 }),
@@ -33,6 +34,7 @@ dom.window.IntersectionObserver = FakeObserver;
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
 const React = (await import("react")).default;
+const { useEffect, useMemo, useRef } = React;
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react");
 const { DiffView, DiffModeEnum } = await import("@git-diff-view/react");
@@ -149,6 +151,8 @@ function buildChunkDiffData(chunk) {
       newFile: { content: newFileContent, fileLang: "plaintext", fileName: chunk.file },
       oldFile: { content: oldFileContent, fileLang: "plaintext", fileName: chunk.file },
     },
+    realOldLineNumbers: oldLines.map((line) => line.oldLine),
+    realNewLineNumbers: newLines.map((line) => line.newLine),
     registerHighlighter: createPreHighlightedHighlighter({
       newAst: { children: buildLineAstNodes(newLines), type: "root" },
       newFileContent,
@@ -156,6 +160,60 @@ function buildChunkDiffData(chunk) {
       oldFileContent,
     }),
   };
+}
+
+function DiffChunkView({ chunk }) {
+  const { data, realNewLineNumbers, realOldLineNumbers, registerHighlighter } = useMemo(
+    () => buildChunkDiffData(chunk),
+    [chunk],
+  );
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+
+    if (!container) {
+      return undefined;
+    }
+
+    const applyRealLineNumbers = () => {
+      container.querySelectorAll("[data-line-old-num]").forEach((el) => {
+        const real = realOldLineNumbers[Number(el.getAttribute("data-line-old-num")) - 1];
+
+        if (real != null && el.textContent !== String(real)) {
+          el.textContent = String(real);
+        }
+      });
+
+      container.querySelectorAll("[data-line-new-num]").forEach((el) => {
+        const real = realNewLineNumbers[Number(el.getAttribute("data-line-new-num")) - 1];
+
+        if (real != null && el.textContent !== String(real)) {
+          el.textContent = String(real);
+        }
+      });
+    };
+
+    applyRealLineNumbers();
+    const observer = new MutationObserver(applyRealLineNumbers);
+    observer.observe(container, { characterData: true, childList: true, subtree: true });
+
+    return () => observer.disconnect();
+  }, [realNewLineNumbers, realOldLineNumbers]);
+
+  return React.createElement(
+    "div",
+    { ref: containerRef },
+    React.createElement(DiffView, {
+      className: "mini-diff-code",
+      data,
+      diffViewFontSize: 11,
+      diffViewHighlight: true,
+      diffViewMode: DiffModeEnum.Unified,
+      diffViewWrap: false,
+      registerHighlighter,
+    }),
+  );
 }
 
 const chunk = {
@@ -166,28 +224,20 @@ const chunk = {
   ],
 };
 
-const { data, registerHighlighter } = buildChunkDiffData(chunk);
 const container = document.createElement("div");
 document.body.appendChild(container);
 const root = createRoot(container);
 
 await act(async () => {
-  root.render(
-    React.createElement(DiffView, {
-      data,
-      diffViewFontSize: 11,
-      diffViewHighlight: true,
-      diffViewMode: DiffModeEnum.Unified,
-      diffViewWrap: false,
-      registerHighlighter,
-    }),
-  );
+  root.render(React.createElement(DiffChunkView, { chunk }));
 });
 await act(async () => {
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  await new Promise((resolve) => setTimeout(resolve, 150));
 });
 
 const html = container.innerHTML;
+const oldGutterNumbers = [...container.querySelectorAll("[data-line-old-num]")].map((el) => el.textContent);
+const newGutterNumbers = [...container.querySelectorAll("[data-line-new-num]")].map((el) => el.textContent);
 root.unmount();
 
 assert.match(html, /24/, "the deleted line's content should render, not collapse into an empty diff");
@@ -201,6 +251,16 @@ assert.match(
   html,
   /data-diff-highlight[^>]*--diff-add-content-highlight--[^>]*>36</,
   "the changed substring on the add line should get the intra-line diff highlight",
+);
+assert.deepEqual(
+  oldGutterNumbers,
+  ["82"],
+  "the old-side gutter should show the real PR line number, not the synthetic 1-based hunk position",
+);
+assert.deepEqual(
+  newGutterNumbers,
+  ["69"],
+  "the new-side gutter should show the real PR line number, not the synthetic 1-based hunk position",
 );
 
 console.log("diff view render checks passed");

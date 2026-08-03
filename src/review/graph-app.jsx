@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import {
@@ -758,18 +758,61 @@ function unchangedLineGap(prevChunk, nextChunk) {
 }
 
 function DiffChunkView({ chunk }) {
-  const { data, registerHighlighter } = useMemo(() => buildChunkDiffData(chunk), [chunk]);
+  const { data, realNewLineNumbers, realOldLineNumbers, registerHighlighter } = useMemo(
+    () => buildChunkDiffData(chunk),
+    [chunk],
+  );
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+
+    if (!container) {
+      return undefined;
+    }
+
+    const applyRealLineNumbers = () => {
+      container.querySelectorAll("[data-line-old-num]").forEach((el) => {
+        const real = realOldLineNumbers[Number(el.getAttribute("data-line-old-num")) - 1];
+
+        // Idempotency check matters here: this mutates text inside the subtree the
+        // MutationObserver below watches, and a no-op guard is what keeps that from
+        // re-triggering itself forever.
+        if (real != null && el.textContent !== String(real)) {
+          el.textContent = String(real);
+        }
+      });
+
+      container.querySelectorAll("[data-line-new-num]").forEach((el) => {
+        const real = realNewLineNumbers[Number(el.getAttribute("data-line-new-num")) - 1];
+
+        if (real != null && el.textContent !== String(real)) {
+          el.textContent = String(real);
+        }
+      });
+    };
+
+    // DiffView defers rendering its rows until after mount (avoids an SSR hydration
+    // mismatch), so the gutter spans this patches don't exist on the first paint.
+    applyRealLineNumbers();
+    const observer = new MutationObserver(applyRealLineNumbers);
+    observer.observe(container, { characterData: true, childList: true, subtree: true });
+
+    return () => observer.disconnect();
+  }, [realNewLineNumbers, realOldLineNumbers]);
 
   return (
-    <DiffView
-      className="mini-diff-code"
-      data={data}
-      diffViewFontSize={11}
-      diffViewHighlight
-      diffViewMode={DiffModeEnum.Unified}
-      diffViewWrap={false}
-      registerHighlighter={registerHighlighter}
-    />
+    <div ref={containerRef}>
+      <DiffView
+        className="mini-diff-code"
+        data={data}
+        diffViewFontSize={11}
+        diffViewHighlight
+        diffViewMode={DiffModeEnum.Unified}
+        diffViewWrap={false}
+        registerHighlighter={registerHighlighter}
+      />
+    </div>
   );
 }
 
@@ -799,6 +842,10 @@ function buildChunkDiffData(chunk) {
       newFile: { content: newFileContent, fileLang: "plaintext", fileName: chunk.file },
       oldFile: { content: oldFileContent, fileLang: "plaintext", fileName: chunk.file },
     },
+    // The library numbers its gutter from the synthetic 1-based hunk above; these are the
+    // real PR line numbers for the same positions, used to patch the gutter after render.
+    realOldLineNumbers: oldLines.map((line) => line.oldLine),
+    realNewLineNumbers: newLines.map((line) => line.newLine),
     registerHighlighter: createPreHighlightedHighlighter({
       newAst: { children: buildLineAstNodes(newLines), type: "root" },
       newFileContent,
