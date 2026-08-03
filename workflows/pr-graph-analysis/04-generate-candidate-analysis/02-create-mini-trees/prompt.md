@@ -206,6 +206,30 @@ Bad mini-node examples:
 - A test harness root pointing to the assertions it merely enables
 - A props/types/setup root pointing to the runtime behavior that motivated it
 
+## File Flow (Review Order Across This Stack's Files)
+
+Beyond each file's own mini-tree, decide the order a reviewer should open the
+files in this review stack. Return this as `fileFlow.edges[]`, one entry per
+file-to-file review relationship.
+
+- The source is the reason to review first; the target was caused, enabled,
+  required, or made necessary by that source. This is review causality, not
+  import direction — a component comes before the types, helpers, mocks, and
+  tests that support it, not after, even when the component imports them.
+- Do not order by file path, directory, or diff order. Coincidental
+  file-order flows are invalid, same as for a mini-tree's `reviewEdges`.
+- Every file in this stack appears in exactly one edge as `to`, except the
+  root, which appears in none. The root is the file whose change is the
+  reason the rest of the stack exists — usually the highest-priority file
+  present (`important` before `supporting` before `mechanical`; `runtime`
+  before `test`, `type`, and other supporting roles). A `test` or `snapshot`
+  file must not be the root when a `runtime` file is present in the stack.
+- Every non-root file has exactly one parent edge. Use unique contiguous
+  `order` values starting at 0 for each parent's children.
+- A hook, its tests, and the component that uses it stay adjacent in the flow
+  unless the hook is shared by more than one component in this stack.
+- A single-file stack returns `{"edges": []}`.
+
 ## Stage Output
 
 Return `pr-graph-mini-trees/v2` JSON containing:
@@ -213,5 +237,6 @@ Return `pr-graph-mini-trees/v2` JSON containing:
 - the overall review `intent`, `summary`, and `confidence`
 - every changed file in `files[]`
 - each file's complete logical `miniTree`
+- this stack's file-to-file review order in `fileFlow`
 
 Do not create middle trees or a super-tree in this stage.

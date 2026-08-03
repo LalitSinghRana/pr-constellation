@@ -489,13 +489,13 @@ function deriveDepths(miniTree) {
   return depths;
 }
 
-function expectValid(analysis, targetInventory = inventory) {
-  validateMiniTreeAnalysis(analysis, { inventory: targetInventory });
+function expectValid(analysis, targetInventory = inventory, reviewStack = undefined) {
+  validateMiniTreeAnalysis(analysis, { inventory: targetInventory, reviewStack });
 }
 
-function expectInvalid({ analysis, message, name }) {
+function expectInvalid({ analysis, message, name, reviewStack = undefined }) {
   try {
-    validateMiniTreeAnalysis(analysis, { inventory });
+    validateMiniTreeAnalysis(analysis, { inventory, reviewStack });
   } catch (error) {
     if (error.message.includes(message)) {
       return;
@@ -564,3 +564,112 @@ function expectReviewStackInvalid({ message, name, stack }) {
 
   throw new Error(`Expected ${name} to fail validation.`);
 }
+
+// fileFlow is the file-to-file review order within one review stack (layer-flow-middle-tree
+// plan). runtimeFile is important/runtime and outranks testFile (supporting/test), so a
+// stack containing both must root at runtimeFile.
+const combinedReviewStack = {
+  schemaVersion: "pr-graph-review-stack/v1",
+  stacks: [{
+    id: "combined",
+    title: "Combined change",
+    comment: "The runtime change and its test reviewed together.",
+    fileIds: [runtimeFile.id, testFile.id],
+  }],
+};
+
+expectValid(
+  {
+    ...validAnalysis,
+    fileFlows: {
+      combined: {
+        edges: [{
+          from: runtimeFile.id,
+          to: testFile.id,
+          order: 0,
+          comment: "The test covers the runtime change.",
+        }],
+      },
+    },
+  },
+  inventory,
+  combinedReviewStack,
+);
+
+expectInvalid({
+  analysis: {
+    ...validAnalysis,
+    fileFlows: {
+      combined: {
+        edges: [{
+          from: runtimeFile.id,
+          to: "file-outside-stack",
+          order: 0,
+          comment: "Points outside the stack.",
+        }],
+      },
+    },
+  },
+  message: "references unknown to id",
+  name: "file flow edge pointing outside its review stack",
+  reviewStack: combinedReviewStack,
+});
+
+expectInvalid({
+  analysis: {
+    ...validAnalysis,
+    fileFlows: { combined: { edges: [] } },
+  },
+  message: "must contain exactly one root",
+  name: "file flow with two roots",
+  reviewStack: combinedReviewStack,
+});
+
+expectInvalid({
+  analysis: {
+    ...validAnalysis,
+    files: [
+      validAnalysis.files[0],
+      { ...validAnalysis.files[1], reviewClass: "important", changeRole: "snapshot" },
+    ],
+    fileFlows: {
+      combined: {
+        edges: [{
+          from: testFile.id,
+          to: runtimeFile.id,
+          order: 0,
+          comment: "Reviewed the snapshot first.",
+        }],
+      },
+    },
+  },
+  message: "is outranked by another file",
+  name: "file flow root is a snapshot file while a runtime file is present",
+  reviewStack: combinedReviewStack,
+});
+
+// Regression case for the tie bug: two files with identical reviewClass/changeRole (both
+// important/runtime) must both be acceptable roots. The model's choice between them is a
+// judgement call this validator cannot second-guess (see the plan's own PR 4919 data,
+// where several stacks have 2-3 important files each).
+expectValid(
+  {
+    ...validAnalysis,
+    files: [
+      validAnalysis.files[0],
+      { ...validAnalysis.files[1], reviewClass: "important", changeRole: "runtime" },
+    ],
+    fileFlows: {
+      combined: {
+        edges: [{
+          from: testFile.id,
+          to: runtimeFile.id,
+          order: 0,
+          comment: "Reviewed this file's change first even though both are important/runtime.",
+        }],
+      },
+    },
+  },
+  inventory,
+  combinedReviewStack,
+);

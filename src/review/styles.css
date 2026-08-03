@@ -35,7 +35,6 @@
   --chart-5: oklch(0.6532 0.2114 353.9392);
   --mini-tree-color: oklch(0.548 0.19 254);
   --middle-tree-color: oklch(0.615 0.155 67);
-  --super-tree-color: oklch(0.548 0.19 337);
   --sidebar: oklch(1.0000 0 0);
   --sidebar-foreground: oklch(0.1284 0.0267 261.5937);
   --sidebar-primary: oklch(0.4865 0.2423 291.8661);
@@ -91,6 +90,23 @@
 .flow-canvas .react-flow__edge.mini-tree-edge .react-flow__edge-path {
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.flow-canvas .react-flow__edge.file-flow-edge {
+  z-index: 3;
+}
+
+.flow-canvas .react-flow__edge.file-flow-edge .react-flow__edge-path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.file-page-node .node-handle {
+  width: 1px;
+  height: 1px;
+  border: 0;
+  background: transparent;
+  opacity: 0;
 }
 
 .file-page-node {
@@ -469,7 +485,6 @@
   --chart-5: oklch(0.6888 0.2092 353.1317);
   --mini-tree-color: oklch(0.72 0.15 250);
   --middle-tree-color: oklch(0.78 0.14 78);
-  --super-tree-color: oklch(0.72 0.16 335);
   --radius: 1rem;
   --sidebar: oklch(0.1249 0.0104 301.6956);
   --sidebar-foreground: oklch(0.9838 0.0035 247.8583);

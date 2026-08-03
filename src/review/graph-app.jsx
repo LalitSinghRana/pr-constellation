@@ -54,9 +54,6 @@ const FILE_PAGE_PADDING = 32;
 const FILE_PAGE_PADDING_TOP = 72;
 const FILE_PAGE_MIN_HEIGHT = 180;
 const FILE_PAGE_STACK_GAP_Y = 56;
-const MIDDLE_GROUP_PADDING = { bottom: 30, left: 28, right: 28, top: 54 };
-const MIDDLE_TREE_LAYER_GAP_Y = 220;
-const MIDDLE_TREE_SIBLING_GAP_X = 240;
 const MINI_CODE_CHARACTER_COLUMNS = 120;
 const MINI_CODE_CHARACTER_WIDTH = 7;
 const MINI_DIFF_GUTTER_WIDTH = 102;
@@ -72,11 +69,12 @@ const MINI_TREE_GROUP_NODE_WIDTH = 520;
 const MINI_TREE_LAYER_GAP_Y = 110;
 const MINI_TREE_SIBLING_GAP_X = 72;
 const MIN_GRAPH_ZOOM = 0.18;
-const SUPER_GROUP_PADDING = { bottom: 64, left: 58, right: 58, top: 92 };
-const SUPER_TREE_LAYER_GAP_Y = 280;
-const SUPER_TREE_SIBLING_GAP_X = 320;
+const FILE_FLOW_LAYER_GAP_Y = FILE_PAGE_STACK_GAP_Y * 3;
+const FILE_FLOW_SIBLING_GAP_X = FILE_PAGE_GAP_X;
 const VIEWPORT_PADDING_Y = 96;
 const FALLBACK_GRAPH_VIEWPORT = { x: 72, y: 52, zoom: 0.86 };
+const FILE_FLOW_SOURCE_HANDLE = "file-flow-source";
+const FILE_FLOW_TARGET_HANDLE = "file-flow-target";
 const FILE_REVIEW_CLASS_PRIORITY = new Map([
   ["important", 0],
   ["supporting", 1],
@@ -492,6 +490,8 @@ function FilePageNode({ data }) {
 
   return (
     <section aria-label={`Mini-tree for ${filePath}`} className="file-page-node">
+      <Handle className="node-handle" id={FILE_FLOW_TARGET_HANDLE} position={Position.Top} type="target" />
+      <Handle className="node-handle" id={FILE_FLOW_SOURCE_HANDLE} position={Position.Bottom} type="source" />
       <div className="file-page-header">
         <ExplanationHoverCard
           comment={fileComment}
@@ -983,6 +983,10 @@ function buildMiniDiffGraph(
   const nodes = [];
   const edges = [];
   const filePages = [];
+  const activeStack = activeStackId
+    ? (analysis?.reviewStack?.stacks || []).find((stack) => stack.id === activeStackId)
+    : null;
+  const fileFlowEdges = activeStack ? analysis?.fileFlows?.[activeStack.id]?.edges || [] : [];
   const fileSpecs = buildFilePageSpecs(analysis, {
     activeStackId,
     expandedGroupIds,
@@ -1074,6 +1078,43 @@ function buildMiniDiffGraph(
 
   }
 
+  const fileSpecById = new Map(fileSpecs.map((spec) => [spec.file.id, spec]));
+  for (const edge of fileFlowEdges) {
+    const sourceSpec = fileSpecById.get(edge.from);
+    const targetSpec = fileSpecById.get(edge.to);
+    if (!sourceSpec || !targetSpec) {
+      continue;
+    }
+
+    edges.push({
+      id: `file-flow:${edge.from}->${edge.to}`,
+      className: "file-flow-edge",
+      data: {
+        comment: edge.comment || "",
+        sourceTitle: sourceSpec.file.path || edge.from,
+        targetTitle: targetSpec.file.path || edge.to,
+      },
+      markerEnd: {
+        color: "var(--middle-tree-color)",
+        height: 22,
+        type: MarkerType.ArrowClosed,
+        width: 22,
+      },
+      source: sourceSpec.pageId,
+      sourceHandle: FILE_FLOW_SOURCE_HANDLE,
+      style: {
+        stroke: "var(--middle-tree-color)",
+        strokeLinecap: "round",
+        strokeOpacity: 0.75,
+        strokeWidth: 6,
+      },
+      target: targetSpec.pageId,
+      targetHandle: FILE_FLOW_TARGET_HANDLE,
+      type: "reviewExplanation",
+      zIndex: 3,
+    });
+  }
+
   return {
     defaultViewport: defaultViewportForPages(filePages),
     edges,
@@ -1091,11 +1132,10 @@ function buildFilePageSpecs(
     measuredHeights = null,
   } = {},
 ) {
-  const activeFileIds = activeStackId
-    ? new Set(
-        (analysis?.reviewStack?.stacks || []).find((stack) => stack.id === activeStackId)?.fileIds || [],
-      )
+  const activeStack = activeStackId
+    ? (analysis?.reviewStack?.stacks || []).find((stack) => stack.id === activeStackId)
     : null;
+  const activeFileIds = activeStack ? new Set(activeStack.fileIds || []) : null;
   const fileLayouts = (analysis?.files || [])
     .filter((file) => miniTreeNodes(file).length > 0)
     .filter((file) => !activeFileIds || activeFileIds.has(file.id))
@@ -1107,7 +1147,30 @@ function buildFilePageSpecs(
       viewMode: fileOrderViewIds.has(file.id) ? "file" : "tree",
     }));
 
-  return layoutIndependentFilePages(fileLayouts);
+  // Sharded stacks (larger than MAX_FILES_PER_MINI_TREES_SHARD) get no fileFlow
+  // entry at all, since no single mini-tree call ever saw the whole stack.
+  const fileFlow = activeStack ? analysis?.fileFlows?.[activeStack.id] : null;
+  return fileFlow
+    ? layoutFilePagesByFlow(fileLayouts, fileFlow.edges)
+    : layoutIndependentFilePages(fileLayouts);
+}
+
+function layoutFilePagesByFlow(fileLayouts, edges) {
+  const items = fileLayouts.map((fileLayout, order) => ({
+    fileLayout,
+    height: fileLayout.pageHeight,
+    order,
+    width: fileLayout.pageWidth,
+  }));
+  const layout = layoutGroupsTopToBottom({
+    edges,
+    getId: (item) => item.fileLayout.file.id,
+    items,
+    layerGap: FILE_FLOW_LAYER_GAP_Y,
+    siblingGap: FILE_FLOW_SIBLING_GAP_X,
+  });
+
+  return layout.placements.map(({ item, x, y }) => ({ ...item.fileLayout, x, y }));
 }
 
 function layoutIndependentFilePages(fileLayouts) {
@@ -1154,94 +1217,6 @@ function layoutIndependentFilePages(fileLayouts) {
   });
 }
 
-function buildSuperGroupLayouts(analysis, fileById) {
-  const layouts = [];
-
-  for (const [superOrder, superNode] of (analysis?.superTree?.nodes || []).entries()) {
-    const middleLayouts = [];
-
-    for (const [treeOrder, treeNode] of (superNode.tree?.nodes || []).entries()) {
-      const files = (treeNode.codeRefs?.fileIds || [])
-        .map((fileId) => fileById.get(fileId))
-        .filter((file) => file && miniTreeNodes(file).length > 0);
-
-      if (files.length > 0) {
-        middleLayouts.push(buildMiddleGroupLayout({
-          files,
-          order: treeOrder,
-          superNode,
-          treeNode,
-        }));
-      }
-    }
-
-    if (middleLayouts.length === 0) {
-      continue;
-    }
-
-    const middleTreeLayout = layoutMiddleGroupsTopToBottom(
-      middleLayouts,
-      superNode.tree?.edges || [],
-    );
-    const localFileSpecs = middleTreeLayout.placements.flatMap((placement) => {
-      return placement.item.fileSpecs.map((spec) => ({
-        ...spec,
-        x: placement.x + spec.x,
-        y: placement.y + spec.y,
-      }));
-    });
-    const superBounds = boundsForSpecs(localFileSpecs, SUPER_GROUP_PADDING);
-
-    layouts.push({
-      depth: Number.isFinite(superNode.depth) ? superNode.depth : superOrder,
-      fileSpecs: localFileSpecs.map((spec) => ({
-        ...spec,
-        x: spec.x - superBounds.x,
-        y: spec.y - superBounds.y,
-      })),
-      height: superBounds.height,
-      order: superOrder,
-      superNode,
-      width: superBounds.width,
-    });
-  }
-
-  return layouts;
-}
-
-function buildMiddleGroupLayout({ files, order, superNode, treeNode }) {
-  const fileLayouts = files.map((file) => buildFileLayout(file));
-  const contentWidth = Math.max(
-    ...fileLayouts.map((item) => item.pageWidth),
-    MINI_NODE_WIDTH + FILE_PAGE_PADDING * 2,
-  );
-  const contentHeight = fileLayouts.reduce((total, item, index) => {
-    return total + item.pageHeight + (index > 0 ? FILE_PAGE_STACK_GAP_Y : 0);
-  }, 0);
-  let cursorY = MIDDLE_GROUP_PADDING.top;
-  const fileSpecs = fileLayouts.map((item) => {
-    const spec = {
-      ...item,
-      superNode,
-      treeNode,
-      treeNodeId: treeNode.id,
-      x: MIDDLE_GROUP_PADDING.left + (contentWidth - item.pageWidth) / 2,
-      y: cursorY,
-    };
-    cursorY += item.pageHeight + FILE_PAGE_STACK_GAP_Y;
-    return spec;
-  });
-
-  return {
-    depth: Number.isFinite(treeNode.depth) ? treeNode.depth : order,
-    fileSpecs,
-    height: contentHeight + MIDDLE_GROUP_PADDING.top + MIDDLE_GROUP_PADDING.bottom,
-    order,
-    treeNode,
-    width: contentWidth + MIDDLE_GROUP_PADDING.left + MIDDLE_GROUP_PADDING.right,
-  };
-}
-
 function buildFileLayout(
   file,
   { expandedGroupIds = new Set(), getMiniNodeHeight = miniNodeHeight, viewMode = "tree" } = {},
@@ -1283,26 +1258,6 @@ function buildFileOrderMiniTree(file) {
     relations: [],
     reviewEdges: [],
   };
-}
-
-function layoutMiddleGroupsTopToBottom(items, edges) {
-  return layoutGroupsTopToBottom({
-    edges,
-    getId: (item) => item.treeNode.id,
-    items,
-    layerGap: MIDDLE_TREE_LAYER_GAP_Y,
-    siblingGap: MIDDLE_TREE_SIBLING_GAP_X,
-  });
-}
-
-function layoutSuperGroupsTopToBottom(items, edges) {
-  return layoutGroupsTopToBottom({
-    edges,
-    getId: (item) => item.superNode.id,
-    items,
-    layerGap: SUPER_TREE_LAYER_GAP_Y,
-    siblingGap: SUPER_TREE_SIBLING_GAP_X,
-  });
 }
 
 function layoutGroupsTopToBottom({ edges, getId, items, layerGap, siblingGap }) {
@@ -1466,171 +1421,6 @@ function layoutGroupsTopToBottom({ edges, getId, items, layerGap, siblingGap }) 
   return { height, placements, width };
 }
 
-function buildHierarchyGroupNodes(fileSpecs) {
-  const middleSpecs = groupSpecsBy(fileSpecs, (spec) => {
-    if (!spec.superNode?.id || !spec.treeNode?.id) {
-      return null;
-    }
-    return `${spec.superNode.id}:${spec.treeNode.id}`;
-  });
-  const superSpecs = groupSpecsBy(fileSpecs, (spec) => spec.superNode?.id || null);
-  const middleNodeIds = new Set();
-  const superNodeIds = new Set();
-  const bounds = [];
-  const nodes = [];
-
-  for (const specs of middleSpecs.values()) {
-    const { superNode, treeNode } = specs[0];
-    const id = middleGroupId(superNode.id, treeNode.id);
-    const rect = boundsForSpecs(specs, MIDDLE_GROUP_PADDING);
-
-    middleNodeIds.add(id);
-    bounds.push(rect);
-    nodes.push({
-      id,
-      data: {
-        level: "middle",
-        title: treeNode.title || "File group",
-      },
-      draggable: false,
-      position: { x: rect.x, y: rect.y },
-      selectable: false,
-      style: { height: rect.height, width: rect.width },
-      type: "hierarchyGroup",
-      zIndex: 1,
-    });
-  }
-
-  for (const specs of superSpecs.values()) {
-    const { superNode } = specs[0];
-    const id = superGroupId(superNode.id);
-    const rect = boundsForSpecs(specs, SUPER_GROUP_PADDING);
-
-    superNodeIds.add(id);
-    bounds.push(rect);
-    nodes.push({
-      id,
-      data: {
-        level: "super",
-        title: superNode.title || "Review group",
-      },
-      draggable: false,
-      position: { x: rect.x, y: rect.y },
-      selectable: false,
-      style: { height: rect.height, width: rect.width },
-      type: "hierarchyGroup",
-      zIndex: 0,
-    });
-  }
-
-  return { bounds, middleNodeIds, nodes, superNodeIds };
-}
-
-function groupSpecsBy(specs, keyForSpec) {
-  const groups = new Map();
-
-  for (const spec of specs) {
-    const key = keyForSpec(spec);
-    if (!key) {
-      continue;
-    }
-
-    const group = groups.get(key) || [];
-    group.push(spec);
-    groups.set(key, group);
-  }
-
-  return groups;
-}
-
-function boundsForSpecs(specs, padding) {
-  const minX = Math.min(...specs.map((spec) => spec.x));
-  const minY = Math.min(...specs.map((spec) => spec.y));
-  const maxX = Math.max(...specs.map((spec) => spec.x + spec.pageWidth));
-  const maxY = Math.max(...specs.map((spec) => spec.y + spec.pageHeight));
-
-  return {
-    height: maxY - minY + padding.top + padding.bottom,
-    width: maxX - minX + padding.left + padding.right,
-    x: minX - padding.left,
-    y: minY - padding.top,
-  };
-}
-
-function buildMiddleTreeEdges(analysis, middleNodeIds) {
-  const edges = [];
-
-  for (const superNode of analysis?.superTree?.nodes || []) {
-    for (const edge of superNode.tree?.edges || []) {
-      const source = middleGroupId(superNode.id, edge.from);
-      const target = middleGroupId(superNode.id, edge.to);
-
-      if (!middleNodeIds.has(source) || !middleNodeIds.has(target)) {
-        continue;
-      }
-
-      edges.push({
-        id: `middle:${superNode.id}:${edge.from}->${edge.to}`,
-        className: "middle-tree-edge",
-        markerEnd: {
-          color: "var(--middle-tree-color)",
-          height: 22,
-          type: MarkerType.ArrowClosed,
-          width: 22,
-        },
-        source,
-        style: {
-          stroke: "var(--middle-tree-color)",
-          strokeLinecap: "round",
-          strokeOpacity: 0.74,
-          strokeWidth: 7,
-        },
-        target,
-        type: "smoothstep",
-        zIndex: 2,
-      });
-    }
-  }
-
-  return edges;
-}
-
-function buildSuperTreeEdges(analysis, superNodeIds) {
-  const edges = [];
-
-  for (const edge of analysis?.superTree?.edges || []) {
-    const source = superGroupId(edge.from);
-    const target = superGroupId(edge.to);
-
-    if (!superNodeIds.has(source) || !superNodeIds.has(target)) {
-      continue;
-    }
-
-    edges.push({
-      id: `super:${edge.from}->${edge.to}`,
-      className: "super-tree-edge",
-      markerEnd: {
-        color: "var(--super-tree-color)",
-        height: 26,
-        type: MarkerType.ArrowClosed,
-        width: 26,
-      },
-      source,
-      style: {
-        stroke: "var(--super-tree-color)",
-        strokeLinecap: "round",
-        strokeOpacity: 0.68,
-        strokeWidth: 10,
-      },
-      target,
-      type: "smoothstep",
-      zIndex: 1,
-    });
-  }
-
-  return edges;
-}
-
 function defaultViewportForPages(filePages) {
   const primaryPage = filePages.reduce((best, page) => {
     if (!best) {
@@ -1724,14 +1514,6 @@ function miniNodeId(file, miniNodeIdValue) {
 
 function filePageId(file) {
   return `file:${file.id}`;
-}
-
-function middleGroupId(superNodeId, treeNodeId) {
-  return `middle-group:${superNodeId}:${treeNodeId}`;
-}
-
-function superGroupId(superNodeId) {
-  return `super-group:${superNodeId}`;
 }
 
 function miniTreeNodes(file) {

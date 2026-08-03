@@ -2,7 +2,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createDiffInventory } from "../workflows/pr-graph-analysis/03-build-diff-inventory/diff-inventory.js";
-import { runCodexGraphAnalysis } from "../workflows/pr-graph-analysis/07-run-retry-loop/codex-agent.js";
+import {
+  computeFileFlowMetrics,
+  runCodexGraphAnalysis,
+} from "../workflows/pr-graph-analysis/07-run-retry-loop/codex-agent.js";
 import { renderDiffHtml } from "../src/review/render.js";
 import { publishStableReview } from "./review-run.js";
 import { RunStore } from "./run-store.js";
@@ -173,12 +176,12 @@ export async function startFixtureRun({ fixtureKey, runStore, signal }) {
     writeFile(path.join(runDir, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`, "utf8"),
   ]);
 
-  const completion = finishFixtureRun({ diff, fixture, metadata, runDir, runId, runStore, signal });
+  const completion = finishFixtureRun({ diff, diffInventory, fixture, metadata, runDir, runId, runStore, signal });
 
   return { completion, run };
 }
 
-async function finishFixtureRun({ diff, fixture, metadata, runDir, runId, runStore, signal }) {
+async function finishFixtureRun({ diff, diffInventory, fixture, metadata, runDir, runId, runStore, signal }) {
   const stableHtmlPath = path.join(runStore.reviewsDir, fixture.slug, "index.html");
 
   try {
@@ -194,6 +197,7 @@ async function finishFixtureRun({ diff, fixture, metadata, runDir, runId, runSto
       metrics: {
         changedFiles: metadata.changedFiles,
         stackCount: analysisResult.analysis?.reviewStack?.stacks?.length ?? null,
+        ...computeFileFlowMetrics({ analysis: analysisResult.analysis, inventory: diffInventory }),
       },
       status: "succeeded",
     });

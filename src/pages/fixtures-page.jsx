@@ -65,6 +65,24 @@ function FixtureCard({ fixture, onStop, onTrigger, stopping, triggering }) {
         </div>
         <h3 className="text-[17px] font-semibold leading-snug tracking-[-0.015em]">{fixture.realPr.title}</h3>
         <p className="text-sm text-muted-foreground">{fixture.purpose}</p>
+        {latestRun?.metrics && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            {latestRun.metrics.stackCount != null && (
+              <Badge variant="outline">{latestRun.metrics.stackCount} stacks</Badge>
+            )}
+            {latestRun.metrics.flowDepth != null && (
+              <Badge variant="outline">flow depth {latestRun.metrics.flowDepth}</Badge>
+            )}
+            {latestRun.metrics.sourceOrderMatch != null && (
+              <Badge variant="outline">
+                source-order match {Math.round(latestRun.metrics.sourceOrderMatch * 100)}%
+              </Badge>
+            )}
+            {latestRun.metrics.badRootCount != null && (
+              <Badge variant="outline">{latestRun.metrics.badRootCount} bad roots</Badge>
+            )}
+          </div>
+        )}
         {latestRun?.error?.message && (
           <p className="text-xs text-coral-strong" title={latestRun.error.message}>
             {latestRun.error.message}

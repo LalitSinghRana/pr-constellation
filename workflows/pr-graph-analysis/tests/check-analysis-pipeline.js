@@ -450,6 +450,7 @@ const multiHunkCandidate = {
   intent: "Update both related constants.",
   summary: "The constants change together.",
   confidence: 1,
+  fileFlow: { edges: [] },
   files: [{
     id: multiHunkFile.id,
     path: multiHunkFile.path,
@@ -529,9 +530,22 @@ try {
     fileId: inventoryFile.id,
     filePath: inventoryFile.path,
   });
+  const stackId = "core-change";
+  // codex-agent.js normalizes a single-stack generation's top-level `fileFlow` into
+  // `fileFlows` keyed by stack id, and a repair attempt inherits `fileFlows` from the
+  // prior candidate rather than the repair call's own (discarded) fileFlow.
+  const incompleteCandidateNormalized = withFileFlows(incompleteCandidate, stackId);
   const materializedValidCandidate = materializeLineOwnership(validCandidate, {
     inventory,
   });
+  // The final merged candidate keeps attempt 1's fileFlows (derived from
+  // incompleteCandidate) and attempt 2 repair's files (from validCandidate) — repair
+  // never re-emits fileFlow, so mergeTargetedRepair's spread carries the old one forward.
+  const { fileFlow: _unusedValidFileFlow, ...materializedValidCandidateFields } = materializedValidCandidate;
+  const finalMergedCandidate = {
+    ...materializedValidCandidateFields,
+    fileFlows: { [stackId]: incompleteCandidate.fileFlow },
+  };
   const calls = [];
   const events = [];
   const executionOptions = [];
@@ -715,7 +729,7 @@ try {
   );
   assert.deepEqual(
     extractJsonTag(repairPrompts[0], "analysis_candidate_json"),
-    incompleteCandidate,
+    incompleteCandidateNormalized,
   );
   assert.deepEqual(
     extractJsonTag(repairPrompts[0], "affected_file_ids_json"),
@@ -777,7 +791,7 @@ try {
     /contiguous JSX\/render phase split into separate loading/,
   );
   assert.deepEqual(result.analysis, {
-    ...materializedValidCandidate,
+    ...finalMergedCandidate,
     reviewStack: reviewStackResult,
   });
   assert.deepEqual(result.execution, {
@@ -802,11 +816,11 @@ try {
   );
   assert.deepEqual(
     JSON.parse(await readFile(path.join(runDir, "analysis.raw.attempt-2.json"), "utf8")),
-    materializedValidCandidate,
+    finalMergedCandidate,
   );
   assert.deepEqual(
     JSON.parse(await readFile(path.join(runDir, "analysis.json"), "utf8")),
-    { ...materializedValidCandidate, reviewStack: reviewStackResult },
+    { ...finalMergedCandidate, reviewStack: reviewStackResult },
   );
   assert.deepEqual(
     JSON.parse(await readFile(path.join(runDir, "review-stack.json"), "utf8")),
@@ -1059,6 +1073,121 @@ try {
   await rm(failedRunDir, { force: true, recursive: true });
 }
 
+// runShardedMiniTrees only fires once review-stack returns more than one stack, so this
+// is the only scenario in this file that exercises sharding, per-shard fileFlow
+// collection, and merging files back together from concurrent calls.
+const shardedDiff = `diff --git a/src/a.js b/src/a.js
+index 0000000..1111111 100644
+--- a/src/a.js
++++ b/src/a.js
+@@ -1 +1 @@
+-const a = 1;
++const a = 2;
+diff --git a/src/b.js b/src/b.js
+index 0000000..2222222 100644
+--- a/src/b.js
++++ b/src/b.js
+@@ -1 +1 @@
+-const b = 1;
++const b = 2;
+`;
+const shardedRunDir = await mkdtemp(path.join(tmpdir(), "prc-analysis-sharded-"));
+
+try {
+  const inventory = createDiffInventory(shardedDiff);
+  const [fileA, fileB] = inventory.files;
+  const stackA = { id: "stack-a", title: "Stack A", comment: "File a change.", fileIds: [fileA.id] };
+  const stackB = { id: "stack-b", title: "Stack B", comment: "File b change.", fileIds: [fileB.id] };
+  const shardedReviewStack = { schemaVersion: "pr-graph-review-stack/v1", stacks: [stackA, stackB] };
+  const calls = [];
+
+  await writeRunInputs({
+    inventory,
+    metadata: { number: 4, title: "Sharded mini-trees" },
+    runDir: shardedRunDir,
+  });
+
+  const buildShardCandidate = (file) => ({
+    schemaVersion: "pr-graph-mini-trees/v2",
+    intent: "Review the sharded change.",
+    summary: "Two independent files change independently.",
+    confidence: 1,
+    fileFlow: { edges: [] },
+    files: [{
+      id: file.id,
+      path: file.path,
+      reviewClass: "important",
+      changeRole: "runtime",
+      comment: "This file owns its own constant update.",
+      miniTree: {
+        nodes: [{
+          id: "change-constant",
+          title: "Change the constant",
+          reviewClass: "important",
+          changeRole: "runtime",
+          comment: "The constant value changes.",
+          changedLineRanges: toRanges(file.changedLineIds),
+        }],
+        reviewEdges: [],
+        relations: [],
+      },
+    }],
+  });
+
+  const executeCodex = async ({ outputPath, prompt, schemaPath }) => {
+    if (schemaPath.includes("03-create-review-stack")) {
+      calls.push("review-stack-1");
+      await writeFile(outputPath, `${JSON.stringify(shardedReviewStack)}\n`, "utf8");
+      return { usage: {} };
+    }
+
+    assert.match(schemaPath, /02-create-mini-trees/);
+
+    if (prompt.includes(`"${stackA.title}" review stack`)) {
+      calls.push("mini-a");
+      await writeFile(outputPath, `${JSON.stringify(buildShardCandidate(fileA))}\n`, "utf8");
+    } else if (prompt.includes(`"${stackB.title}" review stack`)) {
+      calls.push("mini-b");
+      await writeFile(outputPath, `${JSON.stringify(buildShardCandidate(fileB))}\n`, "utf8");
+    } else {
+      assert.fail("Mini-tree shard prompt did not name its review stack.");
+    }
+
+    return { usage: {} };
+  };
+
+  const shardedEvents = [];
+  const result = await runCodexGraphAnalysis({
+    executeCodex,
+    model: "selected-model",
+    onEvent: async (event) => {
+      shardedEvents.push(event);
+    },
+    reasoningEffort: "xhigh",
+    runDir: shardedRunDir,
+  });
+
+  assert.deepEqual(calls.sort(), ["mini-a", "mini-b", "review-stack-1"]);
+  assert.deepEqual(
+    result.analysis.files.map((file) => file.id).sort(),
+    [fileA.id, fileB.id].sort(),
+  );
+  assert.deepEqual(result.analysis.fileFlows, {
+    [stackA.id]: { edges: [] },
+    [stackB.id]: { edges: [] },
+  });
+  assert.equal(result.analysis.fileFlow, undefined);
+  validateMiniTreeAnalysis(result.analysis, { inventory, reviewStack: shardedReviewStack });
+  // Both stacks are single-file with no edges, so this only exercises the trivial case:
+  // depth 0, every stack's one-file "order" trivially matches inventory order, no bad root.
+  const shardedAnalysisMetrics = findFinishEvent(shardedEvents, "analysis").metrics;
+  assert.equal(shardedAnalysisMetrics.badRootCount, 0);
+  assert.equal(shardedAnalysisMetrics.flowDepth, 0);
+  assert.equal(shardedAnalysisMetrics.sourceOrderMatch, 1);
+} finally {
+  await rm(shardedRunDir, { force: true, recursive: true });
+}
+
 function assertStageTimeline(events, expected) {
   assert.deepEqual(
     events.map((event) => [
@@ -1176,6 +1305,7 @@ function buildCandidate({ coveredLineIds, fileId, filePath }) {
     intent: "Review the example change",
     summary: "Update and validate the example value.",
     confidence: 1,
+    fileFlow: { edges: [] },
     files: [
       {
         id: fileId,
@@ -1197,6 +1327,13 @@ function toRanges(lineIds) {
   return lineIds.length === 0
     ? []
     : [{ start: lineIds[0], end: lineIds.at(-1) }];
+}
+
+// Mirrors codex-agent.js's single-stack normalization: a raw mini-trees response's
+// top-level `fileFlow` becomes `fileFlows` keyed by stack id.
+function withFileFlows(candidate, stackId) {
+  const { fileFlow, ...rest } = candidate;
+  return { ...rest, fileFlows: { [stackId]: fileFlow } };
 }
 
 async function writeRunInputs({ inventory, metadata, runDir }) {

@@ -15,8 +15,29 @@ const CHANGE_ROLES = new Set([
 const MINI_TREE_SCHEMA_V1 = "pr-graph-mini-trees/v1";
 const MINI_TREE_SCHEMA_V2 = "pr-graph-mini-trees/v2";
 const MINI_TREE_SCHEMA_VERSIONS = new Set([MINI_TREE_SCHEMA_V1, MINI_TREE_SCHEMA_V2]);
+// Mirrors graph-app.jsx's FILE_REVIEW_CLASS_PRIORITY/FILE_CHANGE_ROLE_PRIORITY so the
+// validator rejects the same file-flow roots the UI would consider wrong, rather than the
+// two silently disagreeing on which file should lead a stack. Keep both in sync.
+const FILE_REVIEW_CLASS_PRIORITY = new Map([
+  ["important", 0],
+  ["supporting", 1],
+  ["mechanical", 2],
+]);
+const FILE_CHANGE_ROLE_PRIORITY = new Map([
+  ["runtime", 0],
+  ["test", 1],
+  ["storybook", 2],
+  ["type", 3],
+  ["config", 4],
+  ["dependency", 5],
+  ["docs", 6],
+  ["snapshot", 7],
+  ["generated", 8],
+  ["formatting", 9],
+  ["imports", 10],
+]);
 
-export function validateMiniTreeAnalysis(analysis, { inventory = null } = {}) {
+export function validateMiniTreeAnalysis(analysis, { inventory = null, reviewStack = null } = {}) {
   const errors = [];
 
   if (!MINI_TREE_SCHEMA_VERSIONS.has(analysis?.schemaVersion)) {
@@ -49,6 +70,7 @@ export function validateMiniTreeAnalysis(analysis, { inventory = null } = {}) {
   }
 
   validateFiles({ analysis, errors, inventory });
+  validateFileFlow({ analysis, errors, reviewStack });
 
   if (errors.length > 0) {
     throwValidationError(errors);
@@ -189,6 +211,87 @@ function validateFiles({ analysis, errors, inventory }) {
       errors.push(`analysis.json changed line id is not covered by any file miniTree node: ${changedLineId}`);
     }
   }
+}
+
+export function validateFileFlow({ analysis, errors, reviewStack }) {
+  const fileFlows = analysis?.fileFlows;
+
+  if (!fileFlows || typeof fileFlows !== "object" || !reviewStack?.stacks) {
+    return;
+  }
+
+  const fileById = new Map((analysis.files || []).map((file) => [file.id, file]));
+
+  for (const stack of reviewStack.stacks) {
+    const flow = fileFlows[stack.id];
+
+    // No fileFlow for this stack is accepted: a stack split across multiple mini-tree
+    // shards (over MAX_FILES_PER_MINI_TREES_SHARD) never has a single call that saw it
+    // whole, so codex-agent.js deliberately emits none rather than a partial ordering.
+    if (!flow) {
+      continue;
+    }
+
+    if (!Array.isArray(flow.edges)) {
+      errors.push(`analysis.json fileFlows.${stack.id}.edges must be an array.`);
+      continue;
+    }
+
+    const stackFileIds = new Set(stack.fileIds || []);
+    const stackFiles = [...stackFileIds].map((fileId) => fileById.get(fileId)).filter(Boolean);
+    const nodeById = new Map(stackFiles.map((file) => [file.id, file]));
+    const parentCounts = new Map(stackFiles.map((file) => [file.id, 0]));
+    const childrenById = new Map(stackFiles.map((file) => [file.id, []]));
+
+    const rootFile = validateTreeEdges({
+      edgeLabel: `fileFlows.${stack.id}.edges`,
+      edges: flow.edges,
+      errors,
+      ordered: true,
+      nodeById,
+      nodeIds: stackFileIds,
+      parentCounts,
+      childrenById,
+      rootLabel: `fileFlows.${stack.id}`,
+    });
+
+    if (rootFile && !isAcceptableFileFlowRoot(rootFile, stackFiles)) {
+      errors.push(
+        `analysis.json fileFlows.${stack.id} root ${rootFile.id} is outranked by another file in the stack; the root must be reviewClass/changeRole tied-for-best, not merely present.`,
+      );
+    }
+  }
+}
+
+// A root is acceptable when no other file in the stack has a strictly better
+// reviewClass/changeRole tier — ties are fine (a stack can legitimately have several
+// important/runtime files; the model's causality judgement between them is not something
+// this validator can second-guess, see the plan's own PR 4919 data: stacks with 1-3
+// important files each). Only a root that's flatly outranked (e.g. a test/snapshot file
+// rooting a stack that also has a runtime file) is rejected.
+export function isAcceptableFileFlowRoot(rootFile, files) {
+  return !files.some((file) => (
+    file.id !== rootFile.id
+    && isStrictlyBetterFileFlowPriority(file, rootFile)
+  ));
+}
+
+function isStrictlyBetterFileFlowPriority(file, otherFile) {
+  const reviewClassDifference = (
+    fileReviewClassPriority(file.reviewClass) - fileReviewClassPriority(otherFile.reviewClass)
+  );
+  if (reviewClassDifference !== 0) {
+    return reviewClassDifference < 0;
+  }
+  return fileChangeRolePriority(file.changeRole) < fileChangeRolePriority(otherFile.changeRole);
+}
+
+function fileReviewClassPriority(reviewClass) {
+  return FILE_REVIEW_CLASS_PRIORITY.get(reviewClass) ?? FILE_REVIEW_CLASS_PRIORITY.size;
+}
+
+function fileChangeRolePriority(changeRole) {
+  return FILE_CHANGE_ROLE_PRIORITY.get(changeRole) ?? FILE_CHANGE_ROLE_PRIORITY.size;
 }
 
 function validateMiniTree({

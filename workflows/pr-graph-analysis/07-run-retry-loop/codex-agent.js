@@ -8,6 +8,7 @@ import {
   USE_DETACHED_PROCESS_GROUP,
 } from "../child-process-termination.js";
 import {
+  isAcceptableFileFlowRoot,
   validateGraphAnalysis,
   validateMiniTreeAnalysis,
   validateReviewStack,
@@ -55,6 +56,7 @@ const MAX_FILES_PER_MINI_TREES_SHARD = 15;
 const SEMANTIC_JUDGE_ENABLED = false;
 
 export {
+  computeFileFlowMetrics,
   materializeLineOwnership,
   validateGraphAnalysis,
   validateMiniTreeAnalysis,
@@ -81,6 +83,9 @@ export async function runCodexGraphAnalysis({
     reasoningEffort: JUDGE_REASONING_EFFORT,
   });
   const usage = emptyUsage();
+  // Assigned inside the "Analysis" stage's run() below; metricsForResult reads it once
+  // run() has resolved, so it's always populated by the time that happens.
+  let inventory;
   const executeCodexWithUsage = async (options) => {
     try {
       throwIfAborted(signal);
@@ -102,9 +107,10 @@ export async function runCodexGraphAnalysis({
         ...executionMetrics(executionConfig),
         ...usageMetrics(usage),
       }),
-      metricsForResult: () => ({
+      metricsForResult: (result) => ({
         ...executionMetrics(executionConfig),
         ...usageMetrics(usage),
+        ...computeFileFlowMetrics({ analysis: result.analysis, inventory }),
       }),
       run: async () => {
       await mkdir(resolvedRunDir, { recursive: true });
@@ -116,7 +122,7 @@ export async function runCodexGraphAnalysis({
         readFile(REVIEW_STACK_PROMPT_PATH, "utf8"),
       ]);
       throwIfAborted(signal);
-      const inventory = await readJson(path.join(resolvedRunDir, "diff-inventory.json"));
+      inventory = await readJson(path.join(resolvedRunDir, "diff-inventory.json"));
       const metadataText = await readFile(
         path.join(resolvedRunDir, "metadata.json"),
         "utf8",
@@ -388,7 +394,10 @@ async function runAnalysisAttempt({
               }),
               promptPath: artifacts.miniTreesPromptPath,
               schemaPath: MINI_TREES_SCHEMA_PATH,
-            });
+            }).then(({ fileFlow, ...result }) => ({
+              ...result,
+              fileFlows: { [reviewStack.stacks[0].id]: fileFlow },
+            }));
         return materializeLineOwnership(generated, { inventory });
       },
       stageId: generationStageId,
@@ -426,6 +435,7 @@ async function runAnalysisAttempt({
       metadataText,
       outputPath: artifacts.judgeRawPath,
       resolvedRunDir,
+      reviewStack,
       structuredDiffText,
       usage,
     });
@@ -499,8 +509,28 @@ async function runShardedMiniTrees({
     Array.from({ length: Math.min(MINI_TREES_SHARD_CONCURRENCY, shards.length) }, runWorker),
   );
 
+  const shardIndicesByStackId = new Map();
+  shards.forEach((shard, index) => {
+    const indices = shardIndicesByStackId.get(shard.stack.id) || [];
+    indices.push(index);
+    shardIndicesByStackId.set(shard.stack.id, indices);
+  });
+
+  const fileFlows = {};
+  for (const [stackId, indices] of shardIndicesByStackId) {
+    // ponytail: a stack split across multiple shards (>MAX_FILES_PER_MINI_TREES_SHARD)
+    // gets no fileFlow — no single call saw the whole stack, so any flow a shard
+    // emitted only orders its own file subset. Upgrade path: a dedicated flow-only
+    // call per oversized stack, given just that stack's full file list.
+    if (indices.length === 1 && results[indices[0]]?.fileFlow) {
+      fileFlows[stackId] = results[indices[0]].fileFlow;
+    }
+  }
+
+  const { fileFlow: _discardedShardFlow, ...firstResult } = results[0];
   const merged = {
-    ...results[0],
+    ...firstResult,
+    fileFlows,
     files: results.flatMap((result) => result.files || []),
   };
 
@@ -591,6 +621,7 @@ async function runCandidateEvaluation({
   metadataText,
   outputPath,
   resolvedRunDir,
+  reviewStack,
   structuredDiffText,
   usage,
 }) {
@@ -626,7 +657,7 @@ async function runCandidateEvaluation({
             fileCount: inventory?.files?.length || 0,
           }),
           parentStageId: evaluationStageId,
-          run: async () => validateMiniTreeAnalysis(candidate, { inventory }),
+          run: async () => validateMiniTreeAnalysis(candidate, { inventory, reviewStack }),
           stageId: `${evaluationStageId}.validate-candidate`,
         });
       } catch (error) {
@@ -1990,6 +2021,102 @@ function reportedExecutionConfig(executionConfig) {
 
 function executionMetrics(executionConfig) {
   return reportedExecutionConfig(executionConfig);
+}
+
+// Layer-flow calibration metrics (.context/plans/layer-flow-middle-tree.md Step 3/4):
+// read across five runs per fixture before building any rendering on top of fileFlow.
+function computeFileFlowMetrics({ analysis, inventory }) {
+  const stacks = analysis?.reviewStack?.stacks || [];
+  const fileFlows = analysis?.fileFlows || {};
+  const fileById = new Map((analysis?.files || []).map((file) => [file.id, file]));
+  const inventoryOrderById = new Map(
+    (inventory?.files || []).map((file, index) => [file.id, index]),
+  );
+
+  let flowDepth = 0;
+  let stacksWithFlow = 0;
+  let sourceOrderMatches = 0;
+  let badRootCount = 0;
+
+  for (const stack of stacks) {
+    const flow = fileFlows[stack.id];
+    if (!flow) {
+      continue;
+    }
+    stacksWithFlow += 1;
+
+    const childEdgesByParentId = new Map();
+    const hasIncoming = new Set();
+    for (const edge of flow.edges || []) {
+      const children = childEdgesByParentId.get(edge.from) || [];
+      children.push(edge);
+      childEdgesByParentId.set(edge.from, children);
+      hasIncoming.add(edge.to);
+    }
+    const rootId = (stack.fileIds || []).find((fileId) => !hasIncoming.has(fileId));
+
+    flowDepth = Math.max(flowDepth, fileFlowDepth(rootId, childEdgesByParentId));
+
+    const flowOrderIds = fileFlowDfsOrder(rootId, childEdgesByParentId);
+    const sourceOrderIds = (stack.fileIds || [])
+      .slice()
+      .sort((left, right) => (inventoryOrderById.get(left) ?? 0) - (inventoryOrderById.get(right) ?? 0));
+    if (
+      flowOrderIds.length === sourceOrderIds.length
+      && flowOrderIds.every((fileId, index) => fileId === sourceOrderIds[index])
+    ) {
+      sourceOrderMatches += 1;
+    }
+
+    if (rootId) {
+      const rootFile = fileById.get(rootId);
+      const stackFiles = (stack.fileIds || []).map((fileId) => fileById.get(fileId)).filter(Boolean);
+      if (rootFile && !isAcceptableFileFlowRoot(rootFile, stackFiles)) {
+        badRootCount += 1;
+      }
+    }
+  }
+
+  return {
+    badRootCount,
+    flowDepth,
+    // null (not 0) when no stack has a flow at all, so it reads as "no data" rather
+    // than "the model always matched inventory order".
+    sourceOrderMatch: stacksWithFlow > 0 ? sourceOrderMatches / stacksWithFlow : null,
+  };
+}
+
+function fileFlowDepth(rootId, childEdgesByParentId) {
+  if (!rootId) {
+    return 0;
+  }
+
+  let maxDepth = 0;
+  const visit = (fileId, depth) => {
+    maxDepth = Math.max(maxDepth, depth);
+    for (const edge of childEdgesByParentId.get(fileId) || []) {
+      visit(edge.to, depth + 1);
+    }
+  };
+  visit(rootId, 0);
+  return maxDepth;
+}
+
+function fileFlowDfsOrder(rootId, childEdgesByParentId) {
+  if (!rootId) {
+    return [];
+  }
+
+  const order = [];
+  const visit = (fileId) => {
+    order.push(fileId);
+    const children = (childEdgesByParentId.get(fileId) || []).slice().sort((left, right) => left.order - right.order);
+    for (const edge of children) {
+      visit(edge.to);
+    }
+  };
+  visit(rootId);
+  return order;
 }
 
 function emptyUsage() {
