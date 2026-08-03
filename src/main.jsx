@@ -1,3 +1,4 @@
+import { NuqsAdapter } from "nuqs/adapters/react";
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
 import "./index.css";
@@ -8,4 +9,8 @@ const dark = savedTheme
   : window.matchMedia("(prefers-color-scheme: dark)").matches;
 document.documentElement.classList.toggle("dark", dark);
 
-createRoot(document.querySelector("#root")).render(<App />);
+createRoot(document.querySelector("#root")).render(
+  <NuqsAdapter>
+    <App />
+  </NuqsAdapter>,
+);

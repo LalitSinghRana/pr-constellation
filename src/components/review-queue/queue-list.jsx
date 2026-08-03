@@ -241,10 +241,23 @@ function PullRequestRow({
 
           <ItemActions className="ml-20 basis-full md:ml-auto md:basis-auto">
             {analysis.href ? (
-              <a className="review-action" href={analysis.href} target="_blank" rel="noreferrer" onClick={() => onMarkRead(item)}>
-                <Sparkles className="size-3.5" />
-                Open tree
-              </a>
+              <>
+                <a className="review-action" href={analysis.href} target="_blank" rel="noreferrer" onClick={() => onMarkRead(item)}>
+                  <Sparkles className="size-3.5" />
+                  Open tree
+                </a>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={analysisBusy || Boolean(analysis.active)}
+                  onClick={() => onAnalyze(item)}
+                  title="Re-run AI analysis"
+                >
+                  {analysisBusy || analysis.active?.status === "running"
+                    ? <LoaderCircle className="size-3.5 animate-spin" />
+                    : <RotateCcw className="size-3.5" />}
+                </Button>
+              </>
             ) : (
               <Button size="sm" variant="outline" disabled={analysisBusy || Boolean(analysis.active)} onClick={() => onAnalyze(item)}>
                 {analysisBusy || analysis.active?.status === "running" ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}

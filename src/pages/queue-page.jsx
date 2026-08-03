@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Sparkles,
 } from "lucide-react";
+import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LIFECYCLE_META, LIFECYCLE_ORDER } from "@/components/review-queue/config.jsx";
 import { EmptyQueue, LoadingQueue, QueueSection } from "@/components/review-queue/queue-list.jsx";
@@ -30,8 +31,8 @@ export function QueuePage() {
     error: analysisServiceError,
     refresh: refreshAnalyses,
   } = useAnalysisDashboard();
-  const [activeFilter, setActiveFilter] = useState("new");
-  const [activeProject, setActiveProject] = useState("");
+  const [activeFilter, setActiveFilter] = useQueryState("filter", parseAsString.withDefault("new"));
+  const [activeProject, setActiveProject] = useQueryState("project", parseAsString.withDefault(""));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
   const [doneMutation, setDoneMutation] = useState("");
