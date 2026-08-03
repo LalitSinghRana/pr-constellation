@@ -45,6 +45,7 @@ function useFixtures() {
 function FixtureCard({ fixture, onStop, onTrigger, stopping, triggering }) {
   const latestRun = fixture.runs[0] || null;
   const pinnedRuns = fixture.runs.filter((run) => run.pinned);
+  const unpinnedRuns = fixture.runs.filter((run) => !run.pinned);
   const isRunning = fixture.isRunning;
   const status = isRunning ? "running" : latestRun?.status ?? "not-started";
 
@@ -87,17 +88,34 @@ function FixtureCard({ fixture, onStop, onTrigger, stopping, triggering }) {
               Run AI analysis
             </Button>
           )}
-          {latestRun?.status === "succeeded" && latestRun.graphUrl && (
-            <a className="review-action" href={latestRun.graphUrl} rel="noreferrer" target="_blank">
-              Open latest result<ArrowUpRight className="size-3.5" />
-            </a>
-          )}
           {fixture.referenceUrls.map((url) => (
             <a className="review-action" href={url} key={url} rel="noreferrer" target="_blank">
               Source PR<ArrowUpRight className="size-3.5" />
             </a>
           ))}
         </div>
+        {unpinnedRuns.length > 0 && (
+          <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-dashed pt-3">
+            <span className="text-xs text-muted-foreground">Runs:</span>
+            {unpinnedRuns.map((run, index) =>
+              run.status === "succeeded" && run.graphUrl ? (
+                <a
+                  className="review-action"
+                  href={run.graphUrl}
+                  key={run.runId}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Run {index + 1}<ArrowUpRight className="size-3.5" />
+                </a>
+              ) : (
+                <Badge className={STATUS_STYLES[run.status] || STATUS_STYLES["not-started"]} key={run.runId} variant="outline">
+                  Run {index + 1} ({run.status})
+                </Badge>
+              ),
+            )}
+          </div>
+        )}
         {pinnedRuns.length > 0 && (
           <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-dashed pt-3">
             <span className="text-xs text-muted-foreground">Pinned:</span>

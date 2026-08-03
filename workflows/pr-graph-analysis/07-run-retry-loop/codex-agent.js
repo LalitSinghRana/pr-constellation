@@ -138,9 +138,9 @@ export async function runCodexGraphAnalysis({
             executeCodex: executeCodexWithUsage,
             outputPath: reviewStackRawPath,
             prompt: buildReviewStackPrompt({
+              inventory,
               metadataText,
               reviewStackPrompt,
-              structuredDiffText,
             }),
             promptPath: reviewStackPromptPath,
             schemaPath: REVIEW_STACK_SCHEMA_PATH,
@@ -1258,6 +1258,36 @@ function isSchemaUsableCandidate(candidate) {
   );
 }
 
+// The full structured diff (buildStructuredDiff) carries a per-line id/old/new
+// line-number object for every line, which the review-stack schema never
+// references (its output is just file ids grouped into stacks). For a large,
+// multi-PR fixture that per-line bookkeeping alone pushed a single prompt past
+// codex's 1,048,576-character input cap. This lean variant keeps every file's
+// full code content but drops the ids/line-numbers the review-stack decision
+// doesn't need, cutting a real fixture's prompt from ~1.42M to ~0.5M chars.
+function buildReviewStackStructuredDiff(inventory) {
+  return {
+    schemaVersion: "pr-graph-review-stack-diff/v1",
+    files: (inventory?.files || [])
+      .filter((file) => file.changedLineIds?.length > 0)
+      .map((file) => ({
+        id: file.id,
+        path: file.path,
+        status: file.status,
+        add: file.addedLines ?? 0,
+        del: file.deletedLines ?? 0,
+        hunks: (file.hunks || [])
+          .filter((hunk) => hunk.changedLineIds?.length > 0)
+          .map((hunk) => ({
+            header: hunk.header,
+            lines: (hunk.lines || []).map((line) => (
+              `${line.kind === "insert" ? "+" : line.kind === "delete" ? "-" : " "}${line.content}`
+            )),
+          })),
+      })),
+  };
+}
+
 function buildStructuredDiff(inventory, { hunkIdsByFileId = null } = {}) {
   return {
     schemaVersion: "pr-graph-structured-diff/v1",
@@ -1435,12 +1465,29 @@ function compactLineOwnership(analysis) {
   };
 }
 
-function buildReviewStackPrompt({ metadataText, reviewStackPrompt, structuredDiffText }) {
+function buildReviewStackPrompt({ inventory, metadataText, reviewStackPrompt }) {
+  const reviewStackDiffText = `${JSON.stringify(buildReviewStackStructuredDiff(inventory))}\n`;
+
   return `${reviewStackPrompt.trim()}
-${buildSourceInput({
-    metadataText,
-    structuredDiffText,
-  })}
+
+## Inline Input
+
+Use the inline input below. The structured diff below has one entry per
+changed file (with its file id, path, and hunks); each hunk's lines are
+unified-diff style ("+"/"-"/" " prefix plus content). Do not call tools or
+read files unless this input is insufficient for semantic grouping.
+
+### metadata.json
+
+<metadata_json>
+${metadataText}
+</metadata_json>
+
+### Structured diff
+
+<structured_diff_json>
+${reviewStackDiffText}
+</structured_diff_json>
 
 Decide the review stack split as your final answer.
 `;
