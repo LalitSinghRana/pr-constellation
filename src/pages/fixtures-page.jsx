@@ -4,6 +4,7 @@ import { ThemeToggle } from "@/components/theme-toggle.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Card, CardContent } from "@/components/ui/card.jsx";
+import { useDocumentTitle } from "@/hooks/use-document-title.js";
 
 const STATUS_STYLES = {
   running: "border-sky/25 bg-sky/10 text-sky-strong",
@@ -156,6 +157,7 @@ function FixtureCard({ fixture, onStop, onTrigger, stopping, triggering }) {
 }
 
 export function FixturesPage() {
+  useDocumentTitle({ title: "Fixtures · PR Review Cockpit" });
   const { error, fixtures, refresh } = useFixtures();
   const [triggeringKey, setTriggeringKey] = useState(null);
   const [stoppingKey, setStoppingKey] = useState(null);

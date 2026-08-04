@@ -9,11 +9,13 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar.jsx";
 import { useAnalysisDashboard } from "@/hooks/use-analysis-dashboard.js";
+import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { analysisState, cn } from "@/lib/utils.js";
 
 const terminalStatuses = new Set(["succeeded", "failed", "canceled", "interrupted"]);
 
 export function AnalysisPage() {
+  useDocumentTitle({ title: "AI Analyzer Queue · PR Review Cockpit" });
   const {
     dashboard,
     error: dashboardError,

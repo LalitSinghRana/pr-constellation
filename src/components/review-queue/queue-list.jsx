@@ -252,9 +252,15 @@ function PullRequestRow({
                   variant="outline"
                   disabled={analysisBusy || Boolean(analysis.active)}
                   onClick={() => onAnalyze(item)}
-                  title="Re-run AI analysis"
+                  title={
+                    analysisBusy || analysis.active?.status === "queued"
+                      ? "Queued for AI analysis"
+                      : analysis.active?.status === "running"
+                        ? "Analyzing"
+                        : "Re-run AI analysis"
+                  }
                 >
-                  {analysisBusy || analysis.active?.status === "running"
+                  {analysisBusy || analysis.active
                     ? <LoaderCircle className="size-3.5 animate-spin" />
                     : <RotateCcw className="size-3.5" />}
                 </Button>
@@ -265,9 +271,21 @@ function PullRequestRow({
                 {analysisBusy ? "Queueing" : analysis.active?.status === "running" ? "Analyzing" : analysis.active ? "Queued" : "Analyze"}
               </Button>
             )}
-            <Button size="sm" variant="outline" disabled={doneBusy} onClick={() => onToggleDone(item)}>
-              {doneBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : completed ? <RotateCcw className="size-3.5" /> : <Check className="size-3.5" />}
-              {completed ? "Restore" : "Done"}
+            <Button
+              size={completed ? "sm" : "icon-sm"}
+              variant="outline"
+              disabled={doneBusy}
+              onClick={() => onToggleDone(item)}
+              aria-label={completed ? undefined : "Mark done"}
+              title={completed ? undefined : "Mark done"}
+            >
+              {doneBusy ? (
+                <LoaderCircle className="size-3.5 animate-spin" />
+              ) : completed ? (
+                <><RotateCcw className="size-3.5" />Restore</>
+              ) : (
+                <Check className="size-3.5 text-emerald-700" />
+              )}
             </Button>
           </ItemActions>
         </article>
@@ -301,9 +319,21 @@ function NotificationRow({ item, completed, onToggleDone, doneBusy, nested }) {
           Open
           <ArrowUpRight className="size-3.5" />
         </a>
-        <Button size="sm" variant="outline" disabled={doneBusy} onClick={() => onToggleDone(item)}>
-          {doneBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : completed ? <RotateCcw className="size-3.5" /> : <Check className="size-3.5" />}
-          {completed ? "Restore" : "Done"}
+        <Button
+          size={completed ? "sm" : "icon-sm"}
+          variant="outline"
+          disabled={doneBusy}
+          onClick={() => onToggleDone(item)}
+          aria-label={completed ? undefined : "Mark done"}
+          title={completed ? undefined : "Mark done"}
+        >
+          {doneBusy ? (
+            <LoaderCircle className="size-3.5 animate-spin" />
+          ) : completed ? (
+            <><RotateCcw className="size-3.5" />Restore</>
+          ) : (
+            <Check className="size-3.5 text-emerald-700" />
+          )}
         </Button>
       </ItemActions>
       </article>

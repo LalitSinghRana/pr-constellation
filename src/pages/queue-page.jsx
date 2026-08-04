@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/sidebar.jsx";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.jsx";
 import { useAnalysisDashboard } from "@/hooks/use-analysis-dashboard.js";
+import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { useInbox } from "@/hooks/use-inbox.js";
 import {
   EMPTY_SETTINGS,
@@ -25,6 +26,7 @@ import {
 import { cn } from "@/lib/utils.js";
 
 export function QueuePage() {
+  useDocumentTitle({ title: "Review Queue · PR Review Cockpit" });
   const { data, error, loading, refresh, setData, setError } = useInbox();
   const {
     dashboard: analysisDashboard,

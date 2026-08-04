@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table.jsx";
+import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { signedScore } from "@/lib/queue.js";
 
 const signalScores = new Map([
@@ -128,6 +129,7 @@ function ScenarioTable({ base, scenarios }) {
 }
 
 export function ScoringPage() {
+  useDocumentTitle({ title: "Scoring Model · PR Review Cockpit" });
   return (
     <main className="min-h-screen">
       <div className="mx-auto w-[min(100%-2.5rem,68rem)] pt-12 pb-20 max-[700px]:w-[min(100%-1.5rem,68rem)] max-[700px]:pt-6">
