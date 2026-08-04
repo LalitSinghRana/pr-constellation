@@ -10,14 +10,15 @@ I want to create something that will help humans review PR faster. Goals are
 Next improvements
 
 ### UI/UX
-- Configure review-stack refences in UI
-- Fix UI of each gig-diff node starting from 1 instead of their correct line number.
+- ~Fix UI of each gig-diff node starting from 1 instead of their correct line number.~
 - tailwind and design sytem should be used over CSS. Keep graph view out of this refactor consideration
 - graph and rest of website should be merge for style
+- clean graph UI - a lot to be done here
 - a clean snap flow from file to file or node-to-node. with arrow navigation
+- Configure review-stack refences in UI
 
 ###AI layer
-- build layer flow (middle tree)
+- ~build layer flow (middle tree)~
 - should we skip generated files from analyse pipeline? Like snapshots.
 - Hide noise
 
