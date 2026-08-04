@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import { Card } from "@/components/ui/card.jsx";
 import {
   Empty,
   EmptyContent,
@@ -51,7 +52,7 @@ const signalStyles = {
 
 export function LoadingQueue() {
   return (
-    <div className="queue-card grid min-h-72 gap-5 p-6" aria-label="Building your current review queue">
+    <Card className="grid min-h-72 gap-5 rounded-lg bg-card/75 p-6 shadow-lg backdrop-blur-sm" aria-label="Building your current review queue">
       {["w-3/5", "w-4/5", "w-2/3"].map((width) => (
         <div className="flex items-center gap-4" key={width}>
           <Skeleton className="size-12 shrink-0 rounded-xl" />
@@ -62,14 +63,14 @@ export function LoadingQueue() {
         </div>
       ))}
       <span className="sr-only">Building your current review queue…</span>
-    </div>
+    </Card>
   );
 }
 
 export function EmptyQueue({ canConfigure, onSettings, error, onRetry }) {
   const Icon = error ? AlertTriangle : Check;
   return (
-    <Empty className="queue-card min-h-80 border-solid">
+    <Empty className="min-h-80 overflow-hidden rounded-lg border border-solid bg-card/75 shadow-lg backdrop-blur-sm">
       <EmptyHeader>
         <EmptyMedia
           className={cn(
@@ -242,7 +243,7 @@ function PullRequestRow({
           <ItemActions className="ml-20 basis-full md:ml-auto md:basis-auto">
             {analysis.href ? (
               <>
-                <a className="review-action" href={analysis.href} target="_blank" rel="noreferrer" onClick={() => onMarkRead(item)}>
+                <a className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9" href={analysis.href} target="_blank" rel="noreferrer" onClick={() => onMarkRead(item)}>
                   <Sparkles className="size-3.5" />
                   Open tree
                 </a>
@@ -280,8 +281,8 @@ function NotificationRow({ item, completed, onToggleDone, doneBusy, nested }) {
   return (
     <Item asChild className={cn("rounded-none border-0 border-b border-border p-5 last:border-b-0 hover:bg-accent/50", completed && "opacity-60")}>
       <article>
-      <ItemMedia className="notification-type w-28 justify-start">
-        <Bell className="size-4" />
+      <ItemMedia className="flex w-28 items-center justify-start gap-[0.45rem] text-[0.68rem] font-[750] uppercase tracking-[0.06em] text-muted-foreground">
+        <Bell className="size-4 text-primary" />
         <span>{item.subjectType}</span>
       </ItemMedia>
       <ItemContent className="min-w-0 gap-0">
@@ -296,7 +297,7 @@ function NotificationRow({ item, completed, onToggleDone, doneBusy, nested }) {
         </div>
       </ItemContent>
       <ItemActions className="ml-32 basis-full md:ml-auto md:basis-auto">
-        <a className="review-action" href={safeGitHubUrl(item.url)} target="_blank" rel="noreferrer">
+        <a className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9" href={safeGitHubUrl(item.url)} target="_blank" rel="noreferrer">
           Open
           <ArrowUpRight className="size-3.5" />
         </a>
@@ -326,9 +327,11 @@ function UpdatedDateGroup({
   const Heading = nested ? "h3" : "h2";
   const Row = notifications ? NotificationRow : PullRequestRow;
   return (
-    <section className="project-group project-card" aria-label={`${label} items`}>
-      <header className="project-header">
-        <Heading><FileClock className="size-4" aria-hidden="true" />{label}</Heading>
+    <section className="overflow-hidden rounded-lg border bg-card/75 shadow-lg backdrop-blur-sm" aria-label={`${label} items`}>
+      <header className="flex min-h-[2.8rem] items-center justify-between gap-4 border-b bg-accent/78 px-[1.2rem] py-[0.65rem] max-[700px]:px-[0.9rem]">
+        <Heading className="m-0 flex min-w-0 items-center gap-[0.55rem] text-[0.75rem] font-[750] tracking-[0.01em] text-foreground [overflow-wrap:anywhere]">
+          <FileClock className="size-4 flex-none text-primary" aria-hidden="true" />{label}
+        </Heading>
         <Badge variant="outline">{items.length} {items.length === 1 ? "item" : "items"}</Badge>
       </header>
       {items.map((item) => (
@@ -364,16 +367,18 @@ export function QueueSection({
 }) {
   const Icon = LIFECYCLE_META[section.id]?.icon ?? Bell;
   return (
-    <section className="lifecycle-section" aria-label={`${section.label} queue`}>
+    <section className="grid gap-3" aria-label={`${section.label} queue`}>
       {showHeader && (
-        <header className="lifecycle-header">
-          <h2><Icon className="size-4" aria-hidden="true" />{section.label}</h2>
-          <span>
+        <header className="flex min-h-[3.25rem] items-center justify-between gap-4 p-1 max-[700px]:px-[0.9rem]">
+          <h2 className="m-0 flex items-center gap-[0.55rem] font-display text-[1.15rem] font-[650] tracking-[-0.02em]">
+            <Icon className="size-4 text-primary" aria-hidden="true" />{section.label}
+          </h2>
+          <span className="flex items-center gap-[0.55rem]">
             <Badge variant="outline">{section.count}</Badge>
           </span>
         </header>
       )}
-      <div className="project-card-stack">
+      <div className="grid gap-4">
         {section.groups.map((group) => (
           <UpdatedDateGroup
             key={group.label}

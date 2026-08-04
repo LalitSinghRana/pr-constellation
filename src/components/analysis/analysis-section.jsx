@@ -83,11 +83,11 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
           </Button>
         )}
         {successfulRun && (
-          <a className="review-action" href={`/reviews/${encodeURIComponent(entry.pr.slug)}/`} target="_blank" rel="noreferrer">
+          <a className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9" href={`/reviews/${encodeURIComponent(entry.pr.slug)}/`} target="_blank" rel="noreferrer">
             <Sparkles className="size-3.5" />Open tree
           </a>
         )}
-        <a className="review-action" href={safeGitHubUrl(entry.pr.url)} target="_blank" rel="noreferrer">
+        <a className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9" href={safeGitHubUrl(entry.pr.url)} target="_blank" rel="noreferrer">
           GitHub<ArrowUpRight className="size-3.5" />
         </a>
         </div>
@@ -101,7 +101,7 @@ export function AnalysisSection({ canceling, description, entries, mode, onCance
     <section className="mt-8" aria-labelledby={`analysis-${mode}`}>
       <header className="mb-3 flex items-end justify-between gap-4">
         <div>
-          <p className="eyebrow">{description}</p>
+          <p className="mb-2 flex items-center gap-2 text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-primary">{description}</p>
           <h2 className="font-display text-2xl font-semibold tracking-[-0.035em]" id={`analysis-${mode}`}>{title}</h2>
         </div>
         <Badge variant="outline">{entries.length}</Badge>

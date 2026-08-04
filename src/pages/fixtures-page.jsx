@@ -107,7 +107,7 @@ function FixtureCard({ fixture, onStop, onTrigger, stopping, triggering }) {
             </Button>
           )}
           {fixture.referenceUrls.map((url) => (
-            <a className="review-action" href={url} key={url} rel="noreferrer" target="_blank">
+            <a className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9" href={url} key={url} rel="noreferrer" target="_blank">
               Source PR<ArrowUpRight className="size-3.5" />
             </a>
           ))}
@@ -118,7 +118,7 @@ function FixtureCard({ fixture, onStop, onTrigger, stopping, triggering }) {
             {unpinnedRuns.map((run, index) =>
               run.status === "succeeded" && run.graphUrl ? (
                 <a
-                  className="review-action"
+                  className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9"
                   href={run.graphUrl}
                   key={run.runId}
                   rel="noreferrer"
@@ -139,7 +139,7 @@ function FixtureCard({ fixture, onStop, onTrigger, stopping, triggering }) {
             <span className="text-xs text-muted-foreground">Pinned:</span>
             {pinnedRuns.map((run, index) => (
               <a
-                className="review-action"
+                className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9"
                 href={run.graphUrl}
                 key={run.runId}
                 rel="noreferrer"
@@ -196,10 +196,10 @@ export function FixturesPage() {
   }, [refresh]);
 
   return (
-    <main className="app-canvas min-h-screen">
+    <main className="min-h-screen">
       <div className="mx-auto w-full max-w-[1000px] px-5 pb-20 pt-8 sm:px-8 lg:px-12 lg:pt-12">
         <div className="flex items-center justify-between">
-          <a className="scoring-back" href="/">
+          <a className="inline-flex items-center gap-[0.45rem] text-[0.78rem] font-bold text-muted-foreground no-underline hover:text-foreground" href="/">
             <ArrowLeft className="size-4" />
             Back to the queue
           </a>
@@ -207,7 +207,7 @@ export function FixturesPage() {
         </div>
 
         <header className="mt-6">
-          <p className="eyebrow"><span className="size-1.5 rounded-full bg-primary" />Review-stack test fixtures</p>
+          <p className="mb-2 flex items-center gap-2 text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-primary"><span className="size-1.5 rounded-full bg-primary" />Review-stack test fixtures</p>
           <h1 className="font-display text-4xl font-semibold tracking-[-0.045em] sm:text-5xl">
             Control-group PRs
           </h1>

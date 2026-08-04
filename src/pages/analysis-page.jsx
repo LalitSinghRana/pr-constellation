@@ -124,12 +124,12 @@ export function AnalysisPage() {
     <SidebarProvider>
       <AnalysisSidebar activeCount={running.length + queued.length} />
 
-      <SidebarInset className="app-canvas min-h-screen">
+      <SidebarInset className="min-h-screen">
         <div className="mx-auto w-full max-w-[1240px] px-5 pb-20 pt-8 sm:px-8 lg:px-12 lg:pt-12">
           <SidebarTrigger className="mb-5 md:hidden" />
           <header className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
             <div>
-              <p className="eyebrow"><span className="size-1.5 rounded-full bg-primary" />AI analyzer</p>
+              <p className="mb-2 flex items-center gap-2 text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-primary"><span className="size-1.5 rounded-full bg-primary" />AI analyzer</p>
               <h1 className="font-display text-4xl font-semibold tracking-[-0.045em] sm:text-5xl">Analysis queue</h1>
               <p className="mt-2 text-sm text-muted-foreground">One highest-effort analysis at a time, with the smallest PRs first.</p>
             </div>

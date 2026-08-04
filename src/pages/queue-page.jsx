@@ -259,7 +259,7 @@ export function QueuePage() {
         onSettings={() => setSettingsOpen(true)}
       />
 
-      <SidebarInset className="app-canvas min-h-screen">
+      <SidebarInset className="min-h-screen">
         <div className="mx-auto w-full max-w-[1240px] px-5 pb-20 pt-8 sm:px-8 lg:px-12 lg:pt-12">
           <SidebarTrigger className="mb-5 md:hidden" />
           <h1 className="sr-only">{LIFECYCLE_META[activeFilter]?.label ?? "Review queue"}</h1>
@@ -274,7 +274,7 @@ export function QueuePage() {
                 >
                   {availableProjects.map((project) => (
                     <TabsTrigger
-                      className="repository-tab group flex-none rounded-lg px-3 text-base font-semibold data-[state=active]:bg-accent data-[state=active]:text-accent-foreground dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-accent"
+                      className="group flex-none rounded-lg px-3 text-base font-semibold data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:shadow-[inset_0_-2px_0_var(--primary)] dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-accent"
                       key={project.repository}
                       title={project.repository}
                       value={project.repository}
@@ -322,7 +322,7 @@ export function QueuePage() {
               </p>
             )}
 
-            <div className="queue-stack mt-4" aria-live="polite">
+            <div className="mt-4 grid gap-6" aria-live="polite">
               {loading ? (
                 <LoadingQueue />
               ) : error ? (
