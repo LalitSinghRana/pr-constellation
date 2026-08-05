@@ -36,7 +36,7 @@ const scenarioGroups = [
     ],
   },
   {
-    lifecycle: "New / unreviewed",
+    lifecycle: "Unreviewed",
     base: 0,
     description: "A priority signal exists, but you have not reviewed the PR.",
     scenarios: [

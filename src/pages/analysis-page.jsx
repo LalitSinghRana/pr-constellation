@@ -151,7 +151,7 @@ export function AnalysisPage() {
         <Tabs className="mt-6 gap-0" value={activeTab} onValueChange={setActiveTab}>
           <TabsList
             aria-label="Analysis status"
-            className="w-full justify-start gap-2 overflow-x-auto rounded-none border-b border-border bg-transparent px-0"
+            variant="cockpit"
             style={{ height: "3rem" }}
           >
             {[
@@ -161,7 +161,7 @@ export function AnalysisPage() {
               ["failed", "Failed", failed.length],
             ].map(([id, label, count]) => (
               <TabsTrigger
-                className="group flex-none rounded-lg px-3 text-base font-semibold data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:shadow-[inset_0_-2px_0_var(--primary)] dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-accent"
+                className="group"
                 key={id}
                 value={id}
               >

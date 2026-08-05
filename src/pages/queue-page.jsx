@@ -37,7 +37,7 @@ export function QueuePage() {
   const [activeProject, setActiveProject] = useQueryState("project", parseAsString.withDefault(""));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
-  const [doneMutation, setDoneMutation] = useState("");
+  const [doneMutation, setDoneMutation] = useState([]);
   const [queueActionError, setQueueActionError] = useState("");
   const [analysisActionError, setAnalysisActionError] = useState("");
   const [analysisMutation, setAnalysisMutation] = useState("");
@@ -56,10 +56,6 @@ export function QueuePage() {
       .catch((caught) => setError(caught.message || "Local settings could not be loaded."));
   }, [setError]);
 
-  const allEntries = useMemo(
-    () => [...data.items, ...data.notifications],
-    [data.items, data.notifications],
-  );
   const openPrs = useMemo(
     () => data.items.filter((item) => !isDone(item)),
     [data.items, isDone],
@@ -80,13 +76,11 @@ export function QueuePage() {
       new: openPrs.filter((item) => item.lifecycle === "new").length,
       approved: openPrs.filter((item) => item.lifecycle === "approved").length,
       merged: openPrs.filter((item) => item.lifecycle === "merged").length,
-      draft: openPrs.filter((item) => item.lifecycle === "draft").length,
       mine: openPrs.filter((item) => item.authored).length,
       other: openPrs.filter((item) => item.lifecycle === "other" && !item.authored).length,
       nonpr: openNotifications.length,
-      done: allEntries.filter(isDone).length,
     }),
-    [allEntries, isDone, openNotifications.length, openPrs],
+    [openNotifications.length, openPrs],
   );
 
   const availableProjects = useMemo(() => {
@@ -148,7 +142,7 @@ export function QueuePage() {
       if (visibleNotifications.length) {
         sections.push({
           id: "nonpr",
-          label: "Non-PR notifications",
+          label: "Issues & other notifications",
           score: null,
           count: visibleNotifications.length,
           groups: groupByUpdatedDate(visibleNotifications),
@@ -226,18 +220,30 @@ export function QueuePage() {
     }
   }
 
-  async function toggleDone(item) {
-    setDoneMutation(item.id);
+  async function toggleDone(value) {
+    const items = Array.isArray(value) ? value.filter((item) => !item.done) : [value];
+    const ids = items.map((item) => item.id);
+    if (!ids.length) return;
+    setDoneMutation(ids);
     setQueueActionError("");
     try {
       const response = await fetch("/api/inbox/items", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: item.id, done: !item.done }),
+        body: JSON.stringify(
+          Array.isArray(value)
+            ? { ids, done: true }
+            : { id: value.id, done: !value.done },
+        ),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
-      const update = (entry) => entry.id === result.id ? { ...entry, ...result } : entry;
+      if (result.warning) setQueueActionError(result.warning);
+      const updated = new Set(result.ids ?? [result.id]);
+      const patch = result.ids
+        ? { done: result.done, hasUpdates: result.hasUpdates }
+        : result;
+      const update = (entry) => updated.has(entry.id) ? { ...entry, ...patch } : entry;
       setData((current) => ({
         ...current,
         items: current.items.map(update),
@@ -246,7 +252,7 @@ export function QueuePage() {
     } catch (caught) {
       setQueueActionError(caught.message || "Done state could not be saved.");
     } finally {
-      setDoneMutation("");
+      setDoneMutation([]);
     }
   }
 
@@ -271,12 +277,12 @@ export function QueuePage() {
               <Tabs className="gap-0" value={selectedProject} onValueChange={setActiveProject}>
                 <TabsList
                   aria-label="Repositories"
-                  className="w-full justify-start gap-2 overflow-x-auto rounded-none border-b border-border bg-transparent px-0"
+                  variant="cockpit"
                   style={{ height: "3rem" }}
                 >
                   {availableProjects.map((project) => (
                     <TabsTrigger
-                      className="group flex-none rounded-lg px-3 text-base font-semibold data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:shadow-[inset_0_-2px_0_var(--primary)] dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-accent"
+                      className="group"
                       key={project.repository}
                       title={project.repository}
                       value={project.repository}

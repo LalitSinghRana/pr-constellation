@@ -38,6 +38,7 @@ import {
   ACTIVITY_SIGNAL_KINDS,
   NOTIFICATION_LABELS,
   analysisFor,
+  myPullRequestStatus,
   relativeTime,
   safeGitHubUrl,
 } from "@/lib/queue.js";
@@ -48,6 +49,13 @@ const signalStyles = {
   "direct-review": "border-coral/20 bg-coral/10 text-coral-strong",
   "teammate-pr": "border-ochre/25 bg-ochre/10 text-ochre-strong",
   "team-review": "border-lilac/25 bg-lilac/10 text-lilac-strong",
+};
+
+const myPrStatuses = {
+  draft: { label: "Draft", className: LIFECYCLE_STYLES.draft },
+  opened: { label: "Opened", className: LIFECYCLE_STYLES.new },
+  approved: { label: "Approved", className: LIFECYCLE_STYLES.approved },
+  merged: { label: "Merged", className: LIFECYCLE_STYLES.merged },
 };
 
 export function LoadingQueue() {
@@ -99,7 +107,7 @@ export function EmptyQueue({ canConfigure, onSettings, error, onRetry }) {
   );
 }
 
-function ActivityHoverCard({ children, updates }) {
+function ActivityHoverCard({ children, updates, since = "last open" }) {
   return (
     <HoverCard openDelay={250} closeDelay={100}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
@@ -109,7 +117,7 @@ function ActivityHoverCard({ children, updates }) {
         side="top"
         sideOffset={8}
       >
-        <strong className="block text-[0.68rem] uppercase tracking-[0.06em]">Changes since last open</strong>
+        <strong className="block text-[0.68rem] uppercase tracking-[0.06em]">Changes since {since}</strong>
         {updates.length ? (
           <ul className="mt-1 list-disc pl-4">
             {updates.map((update) => <li key={update}>{update}</li>)}
@@ -136,6 +144,7 @@ function PullRequestRow({
   const Title = nested ? "h4" : "h3";
   const labelColor = (color) => (/^[\da-f]{6}$/i.test(color) ? `#${color}` : "#9b948d");
   const teammate = item.signals.find((signal) => signal.kind === "teammate-pr");
+  const myPrStatus = item.authored ? myPrStatuses[myPullRequestStatus(item)] : null;
   const reviewRequest = item.signals.find((signal) => signal.kind === "direct-review")
     ?? item.signals.find((signal) => signal.kind === "team-review");
   const reportedUpdates = item.updatesSinceRead ?? [];
@@ -165,7 +174,7 @@ function PullRequestRow({
   const updatesSinceRead = [...new Set([...signalUpdates, ...fallbackUpdates])];
 
   return (
-    <ActivityHoverCard updates={updatesSinceRead}>
+    <ActivityHoverCard updates={updatesSinceRead} since={item.changesSince}>
       <Item
         asChild
         className={cn(
@@ -175,14 +184,24 @@ function PullRequestRow({
         )}
       >
         <article>
-          <ItemMedia className="w-16">
-            <Badge
-              aria-label={`Priority score ${item.score}`}
-              className={cn("h-8 min-w-12 justify-center rounded-full px-3 font-serif text-lg font-semibold tabular-nums", LIFECYCLE_STYLES[item.lifecycle])}
-              variant="outline"
-            >
-              {item.score}
-            </Badge>
+          <ItemMedia className={myPrStatus ? "w-20" : "w-16"}>
+            {myPrStatus ? (
+              <Badge
+                aria-label={`Pull request status ${myPrStatus.label}`}
+                className={cn("h-8 min-w-16 justify-center rounded-full px-2 text-xs font-semibold", myPrStatus.className)}
+                variant="outline"
+              >
+                {myPrStatus.label}
+              </Badge>
+            ) : (
+              <Badge
+                aria-label={`Priority score ${item.score}`}
+                className={cn("h-8 min-w-12 justify-center rounded-full px-3 font-serif text-lg font-semibold tabular-nums", LIFECYCLE_STYLES[item.lifecycle])}
+                variant="outline"
+              >
+                {item.score}
+              </Badge>
+            )}
           </ItemMedia>
 
           <ItemContent className="min-w-0 gap-0">
@@ -356,13 +375,31 @@ function UpdatedDateGroup({
 }) {
   const Heading = nested ? "h3" : "h2";
   const Row = notifications ? NotificationRow : PullRequestRow;
+  const groupDoneBusy = items.some((item) => doneMutation.includes(item.id));
+  const openItems = items.filter((item) => !isDone(item));
   return (
     <section className="overflow-hidden rounded-lg border bg-card/75 shadow-lg backdrop-blur-sm" aria-label={`${label} items`}>
       <header className="flex min-h-[2.8rem] items-center justify-between gap-4 border-b bg-accent/78 px-[1.2rem] py-[0.65rem] max-[700px]:px-[0.9rem]">
         <Heading className="m-0 flex min-w-0 items-center gap-[0.55rem] text-[0.75rem] font-[750] tracking-[0.01em] text-foreground [overflow-wrap:anywhere]">
           <FileClock className="size-4 flex-none text-primary" aria-hidden="true" />{label}
         </Heading>
-        <Badge variant="outline">{items.length} {items.length === 1 ? "item" : "items"}</Badge>
+        <span className="flex items-center gap-2">
+          <Badge variant="outline">{items.length} {items.length === 1 ? "item" : "items"}</Badge>
+          {openItems.length > 0 && (
+            <Button
+              size="icon-sm"
+              variant="outline"
+              disabled={groupDoneBusy}
+              onClick={() => onToggleDone(openItems)}
+              aria-label={`Mark all ${label} items done`}
+              title="Mark all done"
+            >
+              {groupDoneBusy
+                ? <LoaderCircle className="size-3.5 animate-spin" />
+                : <Check className="size-3.5 text-emerald-700" />}
+            </Button>
+          )}
+        </span>
       </header>
       {items.map((item) => (
         <Row
@@ -370,7 +407,7 @@ function UpdatedDateGroup({
           item={item}
           completed={isDone(item)}
           onToggleDone={onToggleDone}
-          doneBusy={doneMutation === item.id}
+          doneBusy={doneMutation.includes(item.id)}
           nested={nested}
           {...(!notifications && {
             analysis: analysisFor(item, analyses.get(item.url)),

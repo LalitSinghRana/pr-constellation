@@ -33,6 +33,12 @@ export function matchesPrFilter(item, filter) {
   return item.lifecycle === filter;
 }
 
+export function myPullRequestStatus(item) {
+  if (item.state === "MERGED") return "merged";
+  if (item.reviewDecision === "APPROVED") return "approved";
+  return item.draft ? "draft" : "opened";
+}
+
 export function safeGitHubUrl(value) {
   try {
     const url = new URL(value);
