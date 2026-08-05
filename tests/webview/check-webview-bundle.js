@@ -82,12 +82,9 @@ index 0000000..1111111 100644
 
 const requiredWebviewMarkers = [
   "pr-review-root",
-  "pr-analysis-schema",
-  "pr-analysis-output",
-  "review-tabs-list",
-  "json-document-actions",
-  "Expand entire JSON tree",
-  "Collapse entire JSON tree",
+  "review-main",
+  "Previous file:",
+  "Next file:",
   "flow-reader",
   "react-flow",
   "diff-tailwindcss-wrapper",
@@ -109,6 +106,11 @@ const missingWebviewMarkers = requiredWebviewMarkers.filter((marker) => !html.in
 if (missingWebviewMarkers.length > 0) {
   throw new Error(`Graph webview bundle check failed. Missing: ${missingWebviewMarkers.join(", ")}`);
 }
+assert.ok(!html.includes("review-tabs-list"));
+assert.ok(!html.includes("json-document-actions"));
+assert.ok(!html.includes("pr-analysis-schema"));
+assert.ok(!html.includes("pr-analysis-output"));
+assert.ok(!html.includes("pr-diff-html"));
 
 const graphData = extractJsonScript(html, "pr-analysis-data");
 assert.equal(graphData.schemaVersion, "pr-graph-mini-trees/v2");
@@ -242,6 +244,21 @@ assert.doesNotMatch(graphAppSource, /<button/);
 assert.match(graphAppSource, /className="file-page-label"/);
 assert.match(graphAppSource, /BackgroundVariant\.Dots/);
 assert.match(graphAppSource, /bgColor=/);
+assert.match(graphAppSource, /<MiniMap/);
+assert.match(graphAppSource, /ariaLabel="Review map"/);
+assert.match(graphAppSource, /nodeComponent=\{ReviewMapNode\}/);
+assert.match(graphAppSource, /filter\(\(\{ type \}\) => type === "miniDiff"\)/);
+assert.doesNotMatch(graphAppSource, /<Controls/);
+assert.match(graphAppSource, /event\.key === "ArrowLeft"/);
+assert.match(graphAppSource, /aria-live="polite"/);
+assert.match(graphAppSource, /setAttribute\("aria-current", "step"\)/);
+assert.match(graphAppSource, /prefers-reduced-motion: reduce/);
+assert.doesNotMatch(graphAppSource, /function JsonWorkspace/);
+assert.doesNotMatch(graphAppSource, /className="review-tabs-list"/);
+assert.doesNotMatch(
+  graphAppSource,
+  /type === "filePage" \|\| type === "miniDiff" \|\| type === "collapsedGroup"/,
+);
 assert.match(
   graphAppSource,
   /foldMiniTree\(file, \{ expandedGroupIds \}\)/,
@@ -249,7 +266,6 @@ assert.match(
 assert.match(graphAppSource, /type:\s*item\.node\.collapsedGroup \? "collapsedGroup" : "miniDiff"/);
 assert.match(graphAppSource, /nextLine\.oldLine - prevLine\.oldLine - 1/);
 assert.match(graphAppSource, /unchanged lines/);
-assert.ok((graphAppSource.match(/\bforceMount\b/g) || []).length >= 4);
 assert.match(
   webStyles,
   /\.react-flow__node-miniDiff\s*\{[^}]*pointer-events:\s*auto\s*!important;/s,
@@ -258,6 +274,11 @@ assert.doesNotMatch(webStyles, /max-height:\s*340px/);
 assert.doesNotMatch(webStyles, /mini-tree-technical-edge/);
 assert.match(webStyles, /\.explanation-hover-comment ul/);
 assert.match(webStyles, /\.comment-edge-hit-path/);
+assert.match(webStyles, /\.review-step-button/);
+assert.match(webStyles, /\.review-minimap/);
+assert.match(webStyles, /\.review-main/);
+assert.match(webStyles, /\.react-flow__node\[aria-current="step"\]/);
+assert.doesNotMatch(webStyles, /\.react-flow__controls/);
 
 const tsxHtml = await renderDiffHtml({
   analysis: {

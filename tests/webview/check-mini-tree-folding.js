@@ -97,6 +97,69 @@ const expandedAllVisibleGroups = foldMiniTree(file, {
 assert.ok(expandedAllVisibleGroups.nodes.some((item) => item.id === "props"));
 assert.ok(expandedAllVisibleGroups.nodes.some((item) => item.id === "visual-imports"));
 
+const orderedFile = {
+  id: "ordered-file",
+  miniTree: {
+    nodes: [
+      node("root", "important", "runtime", 1),
+      node("next-sibling", "important", "runtime", 1),
+      node("grouped-change", "mechanical", "imports", 1),
+      node("descendant", "important", "runtime", 1),
+      node("first-child", "supporting", "runtime", 1),
+    ],
+    reviewEdges: [
+      reviewEdge("root", "next-sibling", 2),
+      reviewEdge("root", "grouped-change", 1),
+      reviewEdge("root", "first-child", 0),
+      reviewEdge("first-child", "descendant", 0),
+    ],
+    relations: [],
+  },
+};
+const orderedCollapsed = foldMiniTree(orderedFile);
+const orderedGroupId = "ordered-file:ui-fold-root-mechanical";
+const orderedCollapsedIds = orderedCollapsed.nodes.map((item) => item.id);
+
+assert.deepEqual(
+  orderedCollapsedIds,
+  ["root", "first-child", "descendant", "ui-fold-root-mechanical", "next-sibling"],
+  "authored edge.order should control visible DFS order, regardless of node labels or declaration order",
+);
+assert.deepEqual(
+  [
+    "file:ordered-file",
+    ...orderedCollapsedIds,
+    "file:next-file",
+    "next-file-root",
+  ],
+  [
+    "file:ordered-file",
+    "root",
+    "first-child",
+    "descendant",
+    "ui-fold-root-mechanical",
+    "next-sibling",
+    "file:next-file",
+    "next-file-root",
+  ],
+);
+
+const orderedExpanded = foldMiniTree(orderedFile, {
+  expandedGroupIds: new Set([orderedGroupId]),
+});
+assert.deepEqual(
+  orderedExpanded.nodes.map((item) => item.id),
+  [
+    "root",
+    "first-child",
+    "descendant",
+    "ui-fold-root-mechanical",
+    "grouped-change",
+    "next-sibling",
+  ],
+  "expansion should retain the group stop and insert its child immediately after it",
+);
+
 function node(id, reviewClass, changeRole, lineCount) {
   return {
     id,
