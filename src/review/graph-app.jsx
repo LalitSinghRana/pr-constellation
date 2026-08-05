@@ -12,7 +12,7 @@ import {
   FolderTree,
   GitBranch,
   GitPullRequest,
-  MessageSquareText,
+  Layers3,
   Network,
   UserRound,
 } from "lucide-react";
@@ -44,6 +44,7 @@ import {
   SelectValue,
 } from "../components/ui/select.jsx";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.jsx";
+import { cn } from "../lib/utils.js";
 import { foldMiniTree, normalizeMiniTree } from "./mini-tree-model.js";
 
 const FILE_PAGE_GAP_X = 160;
@@ -60,7 +61,7 @@ const MINI_NODE_WIDTH = (
   + MINI_DIFF_GUTTER_WIDTH
   + MINI_DIFF_HORIZONTAL_PADDING
 );
-const MINI_NODE_HEADER_HEIGHT = 58;
+const MINI_NODE_HEADER_HEIGHT = 42;
 const MINI_TREE_GROUP_NODE_HEIGHT = 118;
 const MINI_TREE_GROUP_NODE_WIDTH = 520;
 const MINI_TREE_LAYER_GAP_Y = 110;
@@ -75,6 +76,8 @@ const VIEWPORT_PADDING_Y = 176;
 const FALLBACK_GRAPH_VIEWPORT = { x: 72, y: 52, zoom: 0.86 };
 const FILE_FLOW_SOURCE_HANDLE = "file-flow-source";
 const FILE_FLOW_TARGET_HANDLE = "file-flow-target";
+const INITIAL_COLOR_MODE = document.documentElement.classList.contains("dark") ? "dark" : "light";
+const REVIEW_STEP_BUTTON_CLASS = "review-step-button absolute z-[12] -translate-y-1/2 border-[color-mix(in_oklab,var(--primary)_38%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_12%,var(--background))] text-primary shadow-xs enabled:hover:border-[color-mix(in_oklab,var(--primary)_54%,var(--border))] enabled:hover:bg-[color-mix(in_oklab,var(--primary)_20%,var(--background))] enabled:hover:text-primary motion-reduce:transition-none";
 const REVIEW_NAVIGATION_CONTROL_SELECTOR = [
   "a",
   "button",
@@ -189,11 +192,11 @@ function App() {
   }, [setFileOrderViewIds]);
 
   return (
-    <div className="review-shell">
+    <div className="review-shell fixed inset-0 grid h-dvh w-screen min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden bg-background">
       <ReviewHeader review={review} />
-      <main className="review-main">
+      <main className="review-main grid min-h-0 overflow-hidden">
         {hasGraph ? (
-          <section className="graph-panel" aria-label="PR review tree">
+          <section className="graph-panel size-full min-h-0 overflow-hidden rounded-none border-0 bg-card shadow-none" aria-label="PR review tree">
             <ReactFlowProvider>
               <GraphCanvas
                 activeStackId={activeStackId}
@@ -207,7 +210,9 @@ function App() {
             </ReactFlowProvider>
           </section>
         ) : (
-          <section className="empty-panel">Review tree is not available for this run.</section>
+          <section className="empty-panel grid size-full min-h-0 place-items-center overflow-hidden rounded-none border-0 bg-card text-sm text-muted-foreground shadow-none">
+            Review tree is not available for this run.
+          </section>
         )}
       </main>
     </div>
@@ -216,39 +221,47 @@ function App() {
 
 function ReviewHeader({ review }) {
   return (
-    <header className="review-header">
-      <div className="review-header-main">
-        <div className="review-title-row">
-          <div className="review-eyebrow">
-            <span className="review-mark">
+    <header className="review-header sticky top-0 z-20 border-b border-border bg-[color-mix(in_oklab,var(--card)_92%,var(--background))] px-5 py-3 shadow-xs backdrop-blur-[20px] max-[980px]:px-3 max-[980px]:py-2.5">
+      <div className="review-header-main grid grid-cols-[minmax(0,1fr)_auto] items-center justify-between gap-3.5 max-[980px]:grid-cols-1 max-[980px]:gap-2">
+        <div className="review-title-row flex min-w-0 flex-auto items-center gap-2.5 max-[980px]:flex-wrap max-[980px]:gap-2">
+          <div className="review-eyebrow flex flex-none items-center gap-[7px] text-xs font-bold tracking-[0.08em] text-primary uppercase">
+            <span className="review-mark inline-flex size-[30px] items-center justify-center rounded-md border border-[color-mix(in_oklab,var(--primary)_32%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_10%,var(--card))] text-primary shadow-xs">
               <GitPullRequest aria-hidden="true" size={16} />
             </span>
             <span>{`PR #${review.number || "unknown"}`}</span>
-            <Badge className={`state-badge is-${String(review.state || "").toLowerCase()}`} variant="secondary">
+            <Badge className="state-badge" variant="secondary">
               {review.state || "unknown"}
             </Badge>
           </div>
-          <h1 className="review-title">
+          <h1 className="review-title m-0 min-w-[120px] flex-auto truncate font-display text-xl leading-[1.2] font-bold tracking-normal text-foreground max-[980px]:order-2 max-[980px]:basis-full max-[980px]:text-lg [&_a]:no-underline [&_a:hover]:text-primary">
             <a href={review.url}>{review.title || "Untitled pull request"}</a>
           </h1>
         </div>
-        <div className="review-meta">
-          <Badge className="meta-chip branch-chip" title="Base and head branches" variant="outline">
+        <div className="review-meta flex min-w-0 max-w-[min(44vw,520px)] flex-[0_1_auto] flex-wrap justify-end gap-2 max-[980px]:max-w-full max-[980px]:justify-start">
+          <Badge
+            className="meta-chip branch-chip min-w-0 max-w-[min(27vw,255px)] font-mono"
+            title="Base and head branches"
+            variant="outline"
+          >
             <GitBranch aria-hidden="true" size={14} />
-            <span className="branch-name is-base">{review.baseRefName || "base"}</span>
-            <span aria-hidden="true" className="branch-arrow">
+            <span className="branch-name is-base min-w-0 max-w-[82px] flex-[0_1_auto] truncate">{review.baseRefName || "base"}</span>
+            <span aria-hidden="true" className="branch-arrow flex-none font-extrabold text-muted-foreground">
               &lt;-
             </span>
-            <span className="branch-name is-head">{review.headRefName || "head"}</span>
+            <span className="branch-name is-head min-w-0 max-w-[138px] flex-1 truncate">{review.headRefName || "head"}</span>
           </Badge>
-          <Badge className="meta-chip author-chip" title="Author" variant="outline">
+          <Badge
+            className="meta-chip author-chip min-w-0 max-w-[150px]"
+            title="Author"
+            variant="outline"
+          >
             <UserRound aria-hidden="true" size={14} />
-            <span className="author-name">{review.authorLogin || "unknown"}</span>
+            <span className="author-name min-w-0 truncate">{review.authorLogin || "unknown"}</span>
           </Badge>
-          <Badge className="change-pill is-add" variant="outline">
+          <Badge className="change-pill is-add min-w-0 font-mono" variant="outline">
             +{review.additions ?? 0}
           </Badge>
-          <Badge className="change-pill is-del" variant="outline">
+          <Badge className="change-pill is-del min-w-0 font-mono" variant="outline">
             -{review.deletions ?? 0}
           </Badge>
         </div>
@@ -469,10 +482,10 @@ function GraphCanvas({
   }, [currentStopId, graph.nodes]);
   const currentStopTitle = reviewStopTitle(navigation.current);
   return (
-    <div className="flow-reader" data-flow-reader>
-      <div className="flow-canvas" ref={canvasRef}>
+    <div className="flow-reader relative grid size-full grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden bg-card" data-flow-reader>
+      <div className="flow-canvas relative col-start-1 row-start-1 size-full min-h-0 min-w-0" ref={canvasRef}>
         <ReactFlow
-          colorMode="light"
+          colorMode={INITIAL_COLOR_MODE}
           defaultViewport={defaultViewport}
           edges={graph.edges}
           edgeTypes={edgeTypes}
@@ -522,7 +535,7 @@ function GraphCanvas({
           aria-label={navigation.previousFile
             ? `Previous file: ${reviewStopTitle(navigation.previousFile)}`
             : "No previous file"}
-          className="review-step-button is-previous-file"
+          className={`${REVIEW_STEP_BUTTON_CLASS} is-previous-file left-4 top-[calc(50%_+_26px)]`}
           disabled={!navigation.previousFile}
           onClick={() => snapToStop(navigation.previousFile?.id)}
           size="icon-lg"
@@ -536,7 +549,7 @@ function GraphCanvas({
           aria-label={navigation.previous
             ? `Previous review stop: ${reviewStopTitle(navigation.previous)}`
             : "No previous review stop"}
-          className="review-step-button is-previous"
+          className={`${REVIEW_STEP_BUTTON_CLASS} is-previous left-4 top-[calc(50%_-_26px)]`}
           disabled={!navigation.previous}
           onClick={() => snapToStop(navigation.previous?.id)}
           size="icon-lg"
@@ -546,19 +559,25 @@ function GraphCanvas({
         >
           <ChevronLeft aria-hidden="true" />
         </Button>
-        <div aria-atomic="true" aria-live="polite" className="review-progress" role="status">
+        <Badge
+          aria-atomic="true"
+          aria-live="polite"
+          className="review-progress absolute top-5 left-1/2 z-[12] min-w-16 -translate-x-1/2 font-mono motion-reduce:transition-none"
+          role="status"
+          variant="outline"
+        >
           <span aria-hidden="true">{`${Math.max(0, navigation.currentIndex + 1)} / ${reviewStops.length}`}</span>
           <span className="sr-only">
             {navigation.current
               ? `Moved to ${currentStopTitle}, stop ${navigation.currentIndex + 1} of ${reviewStops.length}`
               : "No visible review stops"}
           </span>
-        </div>
+        </Badge>
         <Button
           aria-label={navigation.next
             ? `Next review stop: ${reviewStopTitle(navigation.next)}`
             : "No next review stop"}
-          className="review-step-button is-next"
+          className={`${REVIEW_STEP_BUTTON_CLASS} is-next right-4 top-[calc(50%_-_26px)]`}
           disabled={!navigation.next}
           onClick={() => snapToStop(navigation.next?.id)}
           size="icon-lg"
@@ -572,7 +591,7 @@ function GraphCanvas({
           aria-label={navigation.nextFile
             ? `Next file: ${reviewStopTitle(navigation.nextFile)}`
             : "No next file"}
-          className="review-step-button is-next-file"
+          className={`${REVIEW_STEP_BUTTON_CLASS} is-next-file right-4 top-[calc(50%_+_26px)]`}
           disabled={!navigation.nextFile}
           onClick={() => snapToStop(navigation.nextFile?.id)}
           size="icon-lg"
@@ -611,9 +630,9 @@ function reviewMapNodeColor(node) {
   }
 
   return {
-    important: "var(--destructive)",
+    important: "var(--coral)",
     mechanical: "var(--muted-foreground)",
-    supporting: "oklch(0.68 0.14 72)",
+    supporting: "var(--ochre)",
   }[node.data?.miniNode?.reviewClass] || "var(--mini-tree-color)";
 }
 
@@ -701,12 +720,26 @@ function StackSelect({ activeStackId, onActiveStackChange, stacks }) {
 
   return (
     <Select onValueChange={onActiveStackChange} value={activeStackId ?? undefined}>
-      <SelectTrigger aria-label="Review stack" className="stack-select-trigger">
+      <SelectTrigger
+        aria-label="Review stack"
+        className="stack-select-trigger absolute top-4 left-[18px] z-[11] w-[280px] max-w-[min(320px,calc(50%_-_70px))] border-[color-mix(in_oklab,var(--primary)_36%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_9%,var(--card))] text-foreground shadow-xs hover:bg-[color-mix(in_oklab,var(--primary)_15%,var(--card))] [&_[data-slot=select-value]]:capitalize"
+      >
+        <span className="stack-select-icon grid size-[26px] shrink-0 place-items-center rounded-sm border border-[color-mix(in_oklab,var(--primary)_34%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_8%,var(--card))] text-primary [&_svg]:size-[15px]">
+          <Layers3 aria-hidden="true" className="text-primary" />
+        </span>
         <SelectValue />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent
+        align="start"
+        className="stack-select-content w-[var(--radix-select-trigger-width)] max-w-[calc(100vw_-_32px)] border-[color-mix(in_oklab,var(--primary)_28%,var(--border))]"
+        position="popper"
+      >
         {stacks.map((stack) => (
-          <SelectItem key={stack.id} value={stack.id}>
+          <SelectItem
+            className="stack-select-item min-h-9 whitespace-normal capitalize leading-[1.3] data-[state=checked]:bg-[color-mix(in_oklab,var(--primary)_9%,var(--accent))] data-[state=checked]:font-bold data-[state=checked]:text-foreground data-[state=checked]:shadow-[inset_3px_0_0_var(--primary)]"
+            key={stack.id}
+            value={stack.id}
+          >
             {stack.title}
           </SelectItem>
         ))}
@@ -721,10 +754,13 @@ function FilePageNode({ data }) {
   const fileComment = data.file?.comment || "";
 
   return (
-    <section aria-label={`Mini-tree for ${filePath}`} className="file-page-node">
+    <section
+      aria-label={`Mini-tree for ${filePath}`}
+      className="file-page-node relative size-full rounded-lg border border-[color-mix(in_oklab,var(--primary)_34%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_5%,var(--card))]"
+    >
       <Handle className="node-handle" id={FILE_FLOW_TARGET_HANDLE} position={Position.Top} type="target" />
       <Handle className="node-handle" id={FILE_FLOW_SOURCE_HANDLE} position={Position.Bottom} type="source" />
-      <div className="file-page-header">
+      <div className="file-page-header absolute top-[11px] right-3.5 left-3.5 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3.5">
         <ExplanationHoverCard
           comment={fileComment}
           contextLabel="File: What / Why"
@@ -732,7 +768,7 @@ function FilePageNode({ data }) {
           title={filePath}
         >
           <Badge
-            className="file-page-label"
+            className="file-page-label max-w-full min-w-0 justify-self-start gap-2 overflow-hidden px-2.5 py-2 font-mono text-[13px] leading-none font-bold tracking-normal whitespace-nowrap text-primary select-none [&>span]:min-w-0 [&>span]:truncate data-[has-explanation=true]:pointer-events-auto data-[has-explanation=true]:cursor-help"
             data-has-explanation={Boolean(fileComment)}
             tabIndex={fileComment ? 0 : undefined}
             title={filePath}
@@ -743,16 +779,16 @@ function FilePageNode({ data }) {
           </Badge>
         </ExplanationHoverCard>
         <Tabs
-          className="file-page-view-tabs nodrag nopan"
+          className="file-page-view-tabs nodrag nopan pointer-events-auto gap-0 select-none"
           onValueChange={(nextMode) => data.onFileViewModeChange?.(data.file.id, nextMode)}
           value={viewMode}
         >
-          <TabsList aria-label={`${filePath} view`} className="file-page-view-tabs-list">
-            <TabsTrigger className="file-page-view-tab" value="tree">
+          <TabsList aria-label={`${filePath} view`} className="file-page-view-tabs-list w-[136px]">
+            <TabsTrigger className="file-page-view-tab text-[11px]" value="tree">
               <Network aria-hidden="true" size={14} />
               Tree
             </TabsTrigger>
-            <TabsTrigger className="file-page-view-tab" value="file">
+            <TabsTrigger className="file-page-view-tab text-[11px]" value="file">
               <FileDiff aria-hidden="true" size={14} />
               File
             </TabsTrigger>
@@ -765,6 +801,7 @@ function FilePageNode({ data }) {
 
 function CollapsedReviewGroupNode({ data }) {
   const group = data.miniNode.collapsedGroup;
+  const reviewClass = data.miniNode.reviewClass;
   const action = group.expanded ? "Collapse" : "Expand";
   const rootPreview = group.rootTitles.slice(0, 3).join(", ");
 
@@ -783,27 +820,40 @@ function CollapsedReviewGroupNode({ data }) {
         }}
         open={group.expanded}
       >
-        <article className={`collapsed-review-group is-${data.miniNode.reviewClass} nodrag nopan`}>
+        <article
+          className={cn(
+            "collapsed-review-group nodrag nopan size-full overflow-hidden rounded-md border border-border bg-card shadow-sm",
+            reviewClass === "important" && "border-[color-mix(in_oklab,var(--coral)_46%,var(--border))] bg-[color-mix(in_oklab,var(--coral)_6%,var(--card))]",
+            reviewClass === "supporting" && "border-[color-mix(in_oklab,var(--ochre)_46%,var(--border))] bg-[color-mix(in_oklab,var(--ochre)_6%,var(--card))]",
+            reviewClass === "mechanical" && "border-[color-mix(in_oklab,var(--muted-foreground)_34%,var(--border))] bg-[color-mix(in_oklab,var(--muted)_46%,var(--card))]",
+          )}
+        >
           <Handle className="node-handle" position={Position.Top} type="target" />
           <CollapsibleTrigger asChild>
             <Button
               aria-label={`${action} ${data.miniNode.title}`}
-              className="collapsed-review-group-button"
+              className="collapsed-review-group-button grid size-full cursor-pointer grid-cols-[44px_minmax(0,1fr)_28px] items-center gap-3 border-0 bg-transparent px-4 py-3.5 text-left font-[inherit] tracking-normal text-foreground"
               title={`${action}: ${rootPreview}`}
               type="button"
               variant="ghost"
             >
-              <span className="collapsed-review-group-icon">
+              <span
+                className={cn(
+                  "collapsed-review-group-icon grid size-[42px] place-items-center rounded-sm border border-[color-mix(in_oklab,currentColor_18%,var(--border))] bg-muted text-coral-strong",
+                  reviewClass === "supporting" && "text-ochre-strong",
+                  reviewClass === "mechanical" && "text-muted-foreground",
+                )}
+              >
                 <FolderTree aria-hidden="true" size={20} />
               </span>
-              <span className="collapsed-review-group-copy">
-                <span className="collapsed-review-group-title">{data.miniNode.title}</span>
-                <span className="collapsed-review-group-summary">
+              <span className="collapsed-review-group-copy grid min-w-0 gap-[5px]">
+                <span className="collapsed-review-group-title truncate text-sm leading-[1.1] font-extrabold">{data.miniNode.title}</span>
+                <span className="collapsed-review-group-summary truncate font-mono text-[11px] leading-[1.15] font-semibold tracking-normal text-muted-foreground">
                   {`${group.subtreeCount} ${group.subtreeCount === 1 ? "subtree" : "subtrees"} · ${group.nodeCount} nodes · ${group.lineCount} changed lines`}
                 </span>
-                <span className="collapsed-review-group-preview">{rootPreview}</span>
+                <span className="collapsed-review-group-preview truncate text-[11px] leading-[1.15] tracking-normal text-muted-foreground">{rootPreview}</span>
               </span>
-              <span className="collapsed-review-group-toggle">
+              <span className="collapsed-review-group-toggle grid size-7 place-items-center rounded-sm text-muted-foreground">
                 {group.expanded
                   ? <ChevronDown aria-hidden="true" size={19} />
                   : <ChevronRight aria-hidden="true" size={19} />}
@@ -820,7 +870,6 @@ function CollapsedReviewGroupNode({ data }) {
 function MiniDiffNode({ data }) {
   const filePath = data.file?.path || "Unknown file";
   const reviewClass = data.miniNode.reviewClass || "unknown";
-  const changeRole = data.miniNode.changeRole || "unknown";
   const showHandles = !data.miniNode.fileOrderView;
 
   const nodeComment = data.miniNode.comment || "";
@@ -828,7 +877,12 @@ function MiniDiffNode({ data }) {
   return (
     <article
       aria-label={`Code diff mini node for ${filePath}: ${data.miniNode.title}. ${plainTextComment(nodeComment)}`}
-      className="mini-diff-node nodrag nopan"
+      className={cn(
+        "mini-diff-node nodrag nopan w-full max-w-full cursor-text overflow-hidden rounded-md border border-border bg-card shadow-sm select-text",
+        reviewClass === "important" && "border-[color-mix(in_oklab,var(--coral)_46%,var(--border))]",
+        reviewClass === "supporting" && "border-[color-mix(in_oklab,var(--ochre)_46%,var(--border))]",
+        reviewClass === "mechanical" && "border-[color-mix(in_oklab,var(--muted-foreground)_34%,var(--border))]",
+      )}
       data-file-path={filePath}
     >
       {showHandles ? <Handle className="node-handle" position={Position.Top} type="target" /> : null}
@@ -839,32 +893,19 @@ function MiniDiffNode({ data }) {
       >
         <header
           aria-label={`What and why for ${data.miniNode.title}. ${plainTextComment(nodeComment)}`}
-          className="mini-diff-header"
+          className={cn(
+            "mini-diff-header flex h-[42px] w-full min-w-0 items-center overflow-hidden border-b border-border bg-muted px-3 text-xs leading-none text-card-foreground outline-none data-[slot=hover-card-trigger]:cursor-help focus-visible:shadow-[inset_0_0_0_3px_color-mix(in_oklab,var(--ring)_30%,transparent)]",
+            reviewClass === "important" && "bg-[color-mix(in_oklab,var(--coral)_9%,var(--muted))]",
+            reviewClass === "supporting" && "bg-[color-mix(in_oklab,var(--ochre)_9%,var(--muted))]",
+          )}
           tabIndex={nodeComment ? 0 : undefined}
         >
-          <span className="mini-diff-title" title={data.miniNode.title}>
+          <span className="mini-diff-title min-w-0 truncate text-xs font-bold tracking-normal" title={data.miniNode.title}>
             {data.miniNode.title}
-          </span>
-          <span className="mini-node-labels">
-            {nodeComment ? (
-              <MessageSquareText
-                aria-label="What and why explanation available"
-                className="mini-node-comment-indicator"
-                size={15}
-              />
-            ) : null}
-            <Badge className={`mini-node-label is-review-${reviewClass}`} variant="outline">
-              <span className="mini-node-label-key">reviewClass</span>
-              <span className="mini-node-label-value">{reviewClass}</span>
-            </Badge>
-            <Badge className={`mini-node-label is-role-${changeRole}`} variant="outline">
-              <span className="mini-node-label-key">changeRole</span>
-              <span className="mini-node-label-value">{changeRole}</span>
-            </Badge>
           </span>
         </header>
       </ExplanationHoverCard>
-      <div className="mini-diff-scroll">
+      <div className="mini-diff-scroll max-w-full overflow-x-auto overflow-y-hidden overscroll-contain">
         {(data.miniNode.codeChunks || []).map((chunk, chunkIndex, chunks) => (
           <React.Fragment key={`${data.miniNode.id}-${chunkIndex}`}>
             <UnchangedLinesGap nextChunk={chunk} prevChunk={chunks[chunkIndex - 1]} />
@@ -947,13 +988,13 @@ function ExplanationHoverCard({
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
       <HoverCardContent
         align="start"
-        className="explanation-hover-card nodrag nopan nowheel"
+        className="explanation-hover-card nodrag nopan nowheel max-h-[min(640px,calc(100vh_-_32px))] w-[min(520px,calc(100vw_-_32px))] overflow-x-hidden overflow-y-auto border-[color-mix(in_oklab,var(--primary)_34%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_5%,var(--popover))] shadow-sm"
         side={side}
         sideOffset={10}
       >
-        <div className="explanation-hover-label">{contextLabel}</div>
-        <div className="explanation-hover-title">{title}</div>
-        <div className="explanation-hover-comment">
+        <div className="explanation-hover-label text-[11px] leading-[1.2] font-extrabold tracking-normal text-primary uppercase">{contextLabel}</div>
+        <div className="explanation-hover-title mt-1.5 text-sm leading-[1.35] font-extrabold tracking-normal text-foreground [overflow-wrap:anywhere]">{title}</div>
+        <div className="explanation-hover-comment mt-2.5 text-[13px] leading-[1.55] text-muted-foreground [overflow-wrap:anywhere]">
           <ReactMarkdown>{explanation}</ReactMarkdown>
         </div>
       </HoverCardContent>
@@ -975,7 +1016,11 @@ function UnchangedLinesGap({ nextChunk, prevChunk }) {
     return null;
   }
 
-  return <div className="mini-diff-gap-divider">⋯ {gap} unchanged lines</div>;
+  return (
+    <div className="mini-diff-gap-divider border-y border-border bg-[color-mix(in_oklab,var(--muted)_45%,var(--card))] px-2.5 py-[3px] text-[10px] font-semibold tracking-[0.02em] text-muted-foreground">
+      ⋯ {gap} unchanged lines
+    </div>
+  );
 }
 
 function unchangedLineGap(prevChunk, nextChunk) {
@@ -1041,6 +1086,7 @@ function DiffChunkView({ chunk }) {
         diffViewFontSize={11}
         diffViewHighlight
         diffViewMode={DiffModeEnum.Unified}
+        diffViewTheme={INITIAL_COLOR_MODE}
         diffViewWrap={false}
         registerHighlighter={registerHighlighter}
       />
@@ -1106,7 +1152,7 @@ function tokensToAstNodes(tokens) {
     token.style
       ? {
           children: [{ type: "text", value: token.content }],
-          properties: { style: token.style },
+          properties: { className: ["shiki-token"], style: token.style },
           tagName: "span",
           type: "element",
         }
@@ -1295,16 +1341,16 @@ function buildMiniDiffGraph(
         },
         markerEnd: {
           color: "var(--mini-tree-color)",
-          height: 18,
+          height: 12,
           type: MarkerType.ArrowClosed,
-          width: 18,
+          width: 12,
         },
         source: miniNodeId(file, edge.from),
         style: {
           stroke: "var(--mini-tree-color)",
           strokeLinecap: "round",
           strokeOpacity: 0.8,
-          strokeWidth: 4,
+          strokeWidth: 2.5,
         },
         target: miniNodeId(file, edge.to),
         type: "reviewExplanation",
@@ -1332,9 +1378,9 @@ function buildMiniDiffGraph(
       },
       markerEnd: {
         color: "var(--middle-tree-color)",
-        height: 22,
+        height: 16,
         type: MarkerType.ArrowClosed,
-        width: 22,
+        width: 16,
       },
       source: sourceSpec.pageId,
       sourceHandle: FILE_FLOW_SOURCE_HANDLE,
@@ -1342,7 +1388,7 @@ function buildMiniDiffGraph(
         stroke: "var(--middle-tree-color)",
         strokeLinecap: "round",
         strokeOpacity: 0.75,
-        strokeWidth: 6,
+        strokeWidth: 5,
       },
       target: targetSpec.pageId,
       targetHandle: FILE_FLOW_TARGET_HANDLE,

@@ -93,9 +93,18 @@ export async function renderDiffHtml({ analysis = null, pr, diff }) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(pr.title)} · PR #${escapeHtml(String(pr.number))}</title>
+    <script>
+      (() => {
+        const savedTheme = localStorage.getItem("theme");
+        document.documentElement.classList.toggle(
+          "dark",
+          savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches,
+        );
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap" rel="stylesheet" />
     <style>
 ${graphAssets?.css || ""}
     </style>

@@ -91,10 +91,7 @@ const requiredWebviewMarkers = [
   "mini-diff-gap-divider",
   "file-page-label",
   "file-page-view-tabs",
-  "mini-node-label",
-  "is-review-important",
-  "reviewClass",
-  "changeRole",
+  "stack-select-icon",
   "mini-tree-edge",
   "Node: What / Why",
   "Review edge: What / Why",
@@ -241,7 +238,7 @@ assert.match(graphAppSource, /value="file"/);
 assert.match(graphAppSource, /<Collapsible/);
 assert.match(graphAppSource, /<CollapsibleTrigger asChild>/);
 assert.doesNotMatch(graphAppSource, /<button/);
-assert.match(graphAppSource, /className="file-page-label"/);
+assert.match(graphAppSource, /className="file-page-label [^"]*"/);
 assert.match(graphAppSource, /BackgroundVariant\.Dots/);
 assert.match(graphAppSource, /bgColor=/);
 assert.match(graphAppSource, /<MiniMap/);
@@ -251,6 +248,9 @@ assert.match(graphAppSource, /filter\(\(\{ type \}\) => type === "miniDiff"\)/);
 assert.doesNotMatch(graphAppSource, /<Controls/);
 assert.match(graphAppSource, /event\.key === "ArrowLeft"/);
 assert.match(graphAppSource, /aria-live="polite"/);
+assert.match(graphAppSource, /className="stack-select-content [^"]*"/);
+assert.match(graphAppSource, /const REVIEW_STEP_BUTTON_CLASS = "review-step-button absolute/);
+assert.doesNotMatch(graphAppSource, /mini-node-label|MessageSquareText/);
 assert.match(graphAppSource, /setAttribute\("aria-current", "step"\)/);
 assert.match(graphAppSource, /prefers-reduced-motion: reduce/);
 assert.doesNotMatch(graphAppSource, /function JsonWorkspace/);
@@ -274,9 +274,12 @@ assert.doesNotMatch(webStyles, /max-height:\s*340px/);
 assert.doesNotMatch(webStyles, /mini-tree-technical-edge/);
 assert.match(webStyles, /\.explanation-hover-comment ul/);
 assert.match(webStyles, /\.comment-edge-hit-path/);
-assert.match(webStyles, /\.review-step-button/);
+assert.doesNotMatch(webStyles, /\.review-step-button\s*\{/);
+assert.doesNotMatch(webStyles, /\.review-(?:shell|header)\s*\{/);
+assert.doesNotMatch(webStyles, /\.stack-select-item\[data-state="checked"\]/);
+assert.doesNotMatch(webStyles, /\.mini-node-label/);
 assert.match(webStyles, /\.review-minimap/);
-assert.match(webStyles, /\.review-main/);
+assert.doesNotMatch(webStyles, /\.review-main\s*\{/);
 assert.match(webStyles, /\.react-flow__node\[aria-current="step"\]/);
 assert.doesNotMatch(webStyles, /\.react-flow__controls/);
 
