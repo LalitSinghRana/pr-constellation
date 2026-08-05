@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { analysisState } from "../src/lib/utils.js";
+import {
+  analysisState,
+  analysisTimeline,
+  formatDuration,
+} from "../src/lib/utils.js";
+import { groupByUpdatedDate, myPullRequestStatus } from "../src/lib/queue.js";
 import {
   addReviewRequests,
   addSignal,
@@ -19,6 +24,7 @@ import {
   reviewArtifactPath,
   rememberQueueItems,
   setQueueItemDone,
+  setQueueItemsDone,
   setQueueItemRead,
   seedNotificationPullRequests,
   sortPullRequestsBySize,
@@ -51,6 +57,52 @@ test("analysis entries have one visible section", () => {
   assert.equal(analysisState({ runningRun: null, queuedRuns: [], latestRun: null }), "not-started");
   assert.equal(analysisState({ runningRun: null, queuedRuns: [], latestRun: { status: "succeeded" } }), "completed");
   assert.equal(analysisState({ runningRun: null, queuedRuns: [], latestRun: { status: "failed" } }), "failed");
+});
+
+test("analysis timeline nests and aligns live analysis stages", () => {
+  const run = {
+    timings: {
+      stages: [
+        { stageId: "input.fetch", label: "Fetch PR", status: "completed", durationMs: 2_000, endedAt: "2026-01-01T00:00:02Z" },
+        { stageId: "analysis", label: "Analysis", parentStageId: "run.total", status: "running", durationMs: 0, startedAt: "2026-01-01T00:00:10Z", endedAt: null, attempt: 1 },
+        { stageId: "analysis.review-stack", label: "Review stack", parentStageId: "analysis", status: "completed", durationMs: 10_000, startedAt: "2026-01-01T00:00:10Z", endedAt: "2026-01-01T00:00:20Z", attempt: 1 },
+        { stageId: "analysis.attempt-1", label: "Analysis attempt 1", parentStageId: "analysis", status: "running", durationMs: 0, startedAt: "2026-01-01T00:00:20Z", endedAt: null, attempt: 1 },
+        { stageId: "analysis.attempt-1.generate-mini-trees", label: "Generate mini-trees", parentStageId: "analysis.attempt-1", status: "running", durationMs: 0, startedAt: "2026-01-01T00:00:20Z", endedAt: null, attempt: 1 },
+        { stageId: "analysis.attempt-1.evaluation.judge-candidate", label: "AI semantic judge", status: "skipped", durationMs: 0, endedAt: "2026-01-01T00:00:20Z", attempt: 1 },
+        { stageId: "render", label: "Render", status: "completed", durationMs: 100, endedAt: "2026-01-01T00:00:21Z" },
+      ],
+    },
+  };
+
+  const timeline = analysisTimeline(run, Date.parse("2026-01-01T00:01:10Z"));
+  assert.equal(timeline.durationMs, 60_000);
+  assert.deepEqual(timeline.rows.map(({ label, depth, durationMs, running }) => ({ label, depth, durationMs, running })), [
+    { label: "Analysis", depth: 0, durationMs: 60_000, running: true },
+    { label: "Review stack", depth: 1, durationMs: 10_000, running: false },
+    { label: "Analysis attempt 1", depth: 1, durationMs: 50_000, running: true },
+    { label: "Generate mini-trees", depth: 2, durationMs: 50_000, running: true },
+  ]);
+  assert.equal(Math.round(timeline.rows[1].widthPct), 17);
+  assert.equal(Math.round(timeline.rows[2].offsetPct), 17);
+  assert.equal(formatDuration(3_720_000), "1h 2m");
+});
+
+test("analysis date groups preserve queue order", () => {
+  const items = [
+    { id: "first", updatedAt: "2026-08-05T10:00:00Z" },
+    { id: "second", updatedAt: "2026-08-05T11:00:00Z" },
+  ];
+  assert.deepEqual(
+    groupByUpdatedDate(items, { preserveOrder: true })[0].items.map((item) => item.id),
+    ["first", "second"],
+  );
+});
+
+test("my pull request shows one highest-priority status", () => {
+  assert.equal(myPullRequestStatus({ draft: true, state: "OPEN" }), "draft");
+  assert.equal(myPullRequestStatus({ draft: false, state: "OPEN" }), "opened");
+  assert.equal(myPullRequestStatus({ draft: true, reviewDecision: "APPROVED", state: "OPEN" }), "approved");
+  assert.equal(myPullRequestStatus({ draft: true, reviewDecision: "APPROVED", state: "MERGED" }), "merged");
 });
 
 test("one app serves generated reviews without allowing path traversal", () => {
@@ -232,7 +284,9 @@ test("PR and non-PR notification threads stay visible", () => {
   };
 
   assert.equal(prFromNotification(pullRequest).number, 42);
+  assert.equal(prFromNotification(pullRequest).notificationThreadId, "123");
   assert.equal(otherNotificationFromThread(issue).url, "https://github.com/example/repo/issues/7");
+  assert.equal(otherNotificationFromThread(issue).notificationThreadId, "123");
 });
 
 test("notifications prioritize changed tracked PRs without adding unknown PRs", () => {
@@ -299,11 +353,20 @@ test("a read review-request notification can seed a scoped missing PR", () => {
       repository: { nameWithOwner: "example/app" },
       updatedAt: "2026-07-06T00:00:00Z",
       state: "UNKNOWN",
+      notificationThreadId: "456",
     },
   };
 
   seedNotificationPullRequests(items, [notification], ["example/app"]);
   assert.equal(items.get("example/app#3541").state, "UNKNOWN");
+  assert.equal(items.get("example/app#3541").notificationThreadId, "456");
+  items.get("example/app#3541").state = "OPEN";
+  seedNotificationPullRequests(
+    items,
+    [{ ...notification, thread: { ...notification.thread, reason: "comment" } }],
+    ["example/app"],
+  );
+  assert.equal(items.get("example/app#3541").state, "OPEN");
 
   seedNotificationPullRequests(
     items,
@@ -400,14 +463,25 @@ test("local read and Done state reopen for PR updates", () => {
     done: true,
     hasUpdates: false,
   });
+  assert.deepEqual(state.items[item.id].doneSnapshot, {
+    title: item.title,
+    state: item.state,
+    comments: item.comments,
+    headSha: "old-head",
+    draft: item.draft,
+  });
   assert.equal(applyQueueState([item], state)[0].done, true);
 
   const notificationChanged = {
     ...item,
-    notification: { reason: "review_requested", updatedAt: "2099-01-01T00:00:00Z" },
+    notificationUpdatedAt: "2099-01-01T00:00:00Z",
   };
-  assert.equal(queueVersion(notificationChanged), queueVersion(item));
-  assert.equal(applyQueueState([notificationChanged], state)[0].done, true);
+  assert.notEqual(queueVersion(notificationChanged), queueVersion(item));
+  const renotified = applyQueueState([notificationChanged], state)[0];
+  assert.equal(renotified.done, false);
+  assert.equal(renotified.hasUpdates, true);
+  assert.equal(renotified.changesSince, "marked done");
+  assert.deepEqual(renotified.updatesSinceRead, ["Direct review request"]);
 
   const updated = {
     ...item,
@@ -423,6 +497,7 @@ test("local read and Done state reopen for PR updates", () => {
   assert.equal(reopened.hasUpdates, true);
   assert.equal(reopened.read, false);
   assert.equal(reopened.hasUnreadUpdates, true);
+  assert.equal(reopened.changesSince, "marked done");
   assert.deepEqual(reopened.updatesSinceRead, [
     "Merged",
     "New commits",
@@ -436,6 +511,7 @@ test("local read and Done state reopen for PR updates", () => {
     done: false,
     hasUpdates: false,
   });
+  assert.equal(state.items[item.id].doneSnapshot, undefined);
   assert.equal(applyQueueState([item], state)[0].done, false);
   setQueueItemRead(state, item.id, false);
   assert.equal(applyQueueState([item], state)[0].read, false);
@@ -443,9 +519,35 @@ test("local read and Done state reopen for PR updates", () => {
   assert.equal(applyQueueState([item], state)[0].read, false);
 });
 
+test("a date group can be marked done together", () => {
+  const state = {
+    items: {
+      one: { version: "v1", item: { title: "One" } },
+      two: {
+        version: "2026-08-01T00:00:00Z",
+        notificationUpdatedAt: "2026-08-02T00:00:00Z",
+        item: { title: "Two", updatedAt: "2026-08-01T00:00:00Z" },
+      },
+    },
+  };
+  assert.deepEqual(setQueueItemsDone(state, ["one", "two"]), {
+    ids: ["one", "two"],
+    done: true,
+    hasUpdates: false,
+  });
+  assert.equal(state.items.one.doneVersion, "v1");
+  assert.equal(state.items.two.doneVersion, "2026-08-02T00:00:00Z");
+  assert.equal(setQueueItemsDone(state, ["missing"]), null);
+});
+
 test("tracked PR snapshots restore local membership and migrate old records", () => {
   const items = new Map();
-  const mergedPr = { ...pr, state: "MERGED" };
+  const mergedPr = {
+    ...pr,
+    state: "MERGED",
+    reviewDecision: "APPROVED",
+    notificationThreadId: "123",
+  };
   addSource(items, mergedPr, "reviewed");
   addSignal(items, mergedPr, "team-review", "example/reviewers");
   const [merged] = rankItems(items);
@@ -456,6 +558,8 @@ test("tracked PR snapshots restore local membership and migrate old records", ()
   assert.equal(restored.id, "example/repo#42");
   assert.equal(restored.title, pr.title);
   assert.equal(restored.state, "MERGED");
+  assert.equal(restored.reviewDecision, "APPROVED");
+  assert.equal(restored.notificationThreadId, "123");
   assert.deepEqual(restored.signals.map((signal) => signal.kind), ["team-review"]);
   assert.equal(restored.notification, null);
 

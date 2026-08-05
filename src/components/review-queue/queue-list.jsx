@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import { Card } from "@/components/ui/card.jsx";
 import {
   Empty,
   EmptyContent,
@@ -37,6 +38,7 @@ import {
   ACTIVITY_SIGNAL_KINDS,
   NOTIFICATION_LABELS,
   analysisFor,
+  myPullRequestStatus,
   relativeTime,
   safeGitHubUrl,
 } from "@/lib/queue.js";
@@ -49,9 +51,16 @@ const signalStyles = {
   "team-review": "border-lilac/25 bg-lilac/10 text-lilac-strong",
 };
 
+const myPrStatuses = {
+  draft: { label: "Draft", className: LIFECYCLE_STYLES.draft },
+  opened: { label: "Opened", className: LIFECYCLE_STYLES.new },
+  approved: { label: "Approved", className: LIFECYCLE_STYLES.approved },
+  merged: { label: "Merged", className: LIFECYCLE_STYLES.merged },
+};
+
 export function LoadingQueue() {
   return (
-    <div className="queue-card grid min-h-72 gap-5 p-6" aria-label="Building your current review queue">
+    <Card className="grid min-h-72 gap-5 rounded-lg bg-card/75 p-6 shadow-lg backdrop-blur-sm" aria-label="Building your current review queue">
       {["w-3/5", "w-4/5", "w-2/3"].map((width) => (
         <div className="flex items-center gap-4" key={width}>
           <Skeleton className="size-12 shrink-0 rounded-xl" />
@@ -62,14 +71,14 @@ export function LoadingQueue() {
         </div>
       ))}
       <span className="sr-only">Building your current review queue…</span>
-    </div>
+    </Card>
   );
 }
 
 export function EmptyQueue({ canConfigure, onSettings, error, onRetry }) {
   const Icon = error ? AlertTriangle : Check;
   return (
-    <Empty className="queue-card min-h-80 border-solid">
+    <Empty className="min-h-80 overflow-hidden rounded-lg border border-solid bg-card/75 shadow-lg backdrop-blur-sm">
       <EmptyHeader>
         <EmptyMedia
           className={cn(
@@ -98,7 +107,7 @@ export function EmptyQueue({ canConfigure, onSettings, error, onRetry }) {
   );
 }
 
-function ActivityHoverCard({ children, updates }) {
+function ActivityHoverCard({ children, updates, since = "last open" }) {
   return (
     <HoverCard openDelay={250} closeDelay={100}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
@@ -108,7 +117,7 @@ function ActivityHoverCard({ children, updates }) {
         side="top"
         sideOffset={8}
       >
-        <strong className="block text-[0.68rem] uppercase tracking-[0.06em]">Changes since last open</strong>
+        <strong className="block text-[0.68rem] uppercase tracking-[0.06em]">Changes since {since}</strong>
         {updates.length ? (
           <ul className="mt-1 list-disc pl-4">
             {updates.map((update) => <li key={update}>{update}</li>)}
@@ -135,6 +144,7 @@ function PullRequestRow({
   const Title = nested ? "h4" : "h3";
   const labelColor = (color) => (/^[\da-f]{6}$/i.test(color) ? `#${color}` : "#9b948d");
   const teammate = item.signals.find((signal) => signal.kind === "teammate-pr");
+  const myPrStatus = item.authored ? myPrStatuses[myPullRequestStatus(item)] : null;
   const reviewRequest = item.signals.find((signal) => signal.kind === "direct-review")
     ?? item.signals.find((signal) => signal.kind === "team-review");
   const reportedUpdates = item.updatesSinceRead ?? [];
@@ -164,7 +174,7 @@ function PullRequestRow({
   const updatesSinceRead = [...new Set([...signalUpdates, ...fallbackUpdates])];
 
   return (
-    <ActivityHoverCard updates={updatesSinceRead}>
+    <ActivityHoverCard updates={updatesSinceRead} since={item.changesSince}>
       <Item
         asChild
         className={cn(
@@ -174,14 +184,24 @@ function PullRequestRow({
         )}
       >
         <article>
-          <ItemMedia className="w-16">
-            <Badge
-              aria-label={`Priority score ${item.score}`}
-              className={cn("h-8 min-w-12 justify-center rounded-full px-3 font-serif text-lg font-semibold tabular-nums", LIFECYCLE_STYLES[item.lifecycle])}
-              variant="outline"
-            >
-              {item.score}
-            </Badge>
+          <ItemMedia className={myPrStatus ? "w-20" : "w-16"}>
+            {myPrStatus ? (
+              <Badge
+                aria-label={`Pull request status ${myPrStatus.label}`}
+                className={cn("h-8 min-w-16 justify-center rounded-full px-2 text-xs font-semibold", myPrStatus.className)}
+                variant="outline"
+              >
+                {myPrStatus.label}
+              </Badge>
+            ) : (
+              <Badge
+                aria-label={`Priority score ${item.score}`}
+                className={cn("h-8 min-w-12 justify-center rounded-full px-3 font-serif text-lg font-semibold tabular-nums", LIFECYCLE_STYLES[item.lifecycle])}
+                variant="outline"
+              >
+                {item.score}
+              </Badge>
+            )}
           </ItemMedia>
 
           <ItemContent className="min-w-0 gap-0">
@@ -241,19 +261,50 @@ function PullRequestRow({
 
           <ItemActions className="ml-20 basis-full md:ml-auto md:basis-auto">
             {analysis.href ? (
-              <a className="review-action" href={analysis.href} target="_blank" rel="noreferrer" onClick={() => onMarkRead(item)}>
-                <Sparkles className="size-3.5" />
-                Open tree
-              </a>
+              <>
+                <a className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9" href={analysis.href} target="_blank" rel="noreferrer" onClick={() => onMarkRead(item)}>
+                  <Sparkles className="size-3.5" />
+                  Open tree
+                </a>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={analysisBusy || Boolean(analysis.active)}
+                  onClick={() => onAnalyze(item)}
+                  title={
+                    analysisBusy || analysis.active?.status === "queued"
+                      ? "Queued for AI analysis"
+                      : analysis.active?.status === "running"
+                        ? "Analyzing"
+                        : "Re-run AI analysis"
+                  }
+                >
+                  {analysisBusy || analysis.active
+                    ? <LoaderCircle className="size-3.5 animate-spin" />
+                    : <RotateCcw className="size-3.5" />}
+                </Button>
+              </>
             ) : (
               <Button size="sm" variant="outline" disabled={analysisBusy || Boolean(analysis.active)} onClick={() => onAnalyze(item)}>
                 {analysisBusy || analysis.active?.status === "running" ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
                 {analysisBusy ? "Queueing" : analysis.active?.status === "running" ? "Analyzing" : analysis.active ? "Queued" : "Analyze"}
               </Button>
             )}
-            <Button size="sm" variant="outline" disabled={doneBusy} onClick={() => onToggleDone(item)}>
-              {doneBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : completed ? <RotateCcw className="size-3.5" /> : <Check className="size-3.5" />}
-              {completed ? "Restore" : "Done"}
+            <Button
+              size={completed ? "sm" : "icon-sm"}
+              variant="outline"
+              disabled={doneBusy}
+              onClick={() => onToggleDone(item)}
+              aria-label={completed ? undefined : "Mark done"}
+              title={completed ? undefined : "Mark done"}
+            >
+              {doneBusy ? (
+                <LoaderCircle className="size-3.5 animate-spin" />
+              ) : completed ? (
+                <><RotateCcw className="size-3.5" />Restore</>
+              ) : (
+                <Check className="size-3.5 text-emerald-700" />
+              )}
             </Button>
           </ItemActions>
         </article>
@@ -267,8 +318,8 @@ function NotificationRow({ item, completed, onToggleDone, doneBusy, nested }) {
   return (
     <Item asChild className={cn("rounded-none border-0 border-b border-border p-5 last:border-b-0 hover:bg-accent/50", completed && "opacity-60")}>
       <article>
-      <ItemMedia className="notification-type w-28 justify-start">
-        <Bell className="size-4" />
+      <ItemMedia className="flex w-28 items-center justify-start gap-[0.45rem] text-[0.68rem] font-[750] uppercase tracking-[0.06em] text-muted-foreground">
+        <Bell className="size-4 text-primary" />
         <span>{item.subjectType}</span>
       </ItemMedia>
       <ItemContent className="min-w-0 gap-0">
@@ -283,13 +334,25 @@ function NotificationRow({ item, completed, onToggleDone, doneBusy, nested }) {
         </div>
       </ItemContent>
       <ItemActions className="ml-32 basis-full md:ml-auto md:basis-auto">
-        <a className="review-action" href={safeGitHubUrl(item.url)} target="_blank" rel="noreferrer">
+        <a className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9" href={safeGitHubUrl(item.url)} target="_blank" rel="noreferrer">
           Open
           <ArrowUpRight className="size-3.5" />
         </a>
-        <Button size="sm" variant="outline" disabled={doneBusy} onClick={() => onToggleDone(item)}>
-          {doneBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : completed ? <RotateCcw className="size-3.5" /> : <Check className="size-3.5" />}
-          {completed ? "Restore" : "Done"}
+        <Button
+          size={completed ? "sm" : "icon-sm"}
+          variant="outline"
+          disabled={doneBusy}
+          onClick={() => onToggleDone(item)}
+          aria-label={completed ? undefined : "Mark done"}
+          title={completed ? undefined : "Mark done"}
+        >
+          {doneBusy ? (
+            <LoaderCircle className="size-3.5 animate-spin" />
+          ) : completed ? (
+            <><RotateCcw className="size-3.5" />Restore</>
+          ) : (
+            <Check className="size-3.5 text-emerald-700" />
+          )}
         </Button>
       </ItemActions>
       </article>
@@ -312,11 +375,31 @@ function UpdatedDateGroup({
 }) {
   const Heading = nested ? "h3" : "h2";
   const Row = notifications ? NotificationRow : PullRequestRow;
+  const groupDoneBusy = items.some((item) => doneMutation.includes(item.id));
+  const openItems = items.filter((item) => !isDone(item));
   return (
-    <section className="project-group project-card" aria-label={`${label} items`}>
-      <header className="project-header">
-        <Heading><FileClock className="size-4" aria-hidden="true" />{label}</Heading>
-        <Badge variant="outline">{items.length} {items.length === 1 ? "item" : "items"}</Badge>
+    <section className="overflow-hidden rounded-lg border bg-card/75 shadow-lg backdrop-blur-sm" aria-label={`${label} items`}>
+      <header className="flex min-h-[2.8rem] items-center justify-between gap-4 border-b bg-accent/78 px-[1.2rem] py-[0.65rem] max-[700px]:px-[0.9rem]">
+        <Heading className="m-0 flex min-w-0 items-center gap-[0.55rem] text-[0.75rem] font-[750] tracking-[0.01em] text-foreground [overflow-wrap:anywhere]">
+          <FileClock className="size-4 flex-none text-primary" aria-hidden="true" />{label}
+        </Heading>
+        <span className="flex items-center gap-2">
+          <Badge variant="outline">{items.length} {items.length === 1 ? "item" : "items"}</Badge>
+          {openItems.length > 0 && (
+            <Button
+              size="icon-sm"
+              variant="outline"
+              disabled={groupDoneBusy}
+              onClick={() => onToggleDone(openItems)}
+              aria-label={`Mark all ${label} items done`}
+              title="Mark all done"
+            >
+              {groupDoneBusy
+                ? <LoaderCircle className="size-3.5 animate-spin" />
+                : <Check className="size-3.5 text-emerald-700" />}
+            </Button>
+          )}
+        </span>
       </header>
       {items.map((item) => (
         <Row
@@ -324,7 +407,7 @@ function UpdatedDateGroup({
           item={item}
           completed={isDone(item)}
           onToggleDone={onToggleDone}
-          doneBusy={doneMutation === item.id}
+          doneBusy={doneMutation.includes(item.id)}
           nested={nested}
           {...(!notifications && {
             analysis: analysisFor(item, analyses.get(item.url)),
@@ -351,16 +434,18 @@ export function QueueSection({
 }) {
   const Icon = LIFECYCLE_META[section.id]?.icon ?? Bell;
   return (
-    <section className="lifecycle-section" aria-label={`${section.label} queue`}>
+    <section className="grid gap-3" aria-label={`${section.label} queue`}>
       {showHeader && (
-        <header className="lifecycle-header">
-          <h2><Icon className="size-4" aria-hidden="true" />{section.label}</h2>
-          <span>
+        <header className="flex min-h-[3.25rem] items-center justify-between gap-4 p-1 max-[700px]:px-[0.9rem]">
+          <h2 className="m-0 flex items-center gap-[0.55rem] font-display text-[1.15rem] font-[650] tracking-[-0.02em]">
+            <Icon className="size-4 text-primary" aria-hidden="true" />{section.label}
+          </h2>
+          <span className="flex items-center gap-[0.55rem]">
             <Badge variant="outline">{section.count}</Badge>
           </span>
         </header>
       )}
-      <div className="project-card-stack">
+      <div className="grid gap-4">
         {section.groups.map((group) => (
           <UpdatedDateGroup
             key={group.label}

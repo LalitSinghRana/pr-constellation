@@ -1,19 +1,17 @@
-import { AlertTriangle, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, RefreshCw, X } from "lucide-react";
+import { parseAsStringEnum, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnalysisSection } from "@/components/analysis/analysis-section.jsx";
-import { AnalysisSidebar } from "@/components/review-queue/sidebar.jsx";
 import { Button } from "@/components/ui/button.jsx";
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar.jsx";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs.jsx";
 import { useAnalysisDashboard } from "@/hooks/use-analysis-dashboard.js";
+import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { analysisState, cn } from "@/lib/utils.js";
 
 const terminalStatuses = new Set(["succeeded", "failed", "canceled", "interrupted"]);
 
 export function AnalysisPage() {
+  useDocumentTitle({ title: "AI Analyzer Queue · PR Review Cockpit" });
   const {
     dashboard,
     error: dashboardError,
@@ -24,6 +22,10 @@ export function AnalysisPage() {
   const [queueItems, setQueueItems] = useState([]);
   const [canceling, setCanceling] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [activeTab, setActiveTab] = useQueryState(
+    "tab",
+    parseAsStringEnum(["ongoing", "not-started", "successful", "failed"]).withDefault("ongoing"),
+  );
   const error = actionError || dashboardError;
 
   useEffect(() => {
@@ -89,7 +91,9 @@ export function AnalysisPage() {
   const failed = entries
     .filter((entry) => entry.state === "failed")
     .sort((left, right) => new Date(right.latestRun.completedAt || right.latestRun.updatedAt) - new Date(left.latestRun.completedAt || left.latestRun.updatedAt));
-  const notStarted = entries.filter((entry) => entry.state === "not-started");
+  const notStarted = entries
+    .filter((entry) => entry.state === "not-started")
+    .sort((left, right) => new Date(right.queueItem.updatedAt) - new Date(left.queueItem.updatedAt));
 
   const cancelRuns = useCallback(async (targets) => {
     setCanceling(true);
@@ -121,41 +125,69 @@ export function AnalysisPage() {
   ]), [cancelRuns, queued, running]);
 
   return (
-    <SidebarProvider>
-      <AnalysisSidebar activeCount={running.length + queued.length} />
-
-      <SidebarInset className="app-canvas min-h-screen">
-        <div className="mx-auto w-full max-w-[1240px] px-5 pb-20 pt-8 sm:px-8 lg:px-12 lg:pt-12">
-          <SidebarTrigger className="mb-5 md:hidden" />
-          <header className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
-            <div>
-              <p className="eyebrow"><span className="size-1.5 rounded-full bg-primary" />AI analyzer</p>
-              <h1 className="font-display text-4xl font-semibold tracking-[-0.045em] sm:text-5xl">Analysis queue</h1>
-              <p className="mt-2 text-sm text-muted-foreground">One highest-effort analysis at a time, with the smallest PRs first.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button className="text-coral-strong" disabled={canceling || !analysisRunning} onClick={cancelAll} variant="outline">
-                <X className="size-4" />Cancel all
-              </Button>
-              <Button variant="outline" disabled={loading} onClick={refreshDashboard}>
-                <RefreshCw className={cn("size-4", loading && "animate-spin")} />Refresh
-              </Button>
-            </div>
-          </header>
-
-          {error && (
-            <p className="mt-5 flex items-center gap-2 rounded-lg border border-coral/25 bg-coral/10 px-3 py-2 text-xs text-coral-strong">
-              <AlertTriangle className="size-3.5" />{error}
-            </p>
-          )}
-
-          <AnalysisSection canceling={canceling} description="Current work" entries={running} mode="running" onCancel={cancelRuns} title="In progress" />
-          <AnalysisSection canceling={canceling} description="Smallest first" entries={queued} mode="queued" onCancel={cancelRuns} title="In queue" />
-          <AnalysisSection canceling={canceling} description="No analysis yet" entries={notStarted} mode="not-started" onCancel={cancelRuns} title="Not started" />
-          <AnalysisSection canceling={canceling} description="Successful analyses" entries={completed} mode="completed" onCancel={cancelRuns} title="Completed" />
-          <AnalysisSection canceling={canceling} description="Failed, canceled, or interrupted" entries={failed} mode="failed" onCancel={cancelRuns} title="Failed" />
+    <main className="min-h-screen">
+      <div className="mx-auto w-full max-w-[1240px] px-5 pb-20 pt-5 sm:px-8 lg:px-12 lg:pt-8">
+        <h1 className="sr-only">Analysis queue</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button asChild variant="ghost">
+            <a href="/"><ArrowLeft className="size-4" />Review queue</a>
+          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button className="text-coral-strong" disabled={canceling || !analysisRunning} onClick={cancelAll} variant="outline">
+              <X className="size-4" />Cancel all
+            </Button>
+            <Button variant="outline" disabled={loading} onClick={refreshDashboard}>
+              <RefreshCw className={cn("size-4", loading && "animate-spin")} />Refresh
+            </Button>
+          </div>
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+
+        {error && (
+          <p className="mt-5 flex items-center gap-2 rounded-lg border border-coral/25 bg-coral/10 px-3 py-2 text-xs text-coral-strong">
+            <AlertTriangle className="size-3.5" />{error}
+          </p>
+        )}
+
+        <Tabs className="mt-6 gap-0" value={activeTab} onValueChange={setActiveTab}>
+          <TabsList
+            aria-label="Analysis status"
+            variant="cockpit"
+            style={{ height: "3rem" }}
+          >
+            {[
+              ["ongoing", "Ongoing", running.length + queued.length],
+              ["not-started", "Not started", notStarted.length],
+              ["successful", "Successful", completed.length],
+              ["failed", "Failed", failed.length],
+            ].map(([id, label, count]) => (
+              <TabsTrigger
+                className="group"
+                key={id}
+                value={id}
+              >
+                {label}
+                <span className="min-w-5 rounded-full bg-muted px-1.5 py-0.5 text-[0.64rem] tabular-nums text-muted-foreground group-data-[state=active]:bg-primary/10 group-data-[state=active]:text-primary">
+                  {count}
+                </span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          <TabsContent value="ongoing">
+            <AnalysisSection canceling={canceling} description="Current work" entries={running} mode="running" onCancel={cancelRuns} title="In progress" />
+            <AnalysisSection canceling={canceling} description="Smallest first" entries={queued} mode="queued" onCancel={cancelRuns} title="In queue" />
+          </TabsContent>
+          <TabsContent value="not-started">
+            <AnalysisSection canceling={canceling} description="No analysis yet" entries={notStarted} mode="not-started" onCancel={cancelRuns} title="Not started" />
+          </TabsContent>
+          <TabsContent value="successful">
+            <AnalysisSection canceling={canceling} description="Successful analyses" entries={completed} mode="completed" onCancel={cancelRuns} title="Successful" />
+          </TabsContent>
+          <TabsContent value="failed">
+            <AnalysisSection canceling={canceling} description="Failed, canceled, or interrupted" entries={failed} mode="failed" onCancel={cancelRuns} title="Failed" />
+          </TabsContent>
+        </Tabs>
+      </div>
+    </main>
   );
 }

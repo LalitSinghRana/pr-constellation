@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Sparkles,
 } from "lucide-react";
+import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LIFECYCLE_META, LIFECYCLE_ORDER } from "@/components/review-queue/config.jsx";
 import { EmptyQueue, LoadingQueue, QueueSection } from "@/components/review-queue/queue-list.jsx";
@@ -14,6 +15,7 @@ import {
 } from "@/components/ui/sidebar.jsx";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.jsx";
 import { useAnalysisDashboard } from "@/hooks/use-analysis-dashboard.js";
+import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { useInbox } from "@/hooks/use-inbox.js";
 import {
   EMPTY_SETTINGS,
@@ -24,17 +26,18 @@ import {
 import { cn } from "@/lib/utils.js";
 
 export function QueuePage() {
+  useDocumentTitle({ title: "Review Queue · PR Review Cockpit" });
   const { data, error, loading, refresh, setData, setError } = useInbox();
   const {
     dashboard: analysisDashboard,
     error: analysisServiceError,
     refresh: refreshAnalyses,
   } = useAnalysisDashboard();
-  const [activeFilter, setActiveFilter] = useState("new");
-  const [activeProject, setActiveProject] = useState("");
+  const [activeFilter, setActiveFilter] = useQueryState("filter", parseAsString.withDefault("new"));
+  const [activeProject, setActiveProject] = useQueryState("project", parseAsString.withDefault(""));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
-  const [doneMutation, setDoneMutation] = useState("");
+  const [doneMutation, setDoneMutation] = useState([]);
   const [queueActionError, setQueueActionError] = useState("");
   const [analysisActionError, setAnalysisActionError] = useState("");
   const [analysisMutation, setAnalysisMutation] = useState("");
@@ -53,10 +56,6 @@ export function QueuePage() {
       .catch((caught) => setError(caught.message || "Local settings could not be loaded."));
   }, [setError]);
 
-  const allEntries = useMemo(
-    () => [...data.items, ...data.notifications],
-    [data.items, data.notifications],
-  );
   const openPrs = useMemo(
     () => data.items.filter((item) => !isDone(item)),
     [data.items, isDone],
@@ -77,13 +76,11 @@ export function QueuePage() {
       new: openPrs.filter((item) => item.lifecycle === "new").length,
       approved: openPrs.filter((item) => item.lifecycle === "approved").length,
       merged: openPrs.filter((item) => item.lifecycle === "merged").length,
-      draft: openPrs.filter((item) => item.lifecycle === "draft").length,
       mine: openPrs.filter((item) => item.authored).length,
       other: openPrs.filter((item) => item.lifecycle === "other" && !item.authored).length,
       nonpr: openNotifications.length,
-      done: allEntries.filter(isDone).length,
     }),
-    [allEntries, isDone, openNotifications.length, openPrs],
+    [openNotifications.length, openPrs],
   );
 
   const availableProjects = useMemo(() => {
@@ -145,7 +142,7 @@ export function QueuePage() {
       if (visibleNotifications.length) {
         sections.push({
           id: "nonpr",
-          label: "Non-PR notifications",
+          label: "Issues & other notifications",
           score: null,
           count: visibleNotifications.length,
           groups: groupByUpdatedDate(visibleNotifications),
@@ -223,18 +220,30 @@ export function QueuePage() {
     }
   }
 
-  async function toggleDone(item) {
-    setDoneMutation(item.id);
+  async function toggleDone(value) {
+    const items = Array.isArray(value) ? value.filter((item) => !item.done) : [value];
+    const ids = items.map((item) => item.id);
+    if (!ids.length) return;
+    setDoneMutation(ids);
     setQueueActionError("");
     try {
       const response = await fetch("/api/inbox/items", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: item.id, done: !item.done }),
+        body: JSON.stringify(
+          Array.isArray(value)
+            ? { ids, done: true }
+            : { id: value.id, done: !value.done },
+        ),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
-      const update = (entry) => entry.id === result.id ? { ...entry, ...result } : entry;
+      if (result.warning) setQueueActionError(result.warning);
+      const updated = new Set(result.ids ?? [result.id]);
+      const patch = result.ids
+        ? { done: result.done, hasUpdates: result.hasUpdates }
+        : result;
+      const update = (entry) => updated.has(entry.id) ? { ...entry, ...patch } : entry;
       setData((current) => ({
         ...current,
         items: current.items.map(update),
@@ -243,7 +252,7 @@ export function QueuePage() {
     } catch (caught) {
       setQueueActionError(caught.message || "Done state could not be saved.");
     } finally {
-      setDoneMutation("");
+      setDoneMutation([]);
     }
   }
 
@@ -258,7 +267,7 @@ export function QueuePage() {
         onSettings={() => setSettingsOpen(true)}
       />
 
-      <SidebarInset className="app-canvas min-h-screen">
+      <SidebarInset className="min-h-screen">
         <div className="mx-auto w-full max-w-[1240px] px-5 pb-20 pt-8 sm:px-8 lg:px-12 lg:pt-12">
           <SidebarTrigger className="mb-5 md:hidden" />
           <h1 className="sr-only">{LIFECYCLE_META[activeFilter]?.label ?? "Review queue"}</h1>
@@ -268,12 +277,12 @@ export function QueuePage() {
               <Tabs className="gap-0" value={selectedProject} onValueChange={setActiveProject}>
                 <TabsList
                   aria-label="Repositories"
-                  className="w-full justify-start gap-2 overflow-x-auto rounded-none border-b border-border bg-transparent px-0"
+                  variant="cockpit"
                   style={{ height: "3rem" }}
                 >
                   {availableProjects.map((project) => (
                     <TabsTrigger
-                      className="repository-tab group flex-none rounded-lg px-3 text-base font-semibold data-[state=active]:bg-accent data-[state=active]:text-accent-foreground dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-accent"
+                      className="group"
                       key={project.repository}
                       title={project.repository}
                       value={project.repository}
@@ -321,7 +330,7 @@ export function QueuePage() {
               </p>
             )}
 
-            <div className="queue-stack mt-4" aria-live="polite">
+            <div className="mt-4 grid gap-6" aria-live="polite">
               {loading ? (
                 <LoadingQueue />
               ) : error ? (

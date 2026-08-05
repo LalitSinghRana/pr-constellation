@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PR File Flow",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "edges"
+  ],
+  "properties": {
+    "edges": {
+      "description": "Ordered parent-child edges defining the review order across every file in one review stack.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "from",
+          "to",
+          "order",
+          "comment"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "comment": {
+            "description": "Why the target belongs after the source in review order.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

@@ -29,13 +29,13 @@ files[]: exactly one entry per changed file
 Middle-tree and super-tree analysis are intentionally outside the current
 pipeline.
 
-Every file and mini-tree node has a `changeRole`. File summaries use
-`important | supporting | mechanical`; mini-tree nodes additionally use
-`core`:
+Every file and mini-tree node has a `changeRole` and a `reviewClass` of
+`important | supporting | mechanical`. A mini-tree's root is whichever node
+has no incoming `reviewEdges`; it is not marked by `reviewClass`.
 
 ```json
 {
-  "reviewClass": "core | important | supporting | mechanical",
+  "reviewClass": "important | supporting | mechanical",
   "changeRole": "runtime | test | storybook | snapshot | type | docs | config | dependency | generated | formatting | imports"
 }
 ```

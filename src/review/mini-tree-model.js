@@ -1,5 +1,4 @@
 // Pure mini-tree normalization and folding for generated review pages.
-const ALWAYS_VISIBLE_REVIEW_CLASS = "core";
 const ALWAYS_VISIBLE_RUNTIME_CLASS = "important";
 
 export function normalizeMiniTree(file) {
@@ -66,6 +65,7 @@ export function foldMiniTree(file, { expandedGroupIds = [] } = {}) {
     .sort((left, right) => {
       return (nodeOrderById.get(left.id) || 0) - (nodeOrderById.get(right.id) || 0);
     });
+  const rootIds = new Set(roots.map((root) => root.id));
   const visibleNodes = [];
   const visibleReviewEdges = [];
   const visibleNodeIds = new Set();
@@ -83,7 +83,7 @@ export function foldMiniTree(file, { expandedGroupIds = [] } = {}) {
     const nextAncestry = new Set(ancestry);
     nextAncestry.add(nodeId);
     const node = nodeById.get(nodeId);
-    const containsVisible = isAlwaysVisibleMiniNode(node)
+    const containsVisible = isAlwaysVisibleMiniNode(node, { rootIds })
       || (childrenById.get(nodeId) || []).some((child) => {
         return subtreeContainsAlwaysVisible(child.nodeId, nextAncestry);
       });
@@ -119,7 +119,7 @@ export function foldMiniTree(file, { expandedGroupIds = [] } = {}) {
 
     for (const child of childrenById.get(nodeId) || []) {
       const childNode = nodeById.get(child.nodeId);
-      const bucket = collapseBucketForNode(childNode);
+      const bucket = collapseBucketForNode(childNode, { rootIds });
       const staysVisible = (
         !bucket
         || revealedBucketIds.has(bucket.id)
@@ -240,11 +240,11 @@ export function foldMiniTree(file, { expandedGroupIds = [] } = {}) {
   };
 }
 
-export function isAlwaysVisibleMiniNode(node) {
+export function isAlwaysVisibleMiniNode(node, { rootIds } = {}) {
   return Boolean(
     node
     && (
-      node.reviewClass === ALWAYS_VISIBLE_REVIEW_CLASS
+      rootIds?.has(node.id)
       || (
         node.reviewClass === ALWAYS_VISIBLE_RUNTIME_CLASS
         && node.changeRole === "runtime"
@@ -253,8 +253,8 @@ export function isAlwaysVisibleMiniNode(node) {
   );
 }
 
-function collapseBucketForNode(node) {
-  if (!node || isAlwaysVisibleMiniNode(node)) {
+function collapseBucketForNode(node, { rootIds } = {}) {
+  if (!node || isAlwaysVisibleMiniNode(node, { rootIds })) {
     return null;
   }
 

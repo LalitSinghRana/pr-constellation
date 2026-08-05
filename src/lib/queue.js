@@ -33,6 +33,12 @@ export function matchesPrFilter(item, filter) {
   return item.lifecycle === filter;
 }
 
+export function myPullRequestStatus(item) {
+  if (item.state === "MERGED") return "merged";
+  if (item.reviewDecision === "APPROVED") return "approved";
+  return item.draft ? "draft" : "opened";
+}
+
 export function safeGitHubUrl(value) {
   try {
     const url = new URL(value);
@@ -86,7 +92,7 @@ const updatedDateFormatter = new Intl.DateTimeFormat("en", {
   year: "numeric",
 });
 
-export function groupByUpdatedDate(items) {
+export function groupByUpdatedDate(items, { preserveOrder = false } = {}) {
   const groups = new Map();
   for (const item of items) {
     const date = new Date(item.updatedAt);
@@ -98,12 +104,14 @@ export function groupByUpdatedDate(items) {
     group.items.push(item);
     groups.set(key, group);
   }
-  for (const group of groups.values()) {
-    group.items.sort(
-      (left, right) =>
-        (right.score ?? 0) - (left.score ?? 0) ||
-        new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
-    );
+  if (!preserveOrder) {
+    for (const group of groups.values()) {
+      group.items.sort(
+        (left, right) =>
+          (right.score ?? 0) - (left.score ?? 0) ||
+          new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+      );
+    }
   }
   return [...groups.values()];
 }

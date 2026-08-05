@@ -51,3 +51,7 @@ a new one; do not switch to a random port.
 
 Generated review runs live under `.reviews/` and are gitignored. Do not commit
 generated review artifacts unless explicitly requested.
+
+Don't reinvent the wheel: if a popular, well-maintained npm package solves the
+problem (e.g. URL-synced state, date parsing, form validation), use it instead
+of hand-rolling the equivalent logic.

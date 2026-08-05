@@ -27,13 +27,13 @@ const menuButtonClass = "h-10 px-3 text-sidebar-foreground/70 data-[active=true]
 
 export function Brand() {
   return (
-    <a className="brand" href="/" aria-label="PR Review Cockpit home">
-      <span className="brand-mark" aria-hidden="true">
+    <a className="flex items-center gap-3 px-2 text-inherit no-underline" href="/" aria-label="PR Review Cockpit home">
+      <span className="grid size-10 place-items-center rounded-sm border border-primary/35 bg-primary/12 text-primary" aria-hidden="true">
         <GitPullRequest className="size-5" strokeWidth={2.3} />
       </span>
       <span>
-        <strong>Review cockpit</strong>
-        <small>Local GitHub queue</small>
+        <strong className="block text-[0.95rem] tracking-[-0.01em]">Review cockpit</strong>
+        <small className="mt-0.5 block text-[0.7rem] text-sidebar-muted">Local GitHub queue</small>
       </span>
     </a>
   );

@@ -8,7 +8,8 @@
     "intent",
     "summary",
     "confidence",
-    "files"
+    "files",
+    "fileFlow"
   ],
   "properties": {
     "schemaVersion": {
@@ -27,6 +28,9 @@
       "type": "number",
       "minimum": 0,
       "maximum": 1
+    },
+    "fileFlow": {
+      "$ref": "#/$defs/fileFlow"
     },
     "files": {
       "type": "array",
@@ -48,7 +52,6 @@
     "miniNodeReviewClass": {
       "type": "string",
       "enum": [
-        "core",
         "important",
         "supporting",
         "mechanical"
@@ -223,6 +226,51 @@
         },
         "comment": {
           "description": "What requirement or review relationship connects the source to the target and why the target belongs next. Do not narrate implementation mechanics. Prefer concise Markdown prose and use bullet lists for multiple distinct points, but preserve useful context regardless of length or formatting.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "fileFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edges"
+      ],
+      "properties": {
+        "edges": {
+          "description": "Ordered parent-child edges that define the file-to-file review order within this review stack. Empty for a single-file stack.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fileFlowEdge"
+          }
+        }
+      }
+    },
+    "fileFlowEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "order",
+        "comment"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "comment": {
+          "description": "What requirement or review relationship connects the source file to the target file and why the target belongs next. This is review causality, not import direction. Do not narrate implementation mechanics. Prefer concise Markdown prose and use bullet lists for multiple distinct points, but preserve useful context regardless of length or formatting.",
           "type": "string",
           "minLength": 1
         }

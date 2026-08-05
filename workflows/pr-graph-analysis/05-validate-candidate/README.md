@@ -15,6 +15,6 @@
 - `reviewClass` and `changeRole` use the approved values
 - required titles, comments, and relation labels are non-empty strings
 
-Semantic choices—including which node is `core`, how review priority flows,
+Semantic choices—including which node is the root, how review priority flows,
 whether a role deserves a particular review class, and whether explanations are
 useful—belong to the AI judge in Step 06.

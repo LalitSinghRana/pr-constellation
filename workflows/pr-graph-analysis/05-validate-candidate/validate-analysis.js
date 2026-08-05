@@ -1,5 +1,4 @@
 const FILE_REVIEW_CLASSES = new Set(["important", "supporting", "mechanical"]);
-const MINI_NODE_REVIEW_CLASSES = new Set(["core", ...FILE_REVIEW_CLASSES]);
 const CHANGE_ROLES = new Set([
   "runtime",
   "test",
@@ -16,8 +15,29 @@ const CHANGE_ROLES = new Set([
 const MINI_TREE_SCHEMA_V1 = "pr-graph-mini-trees/v1";
 const MINI_TREE_SCHEMA_V2 = "pr-graph-mini-trees/v2";
 const MINI_TREE_SCHEMA_VERSIONS = new Set([MINI_TREE_SCHEMA_V1, MINI_TREE_SCHEMA_V2]);
+// Mirrors graph-app.jsx's FILE_REVIEW_CLASS_PRIORITY/FILE_CHANGE_ROLE_PRIORITY so the
+// validator rejects the same file-flow roots the UI would consider wrong, rather than the
+// two silently disagreeing on which file should lead a stack. Keep both in sync.
+const FILE_REVIEW_CLASS_PRIORITY = new Map([
+  ["important", 0],
+  ["supporting", 1],
+  ["mechanical", 2],
+]);
+const FILE_CHANGE_ROLE_PRIORITY = new Map([
+  ["runtime", 0],
+  ["test", 1],
+  ["storybook", 2],
+  ["type", 3],
+  ["config", 4],
+  ["dependency", 5],
+  ["docs", 6],
+  ["snapshot", 7],
+  ["generated", 8],
+  ["formatting", 9],
+  ["imports", 10],
+]);
 
-export function validateMiniTreeAnalysis(analysis, { inventory = null } = {}) {
+export function validateMiniTreeAnalysis(analysis, { inventory = null, reviewStack = null } = {}) {
   const errors = [];
 
   if (!MINI_TREE_SCHEMA_VERSIONS.has(analysis?.schemaVersion)) {
@@ -50,6 +70,7 @@ export function validateMiniTreeAnalysis(analysis, { inventory = null } = {}) {
   }
 
   validateFiles({ analysis, errors, inventory });
+  validateFileFlow({ analysis, errors, reviewStack });
 
   if (errors.length > 0) {
     throwValidationError(errors);
@@ -192,6 +213,89 @@ function validateFiles({ analysis, errors, inventory }) {
   }
 }
 
+export function validateFileFlow({ analysis, errors, reviewStack }) {
+  const fileFlows = analysis?.fileFlows;
+
+  if (!reviewStack?.stacks) {
+    return;
+  }
+  if (!fileFlows || typeof fileFlows !== "object") {
+    errors.push("analysis.json fileFlows must be an object.");
+    return;
+  }
+
+  const fileById = new Map((analysis.files || []).map((file) => [file.id, file]));
+
+  for (const stack of reviewStack.stacks) {
+    const flow = fileFlows[stack.id];
+
+    if (!flow) {
+      errors.push(`analysis.json is missing fileFlows.${stack.id}.`);
+      continue;
+    }
+
+    if (!Array.isArray(flow.edges)) {
+      errors.push(`analysis.json fileFlows.${stack.id}.edges must be an array.`);
+      continue;
+    }
+
+    const stackFileIds = new Set(stack.fileIds || []);
+    const stackFiles = [...stackFileIds].map((fileId) => fileById.get(fileId)).filter(Boolean);
+    const nodeById = new Map(stackFiles.map((file) => [file.id, file]));
+    const parentCounts = new Map(stackFiles.map((file) => [file.id, 0]));
+    const childrenById = new Map(stackFiles.map((file) => [file.id, []]));
+
+    const rootFile = validateTreeEdges({
+      edgeLabel: `fileFlows.${stack.id}.edges`,
+      edges: flow.edges,
+      errors,
+      ordered: true,
+      nodeById,
+      nodeIds: stackFileIds,
+      parentCounts,
+      childrenById,
+      rootLabel: `fileFlows.${stack.id}`,
+    });
+
+    if (rootFile && !isAcceptableFileFlowRoot(rootFile, stackFiles)) {
+      errors.push(
+        `analysis.json fileFlows.${stack.id} root ${rootFile.id} is outranked by another file in the stack; the root must be reviewClass/changeRole tied-for-best, not merely present.`,
+      );
+    }
+  }
+}
+
+// A root is acceptable when no other file in the stack has a strictly better
+// reviewClass/changeRole tier — ties are fine (a stack can legitimately have several
+// important/runtime files; the model's causality judgement between them is not something
+// this validator can second-guess, see the plan's own PR 4919 data: stacks with 1-3
+// important files each). Only a root that's flatly outranked (e.g. a test/snapshot file
+// rooting a stack that also has a runtime file) is rejected.
+export function isAcceptableFileFlowRoot(rootFile, files) {
+  return !files.some((file) => (
+    file.id !== rootFile.id
+    && isStrictlyBetterFileFlowPriority(file, rootFile)
+  ));
+}
+
+function isStrictlyBetterFileFlowPriority(file, otherFile) {
+  const reviewClassDifference = (
+    fileReviewClassPriority(file.reviewClass) - fileReviewClassPriority(otherFile.reviewClass)
+  );
+  if (reviewClassDifference !== 0) {
+    return reviewClassDifference < 0;
+  }
+  return fileChangeRolePriority(file.changeRole) < fileChangeRolePriority(otherFile.changeRole);
+}
+
+function fileReviewClassPriority(reviewClass) {
+  return FILE_REVIEW_CLASS_PRIORITY.get(reviewClass) ?? FILE_REVIEW_CLASS_PRIORITY.size;
+}
+
+function fileChangeRolePriority(changeRole) {
+  return FILE_CHANGE_ROLE_PRIORITY.get(changeRole) ?? FILE_CHANGE_ROLE_PRIORITY.size;
+}
+
 function validateMiniTree({
   analysisSchemaVersion,
   changedLineOwnerById,
@@ -221,7 +325,7 @@ function validateMiniTree({
 
     const owner = `${file.id}/${miniNode.id}`;
     validateReviewClassAndRoleValues({
-      allowedReviewClasses: MINI_NODE_REVIEW_CLASSES,
+      allowedReviewClasses: FILE_REVIEW_CLASSES,
       errors,
       targetId: `miniNode ${owner}`,
       value: miniNode,
@@ -788,6 +892,63 @@ function collectReachableNodeIds(rootId, childrenById) {
   }
 
   return visited;
+}
+
+const REVIEW_STACK_SCHEMA_VERSION = "pr-graph-review-stack/v1";
+
+export function validateReviewStack(stack, { inventory = null } = {}) {
+  const errors = [];
+
+  if (stack?.schemaVersion !== REVIEW_STACK_SCHEMA_VERSION) {
+    errors.push("review-stack.json has an invalid or missing schemaVersion.");
+  }
+  if (!Array.isArray(stack?.stacks) || stack.stacks.length === 0) {
+    errors.push("review-stack.json must contain at least one stack.");
+  }
+  if (errors.length > 0) {
+    throwValidationError(errors);
+  }
+
+  const stackIds = stack.stacks.map((entry) => entry.id);
+  validateNoDuplicates({ errors, ids: stackIds, label: "review-stack.json stacks[].id" });
+
+  const allFileIds = [];
+  for (const [index, entry] of stack.stacks.entries()) {
+    validateRequiredText({
+      errors,
+      label: `review-stack.json stack ${entry?.id ?? index} title`,
+      value: entry?.title,
+    });
+    validateRequiredText({
+      errors,
+      label: `review-stack.json stack ${entry?.id ?? index} comment`,
+      value: entry?.comment,
+    });
+
+    if (!Array.isArray(entry?.fileIds) || entry.fileIds.length === 0) {
+      errors.push(`review-stack.json stack ${entry?.id ?? index} must contain at least one file id.`);
+      continue;
+    }
+    allFileIds.push(...entry.fileIds);
+  }
+
+  validateNoDuplicates({ errors, ids: allFileIds, label: "review-stack.json stacks[].fileIds" });
+
+  if (inventory) {
+    const inventoryChangedFileIds = (inventory.files || [])
+      .filter((file) => Array.isArray(file.changedLineIds) && file.changedLineIds.length > 0)
+      .map((file) => file.id);
+    validateExactIdSet({
+      actualIds: allFileIds,
+      errors,
+      expectedIds: inventoryChangedFileIds,
+      label: "review-stack.json stacks[].fileIds",
+    });
+  }
+
+  if (errors.length > 0) {
+    throwValidationError(errors);
+  }
 }
 
 function throwValidationError(errors) {

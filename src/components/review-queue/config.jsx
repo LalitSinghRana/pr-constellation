@@ -1,7 +1,6 @@
 import {
   Archive,
   Bell,
-  Check,
   CheckCircle2,
   Eye,
   FileClock,
@@ -21,19 +20,19 @@ export const LIFECYCLE_ORDER = [
 
 export const LIFECYCLE_META = {
   reviewed: { label: "Reviewed", score: 10, icon: Eye },
-  new: { label: "New / unreviewed", score: 0, icon: GitPullRequest },
+  new: { label: "Unreviewed", score: 0, icon: GitPullRequest },
   approved: { label: "Approved", score: -5, icon: CheckCircle2 },
   merged: { label: "Merged", score: -5, icon: GitMerge },
   draft: { label: "Draft", score: -10, icon: FileClock },
   mine: { label: "My pull requests", score: 0, icon: GitPullRequest },
-  other: { label: "Other notification PRs", score: 0, icon: Archive },
-  nonpr: { label: "Non-PR", score: null, icon: Bell },
+  other: { label: "Other PR notifications", score: 0, icon: Archive },
+  nonpr: { label: "Issues & other notifications", score: null, icon: Bell },
 };
 
 export const FILTER_GROUPS = [
   {
     label: "Lifecycle",
-    filters: LIFECYCLE_ORDER.filter((id) => !["mine", "other"].includes(id)).map((id) => ({
+    filters: LIFECYCLE_ORDER.filter((id) => !["mine", "other", "draft"].includes(id)).map((id) => ({
       id,
       label: LIFECYCLE_META[id].label,
       icon: LIFECYCLE_META[id].icon,
@@ -46,9 +45,8 @@ export const FILTER_GROUPS = [
   {
     label: "Other",
     filters: [
-      { id: "other", label: "Other notification PRs", icon: Archive },
-      { id: "nonpr", label: "Non-PR", icon: Bell },
-      { id: "done", label: "Done", icon: Check },
+      { id: "other", label: "Other PR notifications", icon: Archive },
+      { id: "nonpr", label: "Issues & other notifications", icon: Bell },
     ],
   },
 ];

@@ -1,5 +1,8 @@
 import { createDiffInventory } from "../03-build-diff-inventory/diff-inventory.js";
-import { validateMiniTreeAnalysis } from "../05-validate-candidate/validate-analysis.js";
+import {
+  validateMiniTreeAnalysis,
+  validateReviewStack,
+} from "../05-validate-candidate/validate-analysis.js";
 
 const diff = `diff --git a/src/example.js b/src/example.js
 index 0000000..1111111 100644
@@ -36,7 +39,7 @@ const validAnalysis = {
             changedLineIds: runtimeFile.changedLineIds.slice(0, 2),
             changeRole: "runtime",
             id: "change-runtime-value",
-            reviewClass: "core",
+            reviewClass: "important",
             title: "Change runtime value",
           }),
           miniNode({
@@ -71,7 +74,7 @@ const validAnalysis = {
             changedLineIds: testFile.changedLineIds,
             changeRole: "test",
             id: "update-value-expectation",
-            reviewClass: "core",
+            reviewClass: "important",
             title: "Update value expectation",
           }),
         ],
@@ -112,7 +115,7 @@ const contextGapAnalysis = {
             changedLineIds: contextGapFile.changedLineIds,
             changeRole: "runtime",
             id: "update-value-and-use",
-            reviewClass: "core",
+            reviewClass: "important",
             title: "Update value and use",
           }),
         ],
@@ -296,7 +299,7 @@ expectValid(patchMiniNode(validAnalysis, 0, 0, {
 }));
 
 expectValid(patchMiniNode(validAnalysis, 0, 1, {
-  reviewClass: "core",
+  reviewClass: "mechanical",
 }));
 
 expectValid(patchMiniNode(validAnalysis, 0, 1, {
@@ -311,7 +314,7 @@ expectValid(patchFile(validAnalysis, 0, {
 
 expectValid(patchMiniNode(validAnalysis, 1, 0, {
   changeRole: "type",
-  reviewClass: "core",
+  reviewClass: "supporting",
 }));
 
 expectInvalid({
@@ -486,13 +489,13 @@ function deriveDepths(miniTree) {
   return depths;
 }
 
-function expectValid(analysis, targetInventory = inventory) {
-  validateMiniTreeAnalysis(analysis, { inventory: targetInventory });
+function expectValid(analysis, targetInventory = inventory, reviewStack = undefined) {
+  validateMiniTreeAnalysis(analysis, { inventory: targetInventory, reviewStack });
 }
 
-function expectInvalid({ analysis, message, name }) {
+function expectInvalid({ analysis, message, name, reviewStack = undefined }) {
   try {
-    validateMiniTreeAnalysis(analysis, { inventory });
+    validateMiniTreeAnalysis(analysis, { inventory, reviewStack });
   } catch (error) {
     if (error.message.includes(message)) {
       return;
@@ -503,3 +506,180 @@ function expectInvalid({ analysis, message, name }) {
 
   throw new Error(`Expected ${name} to fail validation.`);
 }
+
+const validReviewStack = {
+  schemaVersion: "pr-graph-review-stack/v1",
+  stacks: [
+    { id: "runtime-value", title: "Runtime value change", comment: "The core behavior change.", fileIds: [runtimeFile.id] },
+    { id: "value-tests", title: "Value tests", comment: "Coverage for the runtime change.", fileIds: [testFile.id] },
+  ],
+};
+
+expectReviewStackValid(validReviewStack);
+
+expectReviewStackInvalid({
+  message: "must exactly match covered diff ids",
+  name: "review stack missing a changed file id",
+  stack: {
+    ...validReviewStack,
+    stacks: [validReviewStack.stacks[0]],
+  },
+});
+
+expectReviewStackInvalid({
+  message: "contains duplicate id",
+  name: "review stack with a duplicated file id",
+  stack: {
+    ...validReviewStack,
+    stacks: [
+      { ...validReviewStack.stacks[0], fileIds: [runtimeFile.id, testFile.id] },
+      validReviewStack.stacks[1],
+    ],
+  },
+});
+
+expectReviewStackInvalid({
+  message: "must be a non-empty string",
+  name: "review stack with a missing comment",
+  stack: {
+    ...validReviewStack,
+    stacks: [{ ...validReviewStack.stacks[0], comment: "" }, validReviewStack.stacks[1]],
+  },
+});
+
+function expectReviewStackValid(stack, targetInventory = inventory) {
+  validateReviewStack(stack, { inventory: targetInventory });
+}
+
+function expectReviewStackInvalid({ message, name, stack }) {
+  try {
+    validateReviewStack(stack, { inventory });
+  } catch (error) {
+    if (error.message.includes(message)) {
+      return;
+    }
+
+    throw new Error(`Expected ${name} to fail with "${message}", got:\n${error.message}`);
+  }
+
+  throw new Error(`Expected ${name} to fail validation.`);
+}
+
+// fileFlow is the file-to-file review order within one review stack (layer-flow-middle-tree
+// plan). runtimeFile is important/runtime and outranks testFile (supporting/test), so a
+// stack containing both must root at runtimeFile.
+const combinedReviewStack = {
+  schemaVersion: "pr-graph-review-stack/v1",
+  stacks: [{
+    id: "combined",
+    title: "Combined change",
+    comment: "The runtime change and its test reviewed together.",
+    fileIds: [runtimeFile.id, testFile.id],
+  }],
+};
+
+expectValid(
+  {
+    ...validAnalysis,
+    fileFlows: {
+      combined: {
+        edges: [{
+          from: runtimeFile.id,
+          to: testFile.id,
+          order: 0,
+          comment: "The test covers the runtime change.",
+        }],
+      },
+    },
+  },
+  inventory,
+  combinedReviewStack,
+);
+
+expectInvalid({
+  analysis: {
+    ...validAnalysis,
+    fileFlows: {},
+  },
+  message: "is missing fileFlows.combined",
+  name: "missing file flow for a review stack",
+  reviewStack: combinedReviewStack,
+});
+
+expectInvalid({
+  analysis: {
+    ...validAnalysis,
+    fileFlows: {
+      combined: {
+        edges: [{
+          from: runtimeFile.id,
+          to: "file-outside-stack",
+          order: 0,
+          comment: "Points outside the stack.",
+        }],
+      },
+    },
+  },
+  message: "references unknown to id",
+  name: "file flow edge pointing outside its review stack",
+  reviewStack: combinedReviewStack,
+});
+
+expectInvalid({
+  analysis: {
+    ...validAnalysis,
+    fileFlows: { combined: { edges: [] } },
+  },
+  message: "must contain exactly one root",
+  name: "file flow with two roots",
+  reviewStack: combinedReviewStack,
+});
+
+expectInvalid({
+  analysis: {
+    ...validAnalysis,
+    files: [
+      validAnalysis.files[0],
+      { ...validAnalysis.files[1], reviewClass: "important", changeRole: "snapshot" },
+    ],
+    fileFlows: {
+      combined: {
+        edges: [{
+          from: testFile.id,
+          to: runtimeFile.id,
+          order: 0,
+          comment: "Reviewed the snapshot first.",
+        }],
+      },
+    },
+  },
+  message: "is outranked by another file",
+  name: "file flow root is a snapshot file while a runtime file is present",
+  reviewStack: combinedReviewStack,
+});
+
+// Regression case for the tie bug: two files with identical reviewClass/changeRole (both
+// important/runtime) must both be acceptable roots. The model's choice between them is a
+// judgement call this validator cannot second-guess (see the plan's own PR 4919 data,
+// where several stacks have 2-3 important files each).
+expectValid(
+  {
+    ...validAnalysis,
+    files: [
+      validAnalysis.files[0],
+      { ...validAnalysis.files[1], reviewClass: "important", changeRole: "runtime" },
+    ],
+    fileFlows: {
+      combined: {
+        edges: [{
+          from: testFile.id,
+          to: runtimeFile.id,
+          order: 0,
+          comment: "Reviewed this file's change first even though both are important/runtime.",
+        }],
+      },
+    },
+  },
+  inventory,
+  combinedReviewStack,
+);

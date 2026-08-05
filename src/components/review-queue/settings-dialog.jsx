@@ -46,7 +46,7 @@ export function SettingsDialog({ open, onOpenChange, settings, onSave }) {
       <DialogContent>
         <form className="grid gap-5" onSubmit={submit}>
           <DialogHeader>
-            <p className="eyebrow">Queue inputs</p>
+            <p className="mb-2 flex items-center gap-2 text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-primary">Queue inputs</p>
             <DialogTitle>Configure your review orbit</DialogTitle>
             <DialogDescription>
               These lists are saved locally on disk and used to score teammate and GitHub team
@@ -64,8 +64,8 @@ export function SettingsDialog({ open, onOpenChange, settings, onSave }) {
               autoComplete="off"
               pattern="[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
             />
-            <p className="field-note">
-              Leave blank to use the account currently signed into <code>gh</code>.
+            <p className="m-0 text-[0.72rem] leading-normal text-muted-foreground">
+              Leave blank to use the account currently signed into <code className="rounded bg-muted px-[0.28rem] py-[0.08rem] text-foreground">gh</code>.
             </p>
           </div>
 
@@ -78,7 +78,7 @@ export function SettingsDialog({ open, onOpenChange, settings, onSave }) {
               placeholder="alice, bob, carol"
               autoComplete="off"
             />
-            <p className="field-note">Comma-separated. Each teammate-authored PR receives +7.</p>
+            <p className="m-0 text-[0.72rem] leading-normal text-muted-foreground">Comma-separated. Each teammate-authored PR receives +7.</p>
           </div>
 
           <div className="grid gap-2">
@@ -90,7 +90,7 @@ export function SettingsDialog({ open, onOpenChange, settings, onSave }) {
               placeholder="your-org/platform, your-org/mobile"
               autoComplete="off"
             />
-            <p className="field-note">Use the full org/team name, separated by commas.</p>
+            <p className="m-0 text-[0.72rem] leading-normal text-muted-foreground">Use the full org/team name, separated by commas.</p>
           </div>
 
           <DialogFooter>

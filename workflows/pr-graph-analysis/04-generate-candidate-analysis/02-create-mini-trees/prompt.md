@@ -22,10 +22,9 @@ reference a changed line from another file.
   Give each downstream node the nearest review parent that explains why a human
   should inspect it next. Do not attach every helper, contract, style, and setup
   node directly to the root merely because the root technically uses it.
-- The root must use `reviewClass: core` and be the file's core
-  meaningful change. It is the only node in the mini-tree allowed to use
-  `core`.
-  In a runtime file, this is usually the behavior/API/control-flow change, not
+- The root is whichever node has no incoming review edge; it is not marked by
+  `reviewClass`. Choose the file's most meaningful change as the root — in a
+  runtime file, this is usually the behavior/API/control-flow change, not
   imports, formatting, generated output, or other setup code near the top of
   the file.
 - A review-edge direction means: review the source question first, then inspect
@@ -36,16 +35,16 @@ reference a changed line from another file.
   target's code is implemented.
 - Each parent's review edges must use unique contiguous `order` values starting
   at 0. Order siblings by review value and narrative flow, never by line number.
-- Review priority is `core > important > supporting > mechanical`. Important,
-  supporting, and mechanical nodes must appear downstream from the core root.
-- Do not promote imports, formatting, generated output, or a secondary type
-  declaration to `core` when the file contains the runtime behavior, test
+- Review priority is `important > supporting > mechanical`. Order nodes by
+  that priority and by narrative flow, not by which one happens to be the root.
+- Do not make imports, formatting, generated output, or a secondary type
+  declaration the root when the file contains the runtime behavior, test
   assertion, story scenario, or primary exported contract that motivated it.
 - When equally important runtime and type nodes exist, the runtime behavior is
   the root. The contract follows because the behavior required it.
 - In a component file, rendering, interaction, state, or control-flow behavior
   must precede prop declarations, dependencies, style declarations, and setup.
-- In a test file, the assertion of the core behavior must precede shared render
+- In a test file, the assertion of the primary behavior must precede shared render
   setup, fixtures, mocks, and harness code.
 - In a story file, the visual scenarios must precede Storybook configuration
   and decorators. Keep related variant scenarios in a useful review sequence;
@@ -109,8 +108,8 @@ and must never influence this partition.
   of derived values/computations together.
 - Do not split a cohesive section to give secondary branches a lower
   `reviewClass`. Classify the whole section by its highest review significance.
-  For example, a core render section remains one `core/runtime` node even when
-  it contains supporting visual variants.
+  For example, an important render section remains one `important/runtime`
+  node even when it contains supporting visual variants.
 - Do not merge unrelated adjacent sections. An interface followed by component
   initialization, or handlers followed by rendering, remains separate even
   when every line is changed.
@@ -126,8 +125,8 @@ Required construction order:
 2. Verify every boundary is a real lexical or implementation-phase boundary.
 3. Assign one title, comment, `reviewClass`, and `changeRole` to each section.
 4. Build the logical review hierarchy between those complete sections.
-5. Audit the hierarchy as an edge list: exactly one `core` root has no incoming
-   edge, every other node has exactly one incoming edge, every edge stays
+5. Audit the hierarchy as an edge list: exactly one root has no incoming edge,
+   every other node has exactly one incoming edge, every edge stays
    file-local, and each parent's sibling orders are `0..n-1`.
 
 ## Technical Relations
@@ -155,10 +154,8 @@ Required construction order:
   extracting them from their cohesive section solely to create more concepts.
 - Put imports, formatting, and generated churn in mechanical mini-nodes.
 - Classify type sections by review value. Primary behavioral or public
-  contracts can be `core/type` or `important/type`; routine supporting
-  declarations can be `supporting/type` or `mechanical/type`.
-- The root node is always `core`, including the primary contract in a
-  type-only file.
+  contracts can be `important/type`; routine supporting declarations can be
+  `supporting/type` or `mechanical/type`.
 - Put runtime behavior in important or supporting mini-nodes.
 - `important` means the reviewer should see that node on the first pass.
   Secondary states, decorative variants, style implementation, analytics
@@ -171,7 +168,7 @@ Required construction order:
   contiguous. Do not extract them as supporting nodes merely for folding.
   Interaction dispatch, consequential control flow, and the primary behavioral
   contract are stronger candidates for separate important sections.
-- Audit the default first-pass projection containing only `core` and
+- Audit the default first-pass projection containing the root and other
   `important/runtime` nodes. It should normally expose no more than three
   sibling questions under one parent. Reclassify secondary runtime details as
   supporting rather than overwhelming the first pass.
@@ -190,7 +187,7 @@ Required construction order:
 
 Good mini-node examples:
 
-- `core/runtime`: "Refocus hidden input when wrapper is pressed"
+- `important/runtime`: "Refocus hidden input when wrapper is pressed" (the root)
 - `important/runtime`: "Render the new interactive content variants"
 - `supporting/runtime`: "Keep hidden input addressable through a ref"
 - `mechanical/imports`: "Import hooks and Pressable symbols"
@@ -209,6 +206,30 @@ Bad mini-node examples:
 - A test harness root pointing to the assertions it merely enables
 - A props/types/setup root pointing to the runtime behavior that motivated it
 
+## File Flow (Review Order Across This Stack's Files)
+
+Beyond each file's own mini-tree, decide the order a reviewer should open the
+files in this review stack. Return this as `fileFlow.edges[]`, one entry per
+file-to-file review relationship.
+
+- The source is the reason to review first; the target was caused, enabled,
+  required, or made necessary by that source. This is review causality, not
+  import direction — a component comes before the types, helpers, mocks, and
+  tests that support it, not after, even when the component imports them.
+- Do not order by file path, directory, or diff order. Coincidental
+  file-order flows are invalid, same as for a mini-tree's `reviewEdges`.
+- Every file in this stack appears in exactly one edge as `to`, except the
+  root, which appears in none. The root is the file whose change is the
+  reason the rest of the stack exists — usually the highest-priority file
+  present (`important` before `supporting` before `mechanical`; `runtime`
+  before `test`, `type`, and other supporting roles). A `test` or `snapshot`
+  file must not be the root when a `runtime` file is present in the stack.
+- Every non-root file has exactly one parent edge. Use unique contiguous
+  `order` values starting at 0 for each parent's children.
+- A hook, its tests, and the component that uses it stay adjacent in the flow
+  unless the hook is shared by more than one component in this stack.
+- A single-file stack returns `{"edges": []}`.
+
 ## Stage Output
 
 Return `pr-graph-mini-trees/v2` JSON containing:
@@ -216,5 +237,6 @@ Return `pr-graph-mini-trees/v2` JSON containing:
 - the overall review `intent`, `summary`, and `confidence`
 - every changed file in `files[]`
 - each file's complete logical `miniTree`
+- this stack's file-to-file review order in `fileFlow`
 
 Do not create middle trees or a super-tree in this stage.
