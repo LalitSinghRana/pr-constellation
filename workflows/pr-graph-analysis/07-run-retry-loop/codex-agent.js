@@ -31,6 +31,11 @@ const MINI_TREES_SCHEMA_PATH = path.join(
   "02-create-mini-trees",
   "schema.json",
 );
+const FILE_FLOW_SCHEMA_PATH = path.join(
+  CANDIDATE_WORKFLOW_DIR,
+  "02-create-mini-trees",
+  "file-flow.schema.json",
+);
 const REVIEW_STACK_PROMPT_PATH = path.join(
   CANDIDATE_WORKFLOW_DIR,
   "03-create-review-stack",
@@ -517,15 +522,27 @@ async function runShardedMiniTrees({
   });
 
   const fileFlows = {};
-  for (const [stackId, indices] of shardIndicesByStackId) {
-    // ponytail: a stack split across multiple shards (>MAX_FILES_PER_MINI_TREES_SHARD)
-    // gets no fileFlow — no single call saw the whole stack, so any flow a shard
-    // emitted only orders its own file subset. Upgrade path: a dedicated flow-only
-    // call per oversized stack, given just that stack's full file list.
+  await Promise.all([...shardIndicesByStackId].map(async ([stackId, indices]) => {
     if (indices.length === 1 && results[indices[0]]?.fileFlow) {
       fileFlows[stackId] = results[indices[0]].fileFlow;
+      return;
     }
-  }
+
+    const stack = stacks.find((candidate) => candidate.id === stackId);
+    const stackFileIds = new Set(stack.fileIds);
+    const files = results
+      .flatMap((result) => result.files || [])
+      .filter((file) => stackFileIds.has(file.id));
+    fileFlows[stackId] = await runJsonStage({
+      cwd,
+      executionConfig,
+      executeCodex,
+      outputPath: `${outputBase}.file-flow.${stackId}.json`,
+      prompt: buildFileFlowPrompt({ files, metadataText, previousFailure, stack }),
+      promptPath: `${promptBase}.file-flow.${stackId}.md`,
+      schemaPath: FILE_FLOW_SCHEMA_PATH,
+    });
+  }));
 
   const { fileFlow: _discardedShardFlow, ...firstResult } = results[0];
   const merged = {
@@ -606,6 +623,59 @@ reference only, so you know what you are not responsible for: ${
     throw new Error("Mini-tree prompt is missing its Inline Input heading.");
   }
   return `${basePrompt.slice(0, insertAt)}${scopeInstruction}${basePrompt.slice(insertAt)}`;
+}
+
+function buildFileFlowPrompt({ files, metadataText, previousFailure, stack }) {
+  const fileSummaries = files.map((file) => ({
+    id: file.id,
+    path: file.path,
+    reviewClass: file.reviewClass,
+    changeRole: file.changeRole,
+    comment: file.comment,
+    changes: (file.miniTree?.nodes || []).map((node) => ({
+      title: node.title,
+      reviewClass: node.reviewClass,
+      changeRole: node.changeRole,
+      comment: node.comment,
+    })),
+  }));
+
+  return `# PR File Flow
+
+Decide the file-to-file review order for the complete "${stack.title}" review
+stack. The mini-trees were generated in smaller shards, so this call must join
+all ${stack.fileIds.length} files into one rooted review-causality tree.
+
+- The source is the reason to review first; the target was caused, enabled,
+  required, or made necessary by that source. This is review causality, not
+  import direction.
+- Do not order by file path, directory, or input order.
+- Every file appears exactly once as \`to\`, except the single root, which never
+  appears as \`to\`. Every non-root has exactly one parent.
+- Prefer an \`important\` file over \`supporting\` over \`mechanical\` for the
+  root, and \`runtime\` over tests, snapshots, generated files, and other
+  supporting roles when those priorities differ.
+- Use contiguous \`order\` values starting at 0 for each parent's children.
+- Return only JSON matching the supplied schema.
+${previousFailure ? `\nThe previous attempt failed validation. Correct any relevant file-flow issue:\n\n${previousFailure}\n` : ""}
+## Pull request
+
+<metadata_json>
+${metadataText}
+</metadata_json>
+
+## Review stack
+
+<review_stack_json>
+${JSON.stringify(stack)}
+</review_stack_json>
+
+## Files and generated mini-tree summaries
+
+<files_json>
+${JSON.stringify(fileSummaries)}
+</files_json>
+`;
 }
 
 async function runCandidateEvaluation({

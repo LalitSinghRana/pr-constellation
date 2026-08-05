@@ -97,6 +97,7 @@ index 1111111..2222222 100644
             intent: "Replace the fixture value.",
             summary: "The fixture verifies frozen-input benchmark runs.",
             confidence: 1,
+            fileFlow: { edges: [] },
             files: [
               {
                 id: "file-1",
@@ -158,6 +159,15 @@ index 1111111..2222222 100644
     await readFile(result.stableHtmlPath, "utf8"),
     previousStableHtml,
   );
+  const {
+    fileFlows: fixtureFileFlows,
+    reviewStack: _fixtureReviewStack,
+    ...fixtureAnalysis
+  } = JSON.parse(await readFile(result.analysisPath, "utf8"));
+  const miniTreesFixture = `${JSON.stringify({
+    ...fixtureAnalysis,
+    fileFlow: fixtureFileFlows[reviewStackFixtureResult.stacks[0].id],
+  })}\n`;
 
   const claudeCalls = [];
   const claudeRunDir = path.join(reviewsDir, reviewSlug, "claude-run");
@@ -169,12 +179,13 @@ index 1111111..2222222 100644
       schemaPath,
     }) => {
       claudeCalls.push({ model, reasoningEffort });
-      const sourcePath = schemaPath.includes("03-create-review-stack")
-        ? path.join(result.runDir, "review-stack.json")
-        : schemaPath.includes("06-judge-candidate")
-          ? result.judgePath
-          : result.analysisPath;
-      await writeFile(outputPath, await readFile(sourcePath, "utf8"), "utf8");
+      if (schemaPath.includes("03-create-review-stack")) {
+        await writeFile(outputPath, await readFile(path.join(result.runDir, "review-stack.json"), "utf8"), "utf8");
+      } else if (schemaPath.includes("06-judge-candidate")) {
+        await writeFile(outputPath, await readFile(result.judgePath, "utf8"), "utf8");
+      } else {
+        await writeFile(outputPath, miniTreesFixture, "utf8");
+      }
     },
     model: "claude-sonnet-4-6",
     prUrl,
@@ -264,8 +275,7 @@ index 1111111..2222222 100644
     reviewSlug,
     "canceled-render-run",
   );
-  const [analysisFixture, judgeFixture, reviewStackFixture] = await Promise.all([
-    readFile(result.analysisPath, "utf8"),
+  const [judgeFixture, reviewStackFixture] = await Promise.all([
     readFile(result.judgePath, "utf8"),
     readFile(path.join(result.runDir, "review-stack.json"), "utf8"),
   ]);
@@ -281,7 +291,7 @@ index 1111111..2222222 100644
             ? reviewStackFixture
             : schemaPath.includes("06-judge-candidate")
               ? judgeFixture
-              : analysisFixture,
+              : miniTreesFixture,
           "utf8",
         );
         return {

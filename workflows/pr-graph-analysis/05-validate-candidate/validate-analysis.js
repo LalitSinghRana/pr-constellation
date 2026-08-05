@@ -216,7 +216,11 @@ function validateFiles({ analysis, errors, inventory }) {
 export function validateFileFlow({ analysis, errors, reviewStack }) {
   const fileFlows = analysis?.fileFlows;
 
-  if (!fileFlows || typeof fileFlows !== "object" || !reviewStack?.stacks) {
+  if (!reviewStack?.stacks) {
+    return;
+  }
+  if (!fileFlows || typeof fileFlows !== "object") {
+    errors.push("analysis.json fileFlows must be an object.");
     return;
   }
 
@@ -225,10 +229,8 @@ export function validateFileFlow({ analysis, errors, reviewStack }) {
   for (const stack of reviewStack.stacks) {
     const flow = fileFlows[stack.id];
 
-    // No fileFlow for this stack is accepted: a stack split across multiple mini-tree
-    // shards (over MAX_FILES_PER_MINI_TREES_SHARD) never has a single call that saw it
-    // whole, so codex-agent.js deliberately emits none rather than a partial ordering.
     if (!flow) {
+      errors.push(`analysis.json is missing fileFlows.${stack.id}.`);
       continue;
     }
 

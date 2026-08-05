@@ -1147,8 +1147,6 @@ function buildFilePageSpecs(
       viewMode: fileOrderViewIds.has(file.id) ? "file" : "tree",
     }));
 
-  // Sharded stacks (larger than MAX_FILES_PER_MINI_TREES_SHARD) get no fileFlow
-  // entry at all, since no single mini-tree call ever saw the whole stack.
   const fileFlow = activeStack ? analysis?.fileFlows?.[activeStack.id] : null;
   return fileFlow
     ? layoutFilePagesByFlow(fileLayouts, fileFlow.edges)

@@ -1073,32 +1073,37 @@ try {
   await rm(failedRunDir, { force: true, recursive: true });
 }
 
-// runShardedMiniTrees only fires once review-stack returns more than one stack, so this
-// is the only scenario in this file that exercises sharding, per-shard fileFlow
-// collection, and merging files back together from concurrent calls.
-const shardedDiff = `diff --git a/src/a.js b/src/a.js
+// runShardedMiniTrees only fires once review-stack returns more than one stack.
+// Stack A deliberately exceeds MAX_FILES_PER_MINI_TREES_SHARD so this also proves
+// the complete-stack flow-only call fills the layer-flow that shards cannot produce.
+const shardedDiff = Array.from({ length: 17 }, (_, index) => {
+  const name = `file-${String(index + 1).padStart(2, "0")}`;
+  return `diff --git a/src/${name}.js b/src/${name}.js
 index 0000000..1111111 100644
---- a/src/a.js
-+++ b/src/a.js
+--- a/src/${name}.js
++++ b/src/${name}.js
 @@ -1 +1 @@
--const a = 1;
-+const a = 2;
-diff --git a/src/b.js b/src/b.js
-index 0000000..2222222 100644
---- a/src/b.js
-+++ b/src/b.js
-@@ -1 +1 @@
--const b = 1;
-+const b = 2;
+-const value = 1;
++const value = 2;
 `;
+}).join("");
 const shardedRunDir = await mkdtemp(path.join(tmpdir(), "prc-analysis-sharded-"));
 
 try {
   const inventory = createDiffInventory(shardedDiff);
-  const [fileA, fileB] = inventory.files;
-  const stackA = { id: "stack-a", title: "Stack A", comment: "File a change.", fileIds: [fileA.id] };
-  const stackB = { id: "stack-b", title: "Stack B", comment: "File b change.", fileIds: [fileB.id] };
+  const stackAFiles = inventory.files.slice(0, 16);
+  const stackBFiles = inventory.files.slice(16);
+  const stackA = { id: "stack-a", title: "Stack A", comment: "The oversized change.", fileIds: stackAFiles.map((file) => file.id) };
+  const stackB = { id: "stack-b", title: "Stack B", comment: "The independent change.", fileIds: stackBFiles.map((file) => file.id) };
   const shardedReviewStack = { schemaVersion: "pr-graph-review-stack/v1", stacks: [stackA, stackB] };
+  const fullStackAFlow = {
+    edges: stackA.fileIds.slice(1).map((fileId, order) => ({
+      from: stackA.fileIds[0],
+      to: fileId,
+      order,
+      comment: "Review this supporting file after the root change.",
+    })),
+  };
   const calls = [];
 
   await writeRunInputs({
@@ -1107,18 +1112,25 @@ try {
     runDir: shardedRunDir,
   });
 
-  const buildShardCandidate = (file) => ({
+  const buildShardCandidate = (files) => ({
     schemaVersion: "pr-graph-mini-trees/v2",
     intent: "Review the sharded change.",
-    summary: "Two independent files change independently.",
+    summary: "Several related files and one independent file change.",
     confidence: 1,
-    fileFlow: { edges: [] },
-    files: [{
+    fileFlow: {
+      edges: files.slice(1).map((file, order) => ({
+        from: files[0].id,
+        to: file.id,
+        order,
+        comment: "Review this file after the shard root.",
+      })),
+    },
+    files: files.map((file) => ({
       id: file.id,
       path: file.path,
       reviewClass: "important",
       changeRole: "runtime",
-      comment: "This file owns its own constant update.",
+      comment: "This file owns its constant update.",
       miniTree: {
         nodes: [{
           id: "change-constant",
@@ -1131,7 +1143,7 @@ try {
         reviewEdges: [],
         relations: [],
       },
-    }],
+    })),
   });
 
   const executeCodex = async ({ outputPath, prompt, schemaPath }) => {
@@ -1141,14 +1153,28 @@ try {
       return { usage: {} };
     }
 
+    if (schemaPath.endsWith("file-flow.schema.json")) {
+      calls.push("flow-a");
+      assert.deepEqual(
+        extractJsonTag(prompt, "files_json").map((file) => file.id),
+        stackA.fileIds,
+      );
+      await writeFile(outputPath, `${JSON.stringify(fullStackAFlow)}\n`, "utf8");
+      return { usage: {} };
+    }
+
     assert.match(schemaPath, /02-create-mini-trees/);
+    const inputFileIds = extractJsonTag(prompt, "structured_diff_json").files.map((file) => file.id);
+    const inputFiles = inputFileIds.map((fileId) => (
+      inventory.files.find((file) => file.id === fileId)
+    ));
 
     if (prompt.includes(`"${stackA.title}" review stack`)) {
-      calls.push("mini-a");
-      await writeFile(outputPath, `${JSON.stringify(buildShardCandidate(fileA))}\n`, "utf8");
+      calls.push(`mini-a-${inputFiles.length}`);
+      await writeFile(outputPath, `${JSON.stringify(buildShardCandidate(inputFiles))}\n`, "utf8");
     } else if (prompt.includes(`"${stackB.title}" review stack`)) {
-      calls.push("mini-b");
-      await writeFile(outputPath, `${JSON.stringify(buildShardCandidate(fileB))}\n`, "utf8");
+      calls.push("mini-b-1");
+      await writeFile(outputPath, `${JSON.stringify(buildShardCandidate(inputFiles))}\n`, "utf8");
     } else {
       assert.fail("Mini-tree shard prompt did not name its review stack.");
     }
@@ -1167,22 +1193,20 @@ try {
     runDir: shardedRunDir,
   });
 
-  assert.deepEqual(calls.sort(), ["mini-a", "mini-b", "review-stack-1"]);
+  assert.deepEqual(calls.sort(), ["flow-a", "mini-a-1", "mini-a-15", "mini-b-1", "review-stack-1"]);
   assert.deepEqual(
     result.analysis.files.map((file) => file.id).sort(),
-    [fileA.id, fileB.id].sort(),
+    inventory.files.map((file) => file.id).sort(),
   );
   assert.deepEqual(result.analysis.fileFlows, {
-    [stackA.id]: { edges: [] },
+    [stackA.id]: fullStackAFlow,
     [stackB.id]: { edges: [] },
   });
   assert.equal(result.analysis.fileFlow, undefined);
   validateMiniTreeAnalysis(result.analysis, { inventory, reviewStack: shardedReviewStack });
-  // Both stacks are single-file with no edges, so this only exercises the trivial case:
-  // depth 0, every stack's one-file "order" trivially matches inventory order, no bad root.
   const shardedAnalysisMetrics = findFinishEvent(shardedEvents, "analysis").metrics;
   assert.equal(shardedAnalysisMetrics.badRootCount, 0);
-  assert.equal(shardedAnalysisMetrics.flowDepth, 0);
+  assert.equal(shardedAnalysisMetrics.flowDepth, 1);
   assert.equal(shardedAnalysisMetrics.sourceOrderMatch, 1);
 } finally {
   await rm(shardedRunDir, { force: true, recursive: true });

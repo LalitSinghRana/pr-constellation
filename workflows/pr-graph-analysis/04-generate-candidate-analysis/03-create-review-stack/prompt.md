@@ -21,13 +21,17 @@ unless the PR is genuinely nothing but a broad test-only sweep.
 
 ## When to split, and how many stacks
 
-Look at the whole structured diff before deciding. Most small or single-purpose
-PRs are already coherent: return exactly one stack rather than inventing a
-split that adds no reviewing value. Split only when the PR visibly contains
-more than one independent concern or feature, and a reviewer would benefit
-from reviewing them separately. Prefer 2-5 stacks when splitting; do not
-create a stack per file, and do not split solely because a PR touches many
-files if those files all serve one coherent change.
+Split into 2-5 stacks when the PR contains distinct or somewhat independent
+features, fixes, behaviors, or review questions, or when one change has
+coherent stages best reviewed linearly. Each stack must be a coherent unit for
+a reviewer, but may depend on an earlier stack; it need not compile or ship
+independently. For example: "data model -> API/actions -> UI integration."
+
+Do not split by file type or create a stack per file. Avoid one dominant stack
+plus a tiny peripheral stack: merge the small change into the unit it supports
+or subdivide the dominant stack by behavior or stage. Return one stack only
+when every meaningful split would separate changes that must be understood
+together.
 
 ## Requirements
 

@@ -599,6 +599,16 @@ expectValid(
 expectInvalid({
   analysis: {
     ...validAnalysis,
+    fileFlows: {},
+  },
+  message: "is missing fileFlows.combined",
+  name: "missing file flow for a review stack",
+  reviewStack: combinedReviewStack,
+});
+
+expectInvalid({
+  analysis: {
+    ...validAnalysis,
     fileFlows: {
       combined: {
         edges: [{

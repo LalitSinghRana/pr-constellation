@@ -83,7 +83,6 @@ const SHIKI_LANGUAGE_ALIASES = new Map([
   ["ts", "typescript"],
   ["yml", "yaml"],
 ]);
-let graphAssetsPromise;
 let syntaxHighlighterPromise;
 
 export async function renderDiffHtml({ analysis = null, pr, diff }) {
@@ -129,8 +128,7 @@ ${graphAssets?.css || ""}
 }
 
 async function getGraphAssets() {
-  graphAssetsPromise ||= buildGraphAssets();
-  return graphAssetsPromise;
+  return buildGraphAssets();
 }
 
 async function buildGraphAssets() {
