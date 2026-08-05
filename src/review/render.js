@@ -3,16 +3,13 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/postcss";
-import diff2html from "diff2html";
 import esbuild from "esbuild";
 import postcss from "postcss";
 import { createHighlighter } from "shiki";
 import { createDiffInventory } from "../../workflows/pr-graph-analysis/03-build-diff-inventory/diff-inventory.js";
 
 const require = createRequire(import.meta.url);
-const ANALYSIS_SCHEMA_PATH = fileURLToPath(new URL("../../workflows/pr-graph-analysis/04-generate-candidate-analysis/02-create-mini-trees/schema.json", import.meta.url));
 const GRAPH_APP_ENTRY = fileURLToPath(new URL("./graph-app.jsx", import.meta.url));
-const JSON_VIEW_CSS_PATH = require.resolve("react-json-view-lite/dist/index.css");
 const SRC_DIR = fileURLToPath(new URL("..", import.meta.url));
 const WEB_STYLES_ENTRY = fileURLToPath(new URL("./styles.css", import.meta.url));
 const SHIKI_THEMES = { light: "light-plus", dark: "dark-plus" };
@@ -86,18 +83,7 @@ const SHIKI_LANGUAGE_ALIASES = new Map([
 let syntaxHighlighterPromise;
 
 export async function renderDiffHtml({ analysis = null, pr, diff }) {
-  const rawDiffHtml = diff2html.html(diff, {
-    drawFileList: true,
-    matching: "lines",
-    outputFormat: "side-by-side",
-    renderNothingWhenEmpty: false,
-    synchronisedScroll: true,
-  });
-
-  const diff2htmlCss = await readFile(require.resolve("diff2html/bundles/css/diff2html.min.css"), "utf8");
-  const analysisSchema = JSON.parse(await readFile(ANALYSIS_SCHEMA_PATH, "utf8"));
   const syntaxHighlighter = await getSyntaxHighlighter();
-  const diffHtml = highlightDiffHtml({ diffHtml: rawDiffHtml, syntaxHighlighter });
   const graphAssets = await getGraphAssets();
   const graphData = analysis ? buildGraphData({ analysis, diff, syntaxHighlighter }) : null;
 
@@ -111,17 +97,13 @@ export async function renderDiffHtml({ analysis = null, pr, diff }) {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <style>
-${diff2htmlCss}
 ${graphAssets?.css || ""}
     </style>
   </head>
   <body>
     <div id="pr-review-root"></div>
     <script id="pr-review-data" type="application/json">${serializeJsonForScript(buildReviewData({ graphData, pr }))}</script>
-    <script id="pr-analysis-schema" type="application/json">${serializeJsonForScript(analysisSchema)}</script>
-    <script id="pr-analysis-output" type="application/json">${serializeJsonForScript(analysis)}</script>
     <script id="pr-analysis-data" type="application/json">${serializeJsonForScript(graphData)}</script>
-    <script id="pr-diff-html" type="application/json">${serializeJsonForScript(diffHtml)}</script>
     <script>${escapeScript(graphAssets.js)}</script>
   </body>
 </html>`;
@@ -132,7 +114,7 @@ async function getGraphAssets() {
 }
 
 async function buildGraphAssets() {
-  const [bundle, jsonViewCss, webCss] = await Promise.all([
+  const [bundle, webCss] = await Promise.all([
     esbuild.build({
       entryPoints: [GRAPH_APP_ENTRY],
       bundle: true,
@@ -144,7 +126,6 @@ async function buildGraphAssets() {
       plugins: [aliasAtPlugin()],
       logLevel: "silent",
     }),
-    readFile(JSON_VIEW_CSS_PATH, "utf8"),
     buildWebCss(),
   ]);
 
@@ -157,7 +138,7 @@ async function buildGraphAssets() {
   const diffViewCss = await readFile(require.resolve("@git-diff-view/react/styles/diff-view.css"), "utf8");
 
   return {
-    css: `${await readFile(require.resolve("@xyflow/react/dist/style.css"), "utf8")}\n${diffViewCss}\n${jsonViewCss}\n${webCss}`,
+    css: `${await readFile(require.resolve("@xyflow/react/dist/style.css"), "utf8")}\n${diffViewCss}\n${webCss}`,
     js,
   };
 }
@@ -836,49 +817,6 @@ function toSyntaxToken(token) {
   return style ? { content: token.content, style } : { content: token.content };
 }
 
-function highlightDiffHtml({ diffHtml, syntaxHighlighter }) {
-  let currentLang = "plaintext";
-
-  return diffHtml.replace(
-    /<div id="[^"]+" class="d2h-file-wrapper" data-lang="([^"]*)">|<span class="d2h-code-line-ctn">([\s\S]*?)<\/span>/g,
-    (match, diffLanguage, inlineHtml) => {
-      if (diffLanguage != null) {
-        currentLang = normalizeShikiLanguage(diffLanguage);
-        return match;
-      }
-
-      return `<span class="d2h-code-line-ctn shiki-inline-code" data-shiki-highlighted="true">${highlightInlineDiffHtml({
-        inlineHtml,
-        lang: currentLang,
-        syntaxHighlighter,
-      })}</span>`;
-    },
-  );
-}
-
-function highlightInlineDiffHtml({ inlineHtml, lang, syntaxHighlighter }) {
-  const segments = parseInlineDiffSegments(inlineHtml);
-  const code = segments.map((segment) => segment.text).join("");
-
-  if (!code) {
-    return /<br\s*\/?>/i.test(inlineHtml) ? "<br>" : "";
-  }
-
-  const tokens = tokensForLine({ code, lang, syntaxHighlighter });
-
-  return segments
-    .map((segment) => {
-      const html = renderTokenRange({
-        end: segment.end,
-        start: segment.start,
-        tokens,
-      });
-
-      return segment.tag ? `<${segment.tag}>${html}</${segment.tag}>` : html;
-    })
-    .join("");
-}
-
 function tokensForLine({ code, lang, syntaxHighlighter }) {
   return tokensForSource({ code, lang, syntaxHighlighter })[0] || [];
 }
@@ -900,36 +838,6 @@ function tokensForSource({ code, lang, syntaxHighlighter }) {
       themes: SHIKI_THEMES,
     }).tokens;
   }
-}
-
-function renderTokenRange({ end, start, tokens }) {
-  let html = "";
-
-  for (const token of tokens) {
-    const tokenStart = token.offset ?? 0;
-    const tokenEnd = tokenStart + token.content.length;
-    const overlapStart = Math.max(start, tokenStart);
-    const overlapEnd = Math.min(end, tokenEnd);
-
-    if (overlapEnd <= overlapStart) {
-      continue;
-    }
-
-    const content = token.content.slice(overlapStart - tokenStart, overlapEnd - tokenStart);
-    html += renderShikiToken(content, token.htmlStyle);
-  }
-
-  return html;
-}
-
-function renderShikiToken(content, htmlStyle = {}) {
-  const style = shikiTokenStyle(htmlStyle);
-
-  if (!style) {
-    return escapeHtml(content);
-  }
-
-  return `<span class="shiki-token" style="${escapeAttribute(style)}">${escapeHtml(content)}</span>`;
 }
 
 function shikiTokenStyle(htmlStyle) {
@@ -955,39 +863,6 @@ function shikiTokenStyle(htmlStyle) {
   }
 
   return declarations.join(";");
-}
-
-function parseInlineDiffSegments(inlineHtml) {
-  const segments = [];
-  const tokenPattern = /<(\/?)(ins|del)>|<br\s*\/?>|([^<]+)/gi;
-  let activeTag = null;
-  let offset = 0;
-
-  for (let match = tokenPattern.exec(inlineHtml); match; match = tokenPattern.exec(inlineHtml)) {
-    if (match[2]) {
-      activeTag = match[1] ? null : match[2].toLowerCase();
-      continue;
-    }
-
-    if (match[0].startsWith("<br")) {
-      continue;
-    }
-
-    const text = decodeHtmlEntities(match[3] || "");
-    if (!text) {
-      continue;
-    }
-
-    segments.push({
-      end: offset + text.length,
-      start: offset,
-      tag: activeTag,
-      text,
-    });
-    offset += text.length;
-  }
-
-  return segments;
 }
 
 function languageForPath(filePath) {
@@ -1150,31 +1025,6 @@ function fallbackSnippetLines(excerpt) {
     }));
 }
 
-function decodeHtmlEntities(value) {
-  return String(value).replace(/&(#x[0-9a-f]+|#\d+|amp|apos|gt|lt|nbsp|quot);/gi, (match, entity) => {
-    const normalized = entity.toLowerCase();
-
-    if (normalized.startsWith("#x")) {
-      return String.fromCodePoint(Number.parseInt(normalized.slice(2), 16));
-    }
-
-    if (normalized.startsWith("#")) {
-      return String.fromCodePoint(Number.parseInt(normalized.slice(1), 10));
-    }
-
-    return (
-      {
-        amp: "&",
-        apos: "'",
-        gt: ">",
-        lt: "<",
-        nbsp: " ",
-        quot: "\"",
-      }[normalized] || match
-    );
-  });
-}
-
 function buildReviewData({ graphData, pr }) {
   return {
     additions: pr.additions ?? null,
@@ -1199,10 +1049,6 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-function escapeAttribute(value) {
-  return escapeHtml(value).replace(/`/g, "&#96;");
 }
 
 function serializeJsonForScript(value) {

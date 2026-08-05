@@ -83,6 +83,11 @@
   pointer-events: auto !important;
 }
 
+.flow-canvas .react-flow__node[aria-current="step"] {
+  border-radius: 12px;
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--primary) 62%, transparent);
+}
+
 .flow-canvas .react-flow__edge.mini-tree-edge {
   z-index: 4;
 }
@@ -802,50 +807,10 @@
     color: color-mix(in oklab, var(--destructive) 80%, var(--foreground));
   }
 
-  .review-tabs-list {
-    flex: 0 0 auto;
-    height: 36px;
-    margin-top: 0;
-    border: 1px solid var(--border);
-    background: color-mix(in oklab, var(--secondary) 76%, var(--card));
-    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--card) 80%, transparent), var(--shadow-2xs);
-  }
-
-  .review-tab-trigger {
-    height: 28px;
-    border-radius: calc(var(--radius) - 6px);
-    color: var(--muted-foreground);
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0;
-    padding: 0 12px;
-  }
-
-  .review-tab-trigger[data-state="active"] {
-    background: var(--card) !important;
-    color: var(--foreground) !important;
-    box-shadow: var(--shadow-xs);
-  }
-
-  .review-tab-panels {
+  .review-main {
+    display: grid;
     min-height: 0;
     overflow: hidden;
-  }
-
-  .review-tab-content {
-    height: 100%;
-    min-height: 0;
-    outline: none;
-  }
-
-  .review-tab-content[data-state="inactive"] {
-    display: none;
-  }
-
-  .graph-tab {
-    display: grid;
-    grid-template-rows: minmax(0, 1fr);
-    padding: 0;
   }
 
   .graph-panel,
@@ -893,8 +858,79 @@
     top: 16px;
     left: 18px;
     z-index: 11;
-    max-width: 320px;
+    max-width: min(320px, calc(50% - 70px));
     background: color-mix(in oklab, var(--card) 90%, transparent) !important;
+    backdrop-filter: blur(12px);
+  }
+
+  .review-step-button {
+    position: absolute;
+    top: 50%;
+    z-index: 12;
+    width: 44px;
+    height: 44px;
+    border-color: color-mix(in oklab, var(--mini-tree-color) 30%, var(--border));
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--card) 90%, transparent);
+    color: color-mix(in oklab, var(--mini-tree-color) 78%, var(--foreground));
+    box-shadow: 0 8px 24px color-mix(in oklab, var(--foreground) 12%, transparent);
+    transform: translateY(-50%);
+    backdrop-filter: blur(12px);
+  }
+
+  .review-step-button.is-previous-file {
+    left: 16px;
+    top: calc(50% + 26px);
+  }
+
+  .review-step-button.is-previous {
+    left: 16px;
+    top: calc(50% - 26px);
+  }
+
+  .review-step-button.is-next {
+    right: 16px;
+    top: calc(50% - 26px);
+  }
+
+  .review-step-button.is-next-file {
+    right: 16px;
+    top: calc(50% + 26px);
+  }
+
+  .review-step-button:hover:not(:disabled) {
+    border-color: color-mix(in oklab, var(--mini-tree-color) 58%, var(--border));
+    background: color-mix(in oklab, var(--accent) 86%, var(--card));
+  }
+
+  .review-progress {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    z-index: 12;
+    min-width: 64px;
+    border: 1px solid color-mix(in oklab, var(--mini-tree-color) 24%, var(--border));
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--card) 90%, transparent);
+    color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 8px 10px;
+    text-align: center;
+    transform: translateX(-50%);
+    backdrop-filter: blur(12px);
+  }
+
+  .review-minimap {
+    top: 16px !important;
+    right: 18px !important;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--mini-tree-color) 24%, var(--border));
+    border-radius: 8px;
+    background: color-mix(in oklab, var(--card) 92%, transparent);
+    box-shadow: 0 8px 24px color-mix(in oklab, var(--foreground) 10%, transparent);
     backdrop-filter: blur(12px);
   }
 
@@ -1026,28 +1062,6 @@
     padding: 1px 4px;
   }
 
-  .react-flow__controls {
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: calc(var(--radius) - 8px);
-    box-shadow: none;
-  }
-
-  .react-flow__controls-button {
-    border-bottom: 1px solid var(--border);
-    color: var(--muted-foreground);
-  }
-
-  .react-flow__controls-button:last-child {
-    border-bottom: 0;
-  }
-
-  .react-flow__controls-button:hover {
-    background: var(--accent);
-    color: var(--accent-foreground);
-  }
-
-
   .node-handle {
     width: 1px;
     height: 1px;
@@ -1062,180 +1076,6 @@
 
   .dark .shiki-token {
     color: var(--shiki-dark, var(--shiki-light)) !important;
-  }
-
-  .diff-tab {
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .json-tab {
-    min-height: 0;
-    overflow: hidden;
-    background: var(--card);
-  }
-
-  .json-workspace {
-    display: grid !important;
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: 0 !important;
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-  }
-
-  .json-toolbar {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    border-bottom: 1px solid var(--border);
-    background: color-mix(in oklab, var(--background) 88%, var(--card));
-    padding: 10px 16px;
-  }
-
-  .json-tabs-list {
-    height: 34px;
-    border: 1px solid var(--border);
-    background: color-mix(in oklab, var(--secondary) 72%, var(--card));
-  }
-
-  .json-tab-trigger {
-    height: 26px;
-    border-radius: calc(var(--radius) - 7px);
-    color: var(--muted-foreground);
-    font-size: 12px;
-    font-weight: 750;
-    letter-spacing: 0;
-    padding: 0 11px;
-  }
-
-  .json-tab-trigger[data-state="active"] {
-    background: var(--card) !important;
-    color: var(--foreground) !important;
-    box-shadow: var(--shadow-xs);
-  }
-
-  .json-document-panel {
-    min-width: 0;
-    min-height: 0;
-    overflow: hidden;
-    outline: none;
-  }
-
-  .json-document-panel[data-state="inactive"] {
-    display: none;
-  }
-
-  .json-document {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    width: 100%;
-    height: 100%;
-    min-width: 0;
-    min-height: 0;
-  }
-
-  .json-document-actions {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 4px;
-    border-bottom: 1px solid var(--border);
-    background: color-mix(in oklab, var(--background) 94%, var(--card));
-    padding: 6px 16px;
-  }
-
-  .json-tree-action {
-    border: 1px solid transparent;
-    color: var(--muted-foreground);
-  }
-
-  .json-tree-action:hover,
-  .json-tree-action:focus-visible,
-  .json-tree-action[aria-pressed="true"] {
-    border-color: var(--border);
-    background: var(--card);
-    color: var(--foreground);
-  }
-
-  .json-document-scroll {
-    width: 100%;
-    height: 100%;
-    min-width: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    background: var(--card);
-    color: var(--foreground);
-    cursor: text;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 1.45;
-    padding: 16px 20px 32px;
-    user-select: text;
-    -webkit-user-select: text;
-  }
-
-  .json-document-scroll ._2IvMF {
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
-    background: transparent;
-  }
-
-  .json-document-scroll ._2bkNM,
-  .json-document-scroll ._1BXBN {
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
-    box-sizing: border-box;
-  }
-
-  .json-document-scroll ._2bkNM {
-    padding-right: 0;
-  }
-
-  .json-document-scroll ._GzYRV,
-  .json-document-scroll [role="treeitem"] {
-    min-width: 0;
-    max-width: 100%;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  .diff-scroll {
-    height: 100%;
-    overflow: auto;
-    padding: 16px 24px 24px;
-  }
-
-  .diff-shell {
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--card);
-    box-shadow: var(--shadow-xs);
-  }
-
-  .d2h-file-list-wrapper {
-    border-bottom: 1px solid var(--border);
-  }
-
-  .d2h-file-header {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-  }
-
-  .d2h-code-side-line,
-  .d2h-code-line {
-    font-family: var(--font-mono);
-    font-size: 12px;
-  }
-
-  .d2h-code-line-ctn .shiki-token {
-    font: inherit;
   }
 
 }
@@ -1262,41 +1102,20 @@
     order: 2;
   }
 
-  .review-tabs-list {
-    order: 3;
-  }
-
   .review-meta {
     justify-content: flex-start;
     max-width: 100%;
   }
 
-  .graph-tab,
-  .diff-scroll {
-    padding: 0;
-  }
-
-  .json-toolbar {
-    padding: 8px 10px;
-  }
-
-  .json-tabs-list {
-    max-width: 100%;
-  }
-
-  .json-tab-trigger {
-    padding: 0 8px;
-  }
-
-  .json-document-actions {
-    padding: 6px 10px;
-  }
-
-  .json-document-scroll {
-    padding: 12px 10px 24px;
-  }
-
   .flow-reader {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-canvas .react-flow__node[aria-current="step"],
+  .review-progress,
+  .review-step-button {
+    transition: none !important;
   }
 }

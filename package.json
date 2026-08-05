@@ -40,7 +40,6 @@
     "radix-ui": "^1.6.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-json-view-lite": "2.5.0",
     "react-markdown": "^10.1.0",
     "shadcn": "^4.14.0",
     "shiki": "^4.3.1",

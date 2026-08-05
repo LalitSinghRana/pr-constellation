@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import {
-  Braces,
-  ChevronsDownUp,
-  ChevronsUpDown,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   FileCode2,
   FileDiff,
   FolderTree,
@@ -14,19 +14,16 @@ import {
   GitPullRequest,
   MessageSquareText,
   Network,
-  RotateCcw,
   UserRound,
 } from "lucide-react";
 import { DiffModeEnum, DiffView } from "@git-diff-view/react";
-import { JsonView, allExpanded, collapseAllNested, defaultStyles } from "react-json-view-lite";
 import {
   Background,
   BackgroundVariant,
   BaseEdge,
-  ControlButton,
-  Controls,
   Handle,
   MarkerType,
+  MiniMap,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -46,7 +43,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select.jsx";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs.jsx";
+import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.jsx";
 import { foldMiniTree, normalizeMiniTree } from "./mini-tree-model.js";
 
 const FILE_PAGE_GAP_X = 160;
@@ -69,12 +66,33 @@ const MINI_TREE_GROUP_NODE_WIDTH = 520;
 const MINI_TREE_LAYER_GAP_Y = 110;
 const MINI_TREE_SIBLING_GAP_X = 72;
 const MIN_GRAPH_ZOOM = 0.18;
+const REVIEW_CAMERA_DURATION = 220;
+const REVIEW_CAMERA_PADDING_X = 80;
+const REVIEW_NODE_MAX_ZOOM = 1.25;
 const FILE_FLOW_LAYER_GAP_Y = FILE_PAGE_STACK_GAP_Y * 3;
 const FILE_FLOW_SIBLING_GAP_X = FILE_PAGE_GAP_X;
-const VIEWPORT_PADDING_Y = 96;
+const VIEWPORT_PADDING_Y = 176;
 const FALLBACK_GRAPH_VIEWPORT = { x: 72, y: 52, zoom: 0.86 };
 const FILE_FLOW_SOURCE_HANDLE = "file-flow-source";
 const FILE_FLOW_TARGET_HANDLE = "file-flow-target";
+const REVIEW_NAVIGATION_CONTROL_SELECTOR = [
+  "a",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "[contenteditable=true]",
+  "[role=button]",
+  "[role=combobox]",
+  "[role=dialog]",
+  "[role=listbox]",
+  "[role=menu]",
+  "[role=menuitem]",
+  "[role=option]",
+  "[role=slider]",
+  "[role=tab]",
+  "[role=textbox]",
+].join(", ");
 const FILE_REVIEW_CLASS_PRIORITY = new Map([
   ["important", 0],
   ["supporting", 1],
@@ -105,10 +123,7 @@ const edgeTypes = {
 
 function App() {
   const review = useMemo(readReviewData, []);
-  const analysisSchema = useMemo(readAnalysisSchema, []);
-  const analysisOutput = useMemo(readAnalysisOutput, []);
   const reactFlowData = useMemo(readReactFlowData, []);
-  const diffHtml = useMemo(readDiffHtml, []);
   const hasGraph = Boolean((reactFlowData?.files || []).some((file) => miniTreeNodes(file).length > 0));
   const expansionStorageKey = useMemo(() => {
     return `pr-review-tree-expansion:${window.location.pathname}`;
@@ -174,46 +189,32 @@ function App() {
   }, [setFileOrderViewIds]);
 
   return (
-    <Tabs className="review-shell" defaultValue={hasGraph ? "graph" : "diff"}>
-      <ReviewHeader hasGraph={hasGraph} review={review} />
-      <main className="review-tab-panels">
-        <TabsContent className="review-tab-content graph-tab" value="graph">
-          {hasGraph ? (
-            <section className="graph-panel" aria-label="PR review tree">
-              <ReactFlowProvider>
-                <GraphCanvas
-                  activeStackId={activeStackId}
-                  graph={graph}
-                  onActiveStackChange={setActiveStackId}
-                  onFileViewModeChange={setFileViewMode}
-                  onMeasuredHeightsChange={handleMeasuredHeightsChange}
-                  onToggleCollapsedGroup={toggleCollapsedGroup}
-                  stacks={stacks}
-                />
-              </ReactFlowProvider>
-            </section>
-          ) : (
-            <section className="empty-panel">Review tree is not available for this run.</section>
-          )}
-        </TabsContent>
-        <TabsContent className="review-tab-content diff-tab" value="diff">
-          <div className="diff-scroll">
-            <article className="diff-shell" dangerouslySetInnerHTML={{ __html: diffHtml }} />
-          </div>
-        </TabsContent>
-        <TabsContent className="review-tab-content json-tab" forceMount value="json">
-          <JsonWorkspace
-            analysisOutput={analysisOutput}
-            analysisSchema={analysisSchema}
-            reactFlowGraph={graph}
-          />
-        </TabsContent>
+    <div className="review-shell">
+      <ReviewHeader review={review} />
+      <main className="review-main">
+        {hasGraph ? (
+          <section className="graph-panel" aria-label="PR review tree">
+            <ReactFlowProvider>
+              <GraphCanvas
+                activeStackId={activeStackId}
+                graph={graph}
+                onActiveStackChange={setActiveStackId}
+                onFileViewModeChange={setFileViewMode}
+                onMeasuredHeightsChange={handleMeasuredHeightsChange}
+                onToggleCollapsedGroup={toggleCollapsedGroup}
+                stacks={stacks}
+              />
+            </ReactFlowProvider>
+          </section>
+        ) : (
+          <section className="empty-panel">Review tree is not available for this run.</section>
+        )}
       </main>
-    </Tabs>
+    </div>
   );
 }
 
-function ReviewHeader({ hasGraph, review }) {
+function ReviewHeader({ review }) {
   return (
     <header className="review-header">
       <div className="review-header-main">
@@ -230,20 +231,6 @@ function ReviewHeader({ hasGraph, review }) {
           <h1 className="review-title">
             <a href={review.url}>{review.title || "Untitled pull request"}</a>
           </h1>
-          <TabsList aria-label="Review views" className="review-tabs-list">
-            <TabsTrigger className="review-tab-trigger" disabled={!hasGraph} value="graph">
-              <Network aria-hidden="true" size={15} />
-              Tree
-            </TabsTrigger>
-            <TabsTrigger className="review-tab-trigger" value="diff">
-              <FileDiff aria-hidden="true" size={15} />
-              Diff
-            </TabsTrigger>
-            <TabsTrigger className="review-tab-trigger" value="json">
-              <Braces aria-hidden="true" size={15} />
-              JSON
-            </TabsTrigger>
-          </TabsList>
         </div>
         <div className="review-meta">
           <Badge className="meta-chip branch-chip" title="Base and head branches" variant="outline">
@@ -282,13 +269,96 @@ function GraphCanvas({
   const reactFlow = useReactFlow();
   const nodesInitialized = useNodesInitialized();
   const liveNodes = useNodes();
+  const canvasRef = useRef(null);
+  const currentFilePageIdRef = useRef(null);
+  const pendingSnapIdRef = useRef(null);
+  const snapRetryFrameRef = useRef(null);
   const defaultViewport = graph.defaultViewport || FALLBACK_GRAPH_VIEWPORT;
+  const reviewStops = useMemo(() => {
+    return graph.nodes.filter(({ type }) => type === "miniDiff");
+  }, [graph.nodes]);
+  const reviewStopIds = useMemo(() => new Set(reviewStops.map(({ id }) => id)), [reviewStops]);
+  const reviewStopTargets = useMemo(() => {
+    const targets = new Map();
+    for (const stop of reviewStops) {
+      targets.set(stop.id, stop.id);
+      if (stop.parentId && !targets.has(stop.parentId)) {
+        targets.set(stop.parentId, stop.id);
+      }
+    }
+    return targets;
+  }, [reviewStops]);
+  const [currentStopId, setCurrentStopId] = useState(() => reviewStops[0]?.id ?? null);
+  const navigation = useMemo(() => {
+    const currentIndex = reviewStops.findIndex(({ id }) => id === currentStopId);
+    const current = reviewStops[currentIndex] ?? null;
+    const fileRoots = reviewStops.filter((stop, index) => (
+      stop.parentId !== reviewStops[index - 1]?.parentId
+    ));
+    const currentFileIndex = fileRoots.findIndex(({ parentId }) => parentId === current?.parentId);
+    return {
+      current,
+      currentIndex,
+      next: reviewStops[currentIndex + 1] ?? null,
+      nextFile: fileRoots[currentFileIndex + 1] ?? null,
+      previous: reviewStops[currentIndex - 1] ?? null,
+      previousFile: fileRoots[currentFileIndex - 1] ?? null,
+    };
+  }, [currentStopId, reviewStops]);
+  const snapToStop = useCallback((nodeId) => {
+    const stopId = reviewStopTargets.get(nodeId);
+    if (!stopId) {
+      return false;
+    }
+
+    setCurrentStopId(stopId);
+    const node = reactFlow.getInternalNode(stopId);
+    currentFilePageIdRef.current = node?.parentId ?? currentFilePageIdRef.current;
+    const canvas = canvasRef.current;
+    const nodeWidth = node?.measured?.width;
+    if (!nodeWidth || !node.measured.height || !canvas) {
+      pendingSnapIdRef.current = stopId;
+      if (snapRetryFrameRef.current === null) {
+        snapRetryFrameRef.current = window.requestAnimationFrame(() => {
+          snapRetryFrameRef.current = null;
+          snapToStop(pendingSnapIdRef.current);
+        });
+      }
+      return false;
+    }
+
+    pendingSnapIdRef.current = null;
+    reactFlow.setViewport(reviewViewportForNode(node, nodeWidth, canvas.getBoundingClientRect()), {
+      duration: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+        ? 0
+        : REVIEW_CAMERA_DURATION,
+    });
+    return true;
+  }, [reactFlow, reviewStopTargets]);
   useEffect(() => {
-    reactFlow.setViewport(defaultViewport, { duration: 200 });
-    // Re-center whenever the selected stack changes; not on every viewport
-    // recompute, since that would fight the user's own pan/zoom.
+    return () => {
+      if (snapRetryFrameRef.current !== null) {
+        window.cancelAnimationFrame(snapRetryFrameRef.current);
+      }
+    };
+  }, []);
+  useEffect(() => {
+    snapToStop(reviewStops[0]?.id);
+    // Start each selected stack at its first mini-tree root. Do not depend on
+    // graph rebuilds here: measurement updates must not fight manual panning.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStackId]);
+  useEffect(() => {
+    if (!currentStopId || !reviewStopIds.has(currentStopId)) {
+      const fallback = reviewStops.find(({ parentId }) => parentId === currentFilePageIdRef.current);
+      snapToStop(fallback?.id ?? reviewStops[0]?.id);
+    }
+  }, [currentStopId, reviewStopIds, reviewStops, snapToStop]);
+  useEffect(() => {
+    if (pendingSnapIdRef.current) {
+      snapToStop(pendingSnapIdRef.current);
+    }
+  }, [graph.nodes, snapToStop]);
   useEffect(() => {
     if (!nodesInitialized) {
       return;
@@ -309,6 +379,49 @@ function GraphCanvas({
       onMeasuredHeightsChange(updates);
     }
   }, [liveNodes, nodesInitialized, onMeasuredHeightsChange]);
+  const handleToggleCollapsedGroup = useCallback((groupId) => {
+    onToggleCollapsedGroup(groupId);
+  }, [onToggleCollapsedGroup]);
+  const handleNodeClick = useCallback((event, node) => {
+    const target = event.target;
+    if (
+      !reviewStopTargets.has(node.id)
+      || window.getSelection()?.isCollapsed === false
+      || (target instanceof Element && target.closest(REVIEW_NAVIGATION_CONTROL_SELECTOR))
+    ) {
+      return;
+    }
+
+    snapToStop(node.id);
+  }, [reviewStopTargets, snapToStop]);
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const target = event.target;
+      if (
+        event.defaultPrevented
+        || event.altKey
+        || event.ctrlKey
+        || event.metaKey
+        || window.getSelection()?.isCollapsed === false
+        || (target instanceof Element && target.closest(REVIEW_NAVIGATION_CONTROL_SELECTOR))
+      ) {
+        return;
+      }
+
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        const destination = event.key === "ArrowLeft"
+          ? (event.shiftKey ? navigation.previousFile : navigation.previous)
+          : (event.shiftKey ? navigation.nextFile : navigation.next);
+        snapToStop(destination?.id);
+        return;
+      }
+
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [navigation, snapToStop]);
   const interactiveNodes = useMemo(() => {
     return graph.nodes.map((node) => {
       if (node.type === "collapsedGroup") {
@@ -316,7 +429,7 @@ function GraphCanvas({
           ...node,
           data: {
             ...node.data,
-            onToggleCollapsedGroup,
+            onToggleCollapsedGroup: handleToggleCollapsedGroup,
           },
         };
       }
@@ -333,10 +446,31 @@ function GraphCanvas({
 
       return node;
     });
-  }, [graph.nodes, onFileViewModeChange, onToggleCollapsedGroup]);
+  }, [graph.nodes, handleToggleCollapsedGroup, onFileViewModeChange]);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    let activeNode;
+    let frame;
+    const applyCurrentStop = () => {
+      activeNode = [...(canvas?.querySelectorAll(".react-flow__node") || [])]
+        .find((node) => node.dataset.id === currentStopId);
+      canvas?.querySelector('[aria-current="step"]')?.removeAttribute("aria-current");
+      activeNode?.setAttribute("aria-current", "step");
+      if (!activeNode && currentStopId) {
+        frame = window.requestAnimationFrame(applyCurrentStop);
+      }
+    };
+    applyCurrentStop();
+
+    return () => {
+      activeNode?.removeAttribute("aria-current");
+      window.cancelAnimationFrame(frame);
+    };
+  }, [currentStopId, graph.nodes]);
+  const currentStopTitle = reviewStopTitle(navigation.current);
   return (
     <div className="flow-reader" data-flow-reader>
-      <div className="flow-canvas">
+      <div className="flow-canvas" ref={canvasRef}>
         <ReactFlow
           colorMode="light"
           defaultViewport={defaultViewport}
@@ -348,6 +482,7 @@ function GraphCanvas({
           nodesDraggable={false}
           nodes={interactiveNodes}
           nodeTypes={nodeTypes}
+          onNodeClick={handleNodeClick}
           panOnDrag={[1, 2]}
           panOnScroll
           panOnScrollMode="free"
@@ -365,20 +500,197 @@ function GraphCanvas({
             size={1.2}
             variant={BackgroundVariant.Dots}
           />
-          <Controls position="bottom-right" showFitView={false} showInteractive={false}>
-            <ControlButton
-              aria-label="Reset tree view"
-              className="reset-view-button"
-              onClick={() => reactFlow.setViewport(defaultViewport, { duration: 160 })}
-              title="Reset tree view"
-            >
-              <RotateCcw aria-hidden="true" size={15} />
-            </ControlButton>
-          </Controls>
+          <MiniMap
+            ariaLabel="Review map"
+            className="review-minimap"
+            nodeClassName={reviewMapNodeClassName}
+            nodeColor={reviewMapNodeColor}
+            nodeComponent={ReviewMapNode}
+            nodeStrokeColor={(node) => node.id === currentStopId ? "var(--primary)" : "transparent"}
+            nodeStrokeWidth={4}
+            onNodeClick={(event, node) => {
+              event.stopPropagation();
+              snapToStop(node.id);
+            }}
+            pannable
+            position="top-right"
+            zoomable={false}
+          />
         </ReactFlow>
         <StackSelect activeStackId={activeStackId} onActiveStackChange={onActiveStackChange} stacks={stacks} />
+        <Button
+          aria-label={navigation.previousFile
+            ? `Previous file: ${reviewStopTitle(navigation.previousFile)}`
+            : "No previous file"}
+          className="review-step-button is-previous-file"
+          disabled={!navigation.previousFile}
+          onClick={() => snapToStop(navigation.previousFile?.id)}
+          size="icon-lg"
+          title={navigation.previousFile ? `Previous file: ${reviewStopTitle(navigation.previousFile)}` : "First file"}
+          type="button"
+          variant="outline"
+        >
+          <ChevronsLeft aria-hidden="true" />
+        </Button>
+        <Button
+          aria-label={navigation.previous
+            ? `Previous review stop: ${reviewStopTitle(navigation.previous)}`
+            : "No previous review stop"}
+          className="review-step-button is-previous"
+          disabled={!navigation.previous}
+          onClick={() => snapToStop(navigation.previous?.id)}
+          size="icon-lg"
+          title={navigation.previous ? `Previous: ${reviewStopTitle(navigation.previous)}` : "First stop"}
+          type="button"
+          variant="outline"
+        >
+          <ChevronLeft aria-hidden="true" />
+        </Button>
+        <div aria-atomic="true" aria-live="polite" className="review-progress" role="status">
+          <span aria-hidden="true">{`${Math.max(0, navigation.currentIndex + 1)} / ${reviewStops.length}`}</span>
+          <span className="sr-only">
+            {navigation.current
+              ? `Moved to ${currentStopTitle}, stop ${navigation.currentIndex + 1} of ${reviewStops.length}`
+              : "No visible review stops"}
+          </span>
+        </div>
+        <Button
+          aria-label={navigation.next
+            ? `Next review stop: ${reviewStopTitle(navigation.next)}`
+            : "No next review stop"}
+          className="review-step-button is-next"
+          disabled={!navigation.next}
+          onClick={() => snapToStop(navigation.next?.id)}
+          size="icon-lg"
+          title={navigation.next ? `Next: ${reviewStopTitle(navigation.next)}` : "Last stop"}
+          type="button"
+          variant="outline"
+        >
+          <ChevronRight aria-hidden="true" />
+        </Button>
+        <Button
+          aria-label={navigation.nextFile
+            ? `Next file: ${reviewStopTitle(navigation.nextFile)}`
+            : "No next file"}
+          className="review-step-button is-next-file"
+          disabled={!navigation.nextFile}
+          onClick={() => snapToStop(navigation.nextFile?.id)}
+          size="icon-lg"
+          title={navigation.nextFile ? `Next file: ${reviewStopTitle(navigation.nextFile)}` : "Last file"}
+          type="button"
+          variant="outline"
+        >
+          <ChevronsRight aria-hidden="true" />
+        </Button>
       </div>
     </div>
+  );
+}
+
+function reviewViewportForNode(node, nodeWidth, canvasBounds) {
+  const { x, y } = node.internals.positionAbsolute;
+  const zoom = Math.max(
+    MIN_GRAPH_ZOOM,
+    Math.min(REVIEW_NODE_MAX_ZOOM, (canvasBounds.width - REVIEW_CAMERA_PADDING_X * 2) / nodeWidth),
+  );
+
+  return {
+    x: Math.round(canvasBounds.width / 2 - (x + nodeWidth / 2) * zoom),
+    y: Math.round(VIEWPORT_PADDING_Y - y * zoom),
+    zoom,
+  };
+}
+
+function reviewStopTitle(stop) {
+  return stop?.data?.miniNode?.title || stop?.data?.file?.path || "review stop";
+}
+
+function reviewMapNodeColor(node) {
+  if (node.type === "filePage") {
+    return "color-mix(in oklab, var(--card) 90%, var(--mini-tree-color))";
+  }
+
+  return {
+    important: "var(--destructive)",
+    mechanical: "var(--muted-foreground)",
+    supporting: "oklch(0.68 0.14 72)",
+  }[node.data?.miniNode?.reviewClass] || "var(--mini-tree-color)";
+}
+
+function reviewMapNodeClassName(node) {
+  return `is-${node.type} is-${node.data?.miniNode?.reviewClass || "page"}`;
+}
+
+function ReviewMapNode({
+  borderRadius,
+  className,
+  color,
+  height,
+  id,
+  onClick,
+  shapeRendering,
+  strokeColor,
+  strokeWidth,
+  width,
+  x,
+  y,
+}) {
+  const isFilePage = className.includes("is-filePage");
+  const isGroup = className.includes("is-collapsedGroup");
+  const headerHeight = isFilePage ? Math.max(36, height * 0.05) : Math.max(24, height * 0.18);
+  const lineWidth = Math.max(10, Math.min(width, height) * 0.035);
+
+  return (
+    <g
+      className={`react-flow__minimap-node ${className}`}
+      onClick={onClick ? (event) => onClick(event, id) : undefined}
+    >
+      <rect
+        fill={isFilePage ? color : "var(--card)"}
+        height={height}
+        rx={borderRadius}
+        ry={borderRadius}
+        shapeRendering={shapeRendering}
+        width={width}
+        x={x}
+        y={y}
+      />
+      <rect
+        fill={color}
+        height={Math.min(height, headerHeight)}
+        opacity={isFilePage ? 0.45 : 0.8}
+        rx={borderRadius}
+        ry={borderRadius}
+        width={width}
+        x={x}
+        y={y}
+      />
+      {!isFilePage && !isGroup ? [0.48, 0.64, 0.8].map((offset, index) => (
+        <line
+          key={offset}
+          opacity={0.55}
+          stroke={color}
+          strokeWidth={lineWidth}
+          x1={x + width * 0.1}
+          x2={x + width * (0.88 - index * 0.12)}
+          y1={y + height * offset}
+          y2={y + height * offset}
+        />
+      )) : null}
+      <rect
+        fill="none"
+        height={height}
+        pointerEvents="none"
+        rx={borderRadius}
+        ry={borderRadius}
+        shapeRendering={shapeRendering}
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
+        width={width}
+        x={x}
+        y={y}
+      />
+    </g>
   );
 }
 
@@ -400,86 +712,6 @@ function StackSelect({ activeStackId, onActiveStackChange, stacks }) {
         ))}
       </SelectContent>
     </Select>
-  );
-}
-
-function JsonWorkspace({ analysisOutput, analysisSchema, reactFlowGraph }) {
-  return (
-    <Tabs className="json-workspace" defaultValue="schema">
-      <div className="json-toolbar">
-        <TabsList aria-label="JSON documents" className="json-tabs-list">
-          <TabsTrigger className="json-tab-trigger" value="schema">
-            Output schema
-          </TabsTrigger>
-          <TabsTrigger className="json-tab-trigger" value="analysis">
-            Analysis
-          </TabsTrigger>
-          <TabsTrigger className="json-tab-trigger" value="react-flow">
-            React Flow
-          </TabsTrigger>
-        </TabsList>
-      </div>
-      <TabsContent className="json-document-panel" forceMount value="schema">
-        <JsonDocument data={analysisSchema} />
-      </TabsContent>
-      <TabsContent className="json-document-panel" forceMount value="analysis">
-        <JsonDocument data={analysisOutput} />
-      </TabsContent>
-      <TabsContent className="json-document-panel" forceMount value="react-flow">
-        <JsonDocument data={reactFlowGraph} />
-      </TabsContent>
-    </Tabs>
-  );
-}
-
-function JsonDocument({ data }) {
-  const [expansion, setExpansion] = useState({ mode: "collapsed", revision: 0 });
-  const expandTree = () => {
-    setExpansion((current) => ({ mode: "expanded", revision: current.revision + 1 }));
-  };
-  const collapseTree = () => {
-    setExpansion((current) => ({ mode: "collapsed", revision: current.revision + 1 }));
-  };
-
-  return (
-    <div className="json-document" data-json-document>
-      <div aria-label="JSON tree controls" className="json-document-actions" role="toolbar">
-        <Button
-          aria-label="Expand entire JSON tree"
-          aria-pressed={expansion.mode === "expanded"}
-          className="json-tree-action"
-          onClick={expandTree}
-          size="icon-xs"
-          title="Expand all"
-          type="button"
-          variant="ghost"
-        >
-          <ChevronsUpDown aria-hidden="true" />
-        </Button>
-        <Button
-          aria-label="Collapse entire JSON tree"
-          aria-pressed={expansion.mode === "collapsed"}
-          className="json-tree-action"
-          onClick={collapseTree}
-          size="icon-xs"
-          title="Collapse all"
-          type="button"
-          variant="ghost"
-        >
-          <ChevronsDownUp aria-hidden="true" />
-        </Button>
-      </div>
-      <div className="json-document-scroll">
-        <JsonView
-          clickToExpandNode
-          compactTopLevel
-          data={data && typeof data === "object" ? data : {}}
-          key={expansion.revision}
-          shouldExpandNode={expansion.mode === "expanded" ? allExpanded : collapseAllNested}
-          style={defaultStyles}
-        />
-      </div>
-    </div>
   );
 }
 
@@ -1006,6 +1238,8 @@ function buildMiniDiffGraph(
       id: pageId,
       data: { file, viewMode },
       draggable: false,
+      initialHeight: pageHeight,
+      initialWidth: pageWidth,
       position: { x, y },
       selectable: false,
       style: { height: pageHeight, width: pageWidth },
@@ -1031,6 +1265,8 @@ function buildMiniDiffGraph(
         },
         draggable: false,
         extent: "parent",
+        initialHeight: item.height,
+        initialWidth: miniNodeWidth(item.node),
         parentId: pageId,
         position: {
           x: FILE_PAGE_PADDING + item.x,
@@ -1485,6 +1721,7 @@ function layoutMiniNodes(miniNodes, miniEdges, getMiniNodeHeight = miniNodeHeigh
   return {
     height: layout.height,
     nodes: layout.placements.map(({ item, x, y }) => ({
+      height: item.height,
       node: item.node,
       x,
       y,
@@ -1543,20 +1780,8 @@ function readReviewData() {
   return readJsonScript("pr-review-data", {});
 }
 
-function readAnalysisSchema() {
-  return readJsonScript("pr-analysis-schema", {});
-}
-
-function readAnalysisOutput() {
-  return readJsonScript("pr-analysis-output", null);
-}
-
 function readReactFlowData() {
   return readJsonScript("pr-analysis-data", null);
-}
-
-function readDiffHtml() {
-  return readJsonScript("pr-diff-html", "");
 }
 
 function readJsonScript(id, fallback) {
