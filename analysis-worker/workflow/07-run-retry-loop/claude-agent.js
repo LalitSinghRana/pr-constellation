@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { createAbortError, isAbortError, throwIfAborted } from "../abort.js";
 import {
   createChildProcessTerminator,
   USE_DETACHED_PROCESS_GROUP,
 } from "../child-process-termination.js";
+import { addUsage, emptyUsage } from "./usage.js";
 
 const REVIEW_TREES_SCHEMA_PATH = fileURLToPath(
   new URL("../04-generate-candidate-analysis/03-create-review-trees/schema.json", import.meta.url),
@@ -374,22 +376,6 @@ function normalizeClaudeUsage(value) {
   };
 }
 
-function emptyUsage() {
-  return {
-    inputTokens: 0,
-    cachedInputTokens: 0,
-    outputTokens: 0,
-    totalTokens: 0,
-  };
-}
-
-function addUsage(target, source) {
-  target.inputTokens += source.inputTokens;
-  target.cachedInputTokens += source.cachedInputTokens;
-  target.outputTokens += source.outputTokens;
-  target.totalTokens += source.totalTokens;
-}
-
 function nonNegativeNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : 0;
@@ -421,25 +407,6 @@ function createClaudeExecError(message, stdout) {
   const error = new Error(message);
   error.usage = parseClaudeJsonUsage(stdout);
   return error;
-}
-
-function throwIfAborted(signal) {
-  if (signal?.aborted) {
-    throw createAbortError(signal.reason);
-  }
-}
-
-function createAbortError(reason) {
-  const message =
-    reason instanceof Error && reason.message ? reason.message : "The operation was aborted.";
-  const error = new Error(message, reason === undefined ? undefined : { cause: reason });
-  error.name = "AbortError";
-  error.code = "ABORT_ERR";
-  return error;
-}
-
-function isAbortError(error) {
-  return error?.name === "AbortError" || error?.code === "ABORT_ERR";
 }
 
 function isJsonObject(value) {

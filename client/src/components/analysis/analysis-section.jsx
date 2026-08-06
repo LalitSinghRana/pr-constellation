@@ -8,8 +8,9 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible.jsx";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty.jsx";
+import { analysisTimeline, formatDuration } from "@/lib/analysis.js";
 import { groupByUpdatedDate, relativeTime, safeGitHubUrl } from "@/lib/queue.js";
-import { analysisTimeline, cn, formatDuration } from "@/lib/utils.js";
+import { cn } from "@/lib/utils.js";
 
 const statusStyles = {
   running: "border-sky/25 bg-sky/10 text-sky-strong",

@@ -468,11 +468,15 @@ try {
     await realpath(service.store.getRunDir(first.slug, first.runId)),
   );
 
+  await rm(
+    path.join(service.store.getRunDir(batch.runs[0].slug, batch.runs[0].runId), "diff.patch"),
+  );
   const batchRerun = await service.enqueueFrozenBatchRerun({
     batchId: batch.batchId,
     model: "gpt-fixture",
   });
   assert.equal(batchRerun.metrics.model, "gpt-fixture");
+  assert.equal(batchRerun.sourceRunId, batch.runs[1].runId);
   await assert.rejects(
     () =>
       service.deleteRunHistory({

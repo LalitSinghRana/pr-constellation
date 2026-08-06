@@ -160,37 +160,15 @@ export class DashboardService {
   }) {
     await this.initialize();
     this.#assertOpen();
-
-    const parsed = parseGitHubPrUrl(prUrl);
-    const selectedModel = this.#resolveModel(model);
-    const selectedProvider = this.#resolveProvider(selectedModel);
-    const selectedReasoningEffort = this.#resolveReasoningEffort(selectedModel, reasoningEffort);
-    const frozenSource = await this.#resolveRequestedSource({
-      parsed,
+    return this.#enqueueRun({
+      model,
+      prUrl,
+      reasoningEffort,
       refresh,
       sourceRunId,
       sourceSlug,
-    });
-    const runId = createRunId(this.#now());
-    const sourceRun = frozenSource?.run;
-    const inputFingerprint = frozenSource
-      ? await resolveFrozenInputFingerprint(frozenSource)
-      : null;
-    const manifest = await this.#createQueuedRun({
-      inputFingerprint,
-      model: selectedModel,
-      parsed,
-      prUrl,
-      provider: selectedProvider,
-      reasoningEffort: selectedReasoningEffort,
-      runId,
-      sourceRun,
-      sourceRunId: frozenSource?.run.runId || null,
       title,
     });
-
-    this.#startDrain();
-    return manifest;
   }
 
   async enqueueFrozenRerun({ runId, slug, model }) {
@@ -200,17 +178,7 @@ export class DashboardService {
       slug,
       sourceRunId: runId,
     });
-    const sourceModel =
-      model ||
-      (this.#configuration?.models.includes(source.run.metrics?.model)
-        ? source.run.metrics.model
-        : undefined);
-    return this.enqueue({
-      model: sourceModel,
-      prUrl: source.run.url,
-      sourceRunId: source.run.runId,
-      sourceSlug: slug,
-    });
+    return this.#enqueueFrozenSource(source, model);
   }
 
   async enqueueFrozenBatchRerun({ batchId, model }) {
@@ -226,21 +194,19 @@ export class DashboardService {
     }
 
     for (const candidate of candidates) {
+      let source;
       try {
-        await this.#store.resolveFrozenSource({
+        source = await this.#store.resolveFrozenSource({
           slug: candidate.slug,
           sourceRunId: candidate.runId,
-        });
-        return this.enqueueFrozenRerun({
-          model,
-          runId: candidate.runId,
-          slug: candidate.slug,
         });
       } catch (error) {
         if (!isUnavailableFrozenSourceError(error)) {
           throw error;
         }
+        continue;
       }
+      return this.#enqueueFrozenSource(source, model);
     }
 
     throw createHistoryTargetNotFound(
@@ -840,6 +806,68 @@ export class DashboardService {
     return null;
   }
 
+  async #enqueueRun(
+    {
+      prUrl,
+      model,
+      reasoningEffort,
+      refresh = false,
+      sourceRunId = null,
+      sourceSlug = null,
+      title = "",
+    },
+    resolvedSource = null,
+  ) {
+    const parsed = parseGitHubPrUrl(prUrl);
+    const selectedModel = this.#resolveModel(model);
+    const selectedProvider = this.#resolveProvider(selectedModel);
+    const selectedReasoningEffort = this.#resolveReasoningEffort(selectedModel, reasoningEffort);
+    const frozenSource = await this.#resolveRequestedSource({
+      parsed,
+      refresh,
+      resolvedSource,
+      sourceRunId,
+      sourceSlug,
+    });
+    const runId = createRunId(this.#now());
+    const sourceRun = frozenSource?.run;
+    const inputFingerprint = frozenSource
+      ? await resolveFrozenInputFingerprint(frozenSource)
+      : null;
+    const manifest = await this.#createQueuedRun({
+      inputFingerprint,
+      model: selectedModel,
+      parsed,
+      prUrl,
+      provider: selectedProvider,
+      reasoningEffort: selectedReasoningEffort,
+      runId,
+      sourceRun,
+      sourceRunId: frozenSource?.run.runId || null,
+      title,
+    });
+
+    this.#startDrain();
+    return manifest;
+  }
+
+  async #enqueueFrozenSource(source, model) {
+    const sourceModel =
+      model ||
+      (this.#configuration?.models.includes(source.run.metrics?.model)
+        ? source.run.metrics.model
+        : undefined);
+    return this.#enqueueRun(
+      {
+        model: sourceModel,
+        prUrl: source.run.url,
+        sourceRunId: source.run.runId,
+        sourceSlug: source.run.slug,
+      },
+      source,
+    );
+  }
+
   async #createQueuedRun({
     batchId = null,
     batchIndex = null,
@@ -900,17 +928,19 @@ export class DashboardService {
     return manifest;
   }
 
-  async #resolveRequestedSource({ parsed, refresh, sourceRunId, sourceSlug }) {
+  async #resolveRequestedSource({ parsed, refresh, resolvedSource, sourceRunId, sourceSlug }) {
     const slug = parsed.slug;
     if (sourceSlug && sourceSlug !== slug) {
       throw new Error(`Frozen source ${sourceSlug} does not match requested PR ${slug}.`);
     }
 
-    const frozenSource = sourceRunId
-      ? await this.#store.resolveFrozenSource({ slug, sourceRunId })
-      : refresh
-        ? null
-        : await this.#findReusableSource(parsed);
+    const frozenSource =
+      resolvedSource ??
+      (sourceRunId
+        ? await this.#store.resolveFrozenSource({ slug, sourceRunId })
+        : refresh
+          ? null
+          : await this.#findReusableSource(parsed));
     if (frozenSource) {
       assertFrozenSourceIdentity(frozenSource.run, parsed);
     }

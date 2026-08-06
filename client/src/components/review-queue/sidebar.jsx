@@ -1,11 +1,4 @@
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  GitPullRequest,
-  Settings2,
-  Sparkles,
-  TableProperties,
-} from "lucide-react";
+import { ArrowUpRight, GitPullRequest, Settings2, Sparkles, TableProperties } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle.jsx";
 import {
   SidebarContent,
@@ -127,32 +120,6 @@ export function QueueSidebar({ activeFilter, counts, onFilter, onSettings }) {
           ))}
         </NavigationGroup>
       ))}
-    </AppSidebar>
-  );
-}
-
-export function AnalysisSidebar({ activeCount }) {
-  return (
-    <AppSidebar>
-      <NavigationGroup label="Navigate">
-        <SidebarMenuItem>
-          <SidebarMenuButton asChild className={menuButtonClass}>
-            <a href="/">
-              <ArrowLeft />
-              <span>Review queue</span>
-            </a>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-        <SidebarMenuItem>
-          <SidebarMenuButton asChild className={menuButtonClass} isActive>
-            <a href="/analysis">
-              <Sparkles />
-              <span>AI analyzer queue</span>
-            </a>
-          </SidebarMenuButton>
-          <SidebarMenuBadge>{activeCount}</SidebarMenuBadge>
-        </SidebarMenuItem>
-      </NavigationGroup>
     </AppSidebar>
   );
 }

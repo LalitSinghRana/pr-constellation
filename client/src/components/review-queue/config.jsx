@@ -7,17 +7,18 @@ import {
   GitMerge,
   GitPullRequest,
 } from "lucide-react";
+import { LIFECYCLE_SCORES } from "../../../../shared/queue-policy.js";
 
 export const LIFECYCLE_ORDER = ["reviewed", "new", "approved", "merged", "draft", "mine", "other"];
 
 export const LIFECYCLE_META = {
-  reviewed: { label: "Reviewed", score: 10, icon: Eye },
-  new: { label: "Unreviewed", score: 0, icon: GitPullRequest },
-  approved: { label: "Approved", score: -5, icon: CheckCircle2 },
-  merged: { label: "Merged", score: -5, icon: GitMerge },
-  draft: { label: "Draft", score: -10, icon: FileClock },
-  mine: { label: "My pull requests", score: 0, icon: GitPullRequest },
-  other: { label: "Other PR notifications", score: 0, icon: Archive },
+  reviewed: { label: "Reviewed", score: LIFECYCLE_SCORES.reviewed, icon: Eye },
+  new: { label: "Unreviewed", score: LIFECYCLE_SCORES.new, icon: GitPullRequest },
+  approved: { label: "Approved", score: LIFECYCLE_SCORES.approved, icon: CheckCircle2 },
+  merged: { label: "Merged", score: LIFECYCLE_SCORES.merged, icon: GitMerge },
+  draft: { label: "Draft", score: LIFECYCLE_SCORES.draft, icon: FileClock },
+  mine: { label: "My pull requests", score: LIFECYCLE_SCORES.mine, icon: GitPullRequest },
+  other: { label: "Other PR notifications", score: LIFECYCLE_SCORES.other, icon: Archive },
   nonpr: { label: "Issues & other notifications", score: null, icon: Bell },
 };
 

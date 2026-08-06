@@ -531,7 +531,7 @@ export function createRunManifest(input, now = new Date().toISOString()) {
     },
     phase: nullableString(input.phase, "phase"),
     error: normalizeError(input.error),
-    reviewUrl: status === "succeeded" ? reviewUrlFor(slug, runId) : null,
+    reviewUrl: status === "succeeded" ? `/reviews/${slug}/${runId}/` : null,
     gitCommit: nullableString(input.gitCommit, "gitCommit"),
     metrics: normalizeRunMetrics(input.metrics),
   };
@@ -564,7 +564,7 @@ export function applyStageEvent(timings, event, fallbackAt = new Date().toISOStr
   assertTimingsDocument(timings, timings?.runId);
   const normalized = normalizeStageEvent(event, fallbackAt);
   const stages = timings.stages.map((stage) => ({ ...stage }));
-  const attempt = normalized.attempt ?? 1;
+  const attempt = normalized.attempt;
   let stageIndex = stages.findIndex(
     (stage) => stage.stageId === normalized.stageId && stage.attempt === attempt,
   );
@@ -582,7 +582,7 @@ export function applyStageEvent(timings, event, fallbackAt = new Date().toISOStr
       startedAt: normalized.at,
       endedAt: null,
       durationMs: 0,
-      status: isStart ? (normalized.status ?? "running") : (normalized.status ?? "running"),
+      status: normalized.status ?? "running",
       error: normalized.error ?? null,
       metrics: normalized.metrics ?? {},
     });
@@ -700,10 +700,6 @@ function mergeRunManifest(current, patch, now) {
 
 function normalizeRunDocument(manifest) {
   return createRunManifest(manifest, manifest.timestamps?.updatedAt);
-}
-
-function reviewUrlFor(slug, runId) {
-  return `/reviews/${slug}/${runId}/`;
 }
 
 function normalizeStageEvent(event, fallbackAt) {

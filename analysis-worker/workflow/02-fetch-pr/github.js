@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createAbortError, isAbortError, throwIfAborted } from "../abort.js";
 import {
   createChildProcessTerminator,
   USE_DETACHED_PROCESS_GROUP,
@@ -484,27 +485,6 @@ async function runTimedGhStage({
     });
     throw error;
   }
-}
-
-function throwIfAborted(signal) {
-  if (!signal?.aborted) {
-    return;
-  }
-
-  throw createAbortError(signal.reason);
-}
-
-function createAbortError(reason) {
-  const message =
-    reason instanceof Error && reason.message ? reason.message : "The operation was aborted.";
-  const error = new Error(message, reason === undefined ? undefined : { cause: reason });
-  error.name = "AbortError";
-  error.code = "ABORT_ERR";
-  return error;
-}
-
-function isAbortError(error) {
-  return error?.name === "AbortError" || error?.code === "ABORT_ERR";
 }
 
 async function emitRunEvent(onEvent, event) {
