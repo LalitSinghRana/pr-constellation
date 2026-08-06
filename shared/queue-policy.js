@@ -20,13 +20,26 @@ export const LIFECYCLE_SCORES = Object.freeze({
   other: 0,
 });
 
+const attentionExcludingTeamCovered = (signals) =>
+  signals.some((signal) => signal.kind !== "team-covered");
+
 export function lifecycleForQueueItem(item) {
-  if (item.state === "MERGED") return "merged";
-  if (item.draft) return "draft";
-  if (item.authored) return "mine";
-  if (item.latestReviewState === "APPROVED") return "approved";
-  if (item.latestReviewState || item.reviewed) return "reviewed";
-  if (item.state === "OPEN" || item.signals.some((signal) => signal.kind !== "team-covered")) {
+  if (item.state === "MERGED") {
+    return "merged";
+  }
+  if (item.draft) {
+    return "draft";
+  }
+  if (item.authored) {
+    return "mine";
+  }
+  if (item.latestReviewState === "APPROVED") {
+    return "approved";
+  }
+  if (item.latestReviewState || item.reviewed) {
+    return "reviewed";
+  }
+  if (item.state === "OPEN" || attentionExcludingTeamCovered(item.signals)) {
     return "new";
   }
   return "other";

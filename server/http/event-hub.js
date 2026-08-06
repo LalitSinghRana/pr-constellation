@@ -1,11 +1,14 @@
+const HEARTBEAT_INTERVAL_MS = 30_000;
+const SSE_RETRY_MS = 3_000;
+
 export function createEventHub({ maxClients = 20 } = {}) {
   if (!Number.isInteger(maxClients) || maxClients < 1) {
     throw new TypeError("maxClients must be a positive integer.");
   }
   const clients = new Set();
   const heartbeat = setInterval(() => {
-    for (const response of clients) writeEvent(response, ": heartbeat\n\n", clients);
-  }, 30_000);
+    broadcast(clients, ": heartbeat\n\n");
+  }, HEARTBEAT_INTERVAL_MS);
   heartbeat.unref();
 
   return {
@@ -26,7 +29,7 @@ export function createEventHub({ maxClients = 20 } = {}) {
         "Content-Type": "text/event-stream; charset=utf-8",
         "X-Accel-Buffering": "no",
       });
-      response.write("retry: 3000\nevent: ready\ndata: {}\n\n");
+      response.write(`retry: ${SSE_RETRY_MS}\nevent: ready\ndata: {}\n\n`);
       clients.add(response);
       const remove = () => clients.delete(response);
       response.once("close", remove);
@@ -34,8 +37,7 @@ export function createEventHub({ maxClients = 20 } = {}) {
     },
 
     publish(type, value = {}) {
-      const event = `event: ${type}\ndata: ${JSON.stringify(value)}\n\n`;
-      for (const response of clients) writeEvent(response, event, clients);
+      broadcast(clients, `event: ${type}\ndata: ${JSON.stringify(value)}\n\n`);
     },
 
     close() {
@@ -44,6 +46,10 @@ export function createEventHub({ maxClients = 20 } = {}) {
       clients.clear();
     },
   };
+}
+
+function broadcast(clients, event) {
+  for (const response of clients) writeEvent(response, event, clients);
 }
 
 function writeEvent(response, event, clients) {

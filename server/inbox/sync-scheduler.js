@@ -2,6 +2,18 @@ const defaultNotificationIntervalMs = 5 * 60_000;
 const defaultReconciliationIntervalMs = 60 * 60_000;
 const maximumRetryMs = 15 * 60_000;
 
+function backoffDelayMs({ failures, nextPollMs, retryAfterMs }) {
+  const exponential = nextPollMs * 2 ** Math.max(0, failures - 1);
+  const capped = Math.min(exponential, maximumRetryMs);
+  return failures ? Math.max(capped, retryAfterMs) : nextPollMs;
+}
+
+function resolvePollIntervalMs(result, fallbackMs) {
+  return Number.isInteger(result?.pollIntervalSeconds)
+    ? Math.max(1_000, result.pollIntervalSeconds * 1_000)
+    : fallbackMs;
+}
+
 export function createSyncScheduler({
   clearTimer = clearTimeout,
   fullSync,
@@ -40,9 +52,7 @@ export function createSyncScheduler({
       const result = await (full ? fullSync() : notificationSync());
       failures = 0;
       retryAfterMs = 0;
-      nextPollMs = Number.isInteger(result?.pollIntervalSeconds)
-        ? Math.max(1_000, result.pollIntervalSeconds * 1_000)
-        : notificationIntervalMs;
+      nextPollMs = resolvePollIntervalMs(result, notificationIntervalMs);
       if (full) nextFullSyncAt = now() + reconciliationIntervalMs;
       onUpdate({ full, result });
       return result;
@@ -54,8 +64,8 @@ export function createSyncScheduler({
     } finally {
       running = null;
       runningFull = false;
-      const retryMs = Math.min(nextPollMs * 2 ** Math.max(0, failures - 1), maximumRetryMs);
-      schedule(failures ? Math.max(retryMs, retryAfterMs) : nextPollMs);
+      const retryMs = backoffDelayMs({ failures, nextPollMs, retryAfterMs });
+      schedule(retryMs);
     }
   }
 
