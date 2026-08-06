@@ -10,29 +10,36 @@ I want to create something that will help humans review PR faster. Goals are
 Next improvements
 
 ### UI/UX
-- ~Fix each Review Section starting at 1 instead of its correct line number.~
-- ~Use Tailwind and the design system over bespoke CSS. Keep the Review Tree out of this refactor.~
-- ~Add clean snap navigation from file to file or section to section with arrow navigation.~
-- ~Match the Review Tree styling to the rest of the website.~
-- Clean up the Review Tree UI.
+- ~Fix UI of each gig-diff node starting from 1 instead of their correct line number.~
+- ~tailwind and design sytem should be used over CSS. Keep graph view out of this refactor consideration~
+- ~a clean snap flow from file to file or node-to-node. with arrow navigation~
+- ~graph and rest of website should be merge for style~
+- clean graph UI - a lot to be done here
+  - From hover comment on node/edges, remove the "Node: What / Why", "title". Comment should only mention what is going on. Never say review this or reviewer should pay attention to xyz in comment. If there are some cases, ai think reviewer should pay attention or check this specifically, do that as next seciton/paragraph and start with "Reviewr attention:".
+  - Comment hover text should be good contrast and readable comfortably. maybe also increase font size?
+  - Is this the best code highlighting lib/theme?
+  - The count of +/- lines change should be green and red as shiki style
+  - I don't think we need "OPEN" text, the color of the icon before PR number should indicate that info. Similar color to state representaion as github
+- Do full review and leave comments from my local website
+- move rendering and shiki styling from backend to frontend.
 - set-up notifications
-- Configure Review Stack references in the UI.
+- Configure review-stack refences in UI
 
-### AI layer
-- ~Build the File Tree.~
+###AI layer
+- ~build layer flow (middle tree)~
 - should we skip generated files from analyse pipeline? Like snapshots.
 - Hide noise
 
 ### DX
-- Better, consistent and meaningful terms for everything
-- Reorganize into subprojects: server, client, and analysis workflow.
-- Clean up Review Tree rendering with clear boundaries and guardrails for AI changes.
+- ~Better, consistent and meaningful terms for everything~
+- ~Reorganize into mini-projects. server, client, ai-workflow~
+- ~Wrise agent.md for coding guidelines~
+- ~setup biome~
+- cleanup code using agent.md
 - do proper server project. Should be light weight to run continously with low CPU usage. We can go other language other than JS here.
 
 ---
 
-- Explore the BE team's memory system.
+- Explore memory-graph by BE team
 - llm-wiki for repo?
 - https://deepwiki.com/
-
-

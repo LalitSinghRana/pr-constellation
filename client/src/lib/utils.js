@@ -13,11 +13,12 @@ export function analysisState({ latestRun, queuedRuns, runningRun }) {
 }
 
 export function analysisTimeline(run, now = Date.now()) {
-  const stages = (run?.timings?.stages ?? []).filter((stage) => (
-    (stage.stageId === "analysis" || stage.stageId.startsWith("analysis."))
-    && stage.stageId !== "analysis.persist-artifacts"
-    && stage.status !== "skipped"
-  ));
+  const stages = (run?.timings?.stages ?? []).filter(
+    (stage) =>
+      (stage.stageId === "analysis" || stage.stageId.startsWith("analysis.")) &&
+      stage.stageId !== "analysis.persist-artifacts" &&
+      stage.status !== "skipped",
+  );
   if (!stages.length) return { durationMs: 0, rows: [] };
 
   const byId = new Map(stages.map((stage) => [stage.stageId, stage]));
@@ -34,17 +35,29 @@ export function analysisTimeline(run, now = Date.now()) {
       let current = stage;
       let depth = 0;
       const seen = new Set([stage.stageId]);
-      while (current.parentStageId && byId.has(current.parentStageId) && !seen.has(current.parentStageId)) {
+      while (
+        current.parentStageId &&
+        byId.has(current.parentStageId) &&
+        !seen.has(current.parentStageId)
+      ) {
         seen.add(current.parentStageId);
         current = byId.get(current.parentStageId);
         depth += 1;
       }
-      const offsetPct = Math.max(0, Math.min(100, ((startedAt - timelineStart) / durationMs) * 100));
-      const widthPct = Math.max(0, Math.min(100 - offsetPct, ((endedAt - startedAt) / durationMs) * 100));
+      const offsetPct = Math.max(
+        0,
+        Math.min(100, ((startedAt - timelineStart) / durationMs) * 100),
+      );
+      const widthPct = Math.max(
+        0,
+        Math.min(100 - offsetPct, ((endedAt - startedAt) / durationMs) * 100),
+      );
       return {
         ...stage,
         depth,
-        durationMs: stage.endedAt ? stage.durationMs : Math.max(stage.durationMs ?? 0, endedAt - startedAt),
+        durationMs: stage.endedAt
+          ? stage.durationMs
+          : Math.max(stage.durationMs ?? 0, endedAt - startedAt),
         offsetPct,
         running: stage.status === "running" && !stage.endedAt,
         widthPct,

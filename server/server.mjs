@@ -20,8 +20,7 @@ const queuePath = join(homedir(), ".config", "pr-review-cockpit", "queue.json");
 const queueLockPath = `${queuePath}.lock`;
 const searchFields =
   "author,commentsCount,createdAt,id,isDraft,labels,number,repository,state,title,updatedAt,url";
-const repositoryFields =
-  "author,createdAt,id,isDraft,number,state,title,updatedAt,url";
+const repositoryFields = "author,createdAt,id,isDraft,number,state,title,updatedAt,url";
 const hour = 60 * 60 * 1_000;
 const day = 24 * hour;
 
@@ -92,8 +91,7 @@ const activitySignalKinds = new Set([
 ]);
 
 const usernamePattern = /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i;
-const teamPattern =
-  /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?\/[a-z\d](?:[a-z\d-]{0,98}[a-z\d])?$/i;
+const teamPattern = /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?\/[a-z\d](?:[a-z\d-]{0,98}[a-z\d])?$/i;
 
 function validNotificationThreadId(value) {
   const id = typeof value === "string" || typeof value === "number" ? String(value) : "";
@@ -164,9 +162,7 @@ async function getDetectedUser() {
 
 function parseList(value, pattern, limit) {
   const parts = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
-  return [
-    ...new Set(parts.map((part) => String(part).trim()).filter(Boolean)),
-  ]
+  return [...new Set(parts.map((part) => String(part).trim()).filter(Boolean))]
     .filter((part) => pattern.test(part))
     .slice(0, limit);
 }
@@ -204,12 +200,7 @@ async function saveSettings(value) {
 function normalizeQueueState(value = {}) {
   const items = {};
   for (const [id, record] of Object.entries(value.items ?? {}).slice(0, 20_000)) {
-    if (
-      typeof id !== "string" ||
-      id.length > 200 ||
-      !record ||
-      typeof record !== "object"
-    ) {
+    if (typeof id !== "string" || id.length > 200 || !record || typeof record !== "object") {
       continue;
     }
     const item = queueItemFromRecord(id, record);
@@ -219,19 +210,11 @@ function normalizeQueueState(value = {}) {
       version: typeof record.version === "string" ? record.version : "",
       lastSeenAt: typeof record.lastSeenAt === "string" ? record.lastSeenAt : "",
       notificationUpdatedAt:
-        typeof record.notificationUpdatedAt === "string"
-          ? record.notificationUpdatedAt
-          : "",
+        typeof record.notificationUpdatedAt === "string" ? record.notificationUpdatedAt : "",
       ...(item ? { item: queueItemSnapshot(item) } : {}),
-      ...(typeof record.doneVersion === "string"
-        ? { doneVersion: record.doneVersion }
-        : {}),
-      ...(typeof record.activeVersion === "string"
-        ? { activeVersion: record.activeVersion }
-        : {}),
-      ...(typeof record.readVersion === "string"
-        ? { readVersion: record.readVersion }
-        : {}),
+      ...(typeof record.doneVersion === "string" ? { doneVersion: record.doneVersion } : {}),
+      ...(typeof record.activeVersion === "string" ? { activeVersion: record.activeVersion } : {}),
+      ...(typeof record.readVersion === "string" ? { readVersion: record.readVersion } : {}),
       ...(record.readSnapshot && typeof record.readSnapshot === "object"
         ? { readSnapshot: readSnapshot({ item: record.readSnapshot }) }
         : item && record.readVersion === record.version
@@ -248,14 +231,14 @@ function normalizeQueueState(value = {}) {
   return {
     version: 2,
     sync: {
-      lastSyncedAt:
-        typeof sync.lastSyncedAt === "string" ? sync.lastSyncedAt : "",
+      lastSyncedAt: typeof sync.lastSyncedAt === "string" ? sync.lastSyncedAt : "",
       username:
         typeof sync.username === "string" && usernamePattern.test(sync.username)
           ? sync.username
           : "",
-      repositories: (Array.isArray(sync.repositories) ? sync.repositories : [])
-        .filter((repository) => trackedRepositories.includes(repository)),
+      repositories: (Array.isArray(sync.repositories) ? sync.repositories : []).filter(
+        (repository) => trackedRepositories.includes(repository),
+      ),
     },
     items,
   };
@@ -294,21 +277,17 @@ function queueItemFromRecord(id, record) {
     const repository = `${match[1]}/${match[2]}`;
     const number = Number.parseInt(match[3], 10);
     if (id !== `${repository}#${number}`) return null;
-    const updatedAt =
-      typeof stored.updatedAt === "string" ? stored.updatedAt : record.updatedAt;
+    const updatedAt = typeof stored.updatedAt === "string" ? stored.updatedAt : record.updatedAt;
     if (!updatedAt) return null;
     return {
       id,
       number,
       title:
-        typeof stored.title === "string" && stored.title
-          ? stored.title
-          : `Pull request #${number}`,
+        typeof stored.title === "string" && stored.title ? stored.title : `Pull request #${number}`,
       url: `https://github.com/${repository}/pull/${number}`,
       repository,
       author: typeof stored.author === "string" ? stored.author : "",
-      state:
-        typeof stored.state === "string" ? stored.state.toUpperCase() : "UNKNOWN",
+      state: typeof stored.state === "string" ? stored.state.toUpperCase() : "UNKNOWN",
       comments: Number.isInteger(stored.comments) ? stored.comments : 0,
       createdAt: typeof stored.createdAt === "string" ? stored.createdAt : updatedAt,
       updatedAt,
@@ -316,10 +295,7 @@ function queueItemFromRecord(id, record) {
       draft: Boolean(stored.draft),
       labels: (Array.isArray(stored.labels) ? stored.labels : [])
         .filter(
-          (label) =>
-            label &&
-            typeof label.name === "string" &&
-            typeof label.color === "string",
+          (label) => label && typeof label.name === "string" && typeof label.color === "string",
         )
         .slice(0, 4)
         .map((label) => ({ name: label.name, color: label.color })),
@@ -337,25 +313,15 @@ function queueItemFromRecord(id, record) {
       authored: Boolean(stored.authored),
       reviewed: Boolean(stored.reviewed),
       latestReviewState:
-        typeof stored.latestReviewState === "string"
-          ? stored.latestReviewState
-          : null,
-      reviewDecision:
-        typeof stored.reviewDecision === "string"
-          ? stored.reviewDecision
-          : null,
-      notificationThreadId:
-        validNotificationThreadId(stored.notificationThreadId),
+        typeof stored.latestReviewState === "string" ? stored.latestReviewState : null,
+      reviewDecision: typeof stored.reviewDecision === "string" ? stored.reviewDecision : null,
+      notificationThreadId: validNotificationThreadId(stored.notificationThreadId),
       additions: Number.isInteger(stored.additions) ? stored.additions : null,
       deletions: Number.isInteger(stored.deletions) ? stored.deletions : null,
-      changedFiles: Number.isInteger(stored.changedFiles)
-        ? stored.changedFiles
-        : null,
+      changedFiles: Number.isInteger(stored.changedFiles) ? stored.changedFiles : null,
       headSha: typeof stored.headSha === "string" ? stored.headSha : "",
       notificationUpdatedAt:
-        typeof record.notificationUpdatedAt === "string"
-          ? record.notificationUpdatedAt
-          : "",
+        typeof record.notificationUpdatedAt === "string" ? record.notificationUpdatedAt : "",
     };
   } catch {
     return null;
@@ -427,10 +393,7 @@ export function applyQueueState(entries, state) {
       hasUnreadUpdates: hasDoneUpdates || hasReadUpdates,
       updatesSinceRead:
         hasDoneUpdates || hasReadUpdates
-          ? describeUpdates(
-              item,
-              hasDoneUpdates ? record.doneSnapshot : record.readSnapshot,
-            )
+          ? describeUpdates(item, hasDoneUpdates ? record.doneSnapshot : record.readSnapshot)
           : [],
       changesSince: hasDoneUpdates ? "marked done" : "last open",
     };
@@ -441,7 +404,9 @@ export function describeUpdates(item, snapshot) {
   if (!snapshot) return ["PR activity changed"];
   const updates = [];
   if (snapshot.state !== item.state) {
-    updates.push(item.state === "MERGED" ? "Merged" : `State changed to ${item.state.toLowerCase()}`);
+    updates.push(
+      item.state === "MERGED" ? "Merged" : `State changed to ${item.state.toLowerCase()}`,
+    );
   }
   if (snapshot.headSha && item.headSha && snapshot.headSha !== item.headSha) {
     updates.push("New commits");
@@ -473,12 +438,14 @@ function readSnapshot(record) {
 }
 
 function currentQueueRecordVersion(record) {
-  return (record?.item
-    ? queueVersion({
-        ...record.item,
-        notificationUpdatedAt: record.notificationUpdatedAt,
-      })
-    : "") || record?.version;
+  return (
+    (record?.item
+      ? queueVersion({
+          ...record.item,
+          notificationUpdatedAt: record.notificationUpdatedAt,
+        })
+      : "") || record?.version
+  );
 }
 
 export function setQueueItemDone(state, id, done) {
@@ -637,8 +604,7 @@ function normalizePr(pr) {
     reviewed: false,
     latestReviewState: null,
     reviewDecision: typeof pr.reviewDecision === "string" ? pr.reviewDecision : null,
-    notificationThreadId:
-      validNotificationThreadId(pr.notificationThreadId),
+    notificationThreadId: validNotificationThreadId(pr.notificationThreadId),
     additions: pr.additions ?? null,
     deletions: pr.deletions ?? null,
     changedFiles: pr.changedFiles ?? null,
@@ -657,9 +623,7 @@ function mergePr(item, pr) {
     comments: pr.commentsCount == null ? item.comments : incoming.comments,
     createdAt: pr.createdAt ?? item.createdAt,
     updatedAt:
-      new Date(incoming.updatedAt) > new Date(item.updatedAt)
-        ? incoming.updatedAt
-        : item.updatedAt,
+      new Date(incoming.updatedAt) > new Date(item.updatedAt) ? incoming.updatedAt : item.updatedAt,
     mergedAt: pr.mergedAt ?? item.mergedAt,
     draft: typeof pr.isDraft === "boolean" ? incoming.draft : item.draft,
     labels: incoming.labels.length ? incoming.labels : item.labels,
@@ -667,10 +631,7 @@ function mergePr(item, pr) {
     deletions: pr.deletions ?? item.deletions,
     changedFiles: pr.changedFiles ?? item.changedFiles,
     headSha: pr.headSha ?? pr.headRefOid ?? item.headSha,
-    reviewDecision:
-      typeof pr.reviewDecision === "string"
-        ? pr.reviewDecision
-        : item.reviewDecision,
+    reviewDecision: typeof pr.reviewDecision === "string" ? pr.reviewDecision : item.reviewDecision,
     notificationThreadId:
       validNotificationThreadId(pr.notificationThreadId) ?? item.notificationThreadId,
   };
@@ -696,7 +657,9 @@ export function addSource(items, pr, source, detail = "") {
   const existing = items.get(key);
   const item = !existing
     ? normalizePr(pr)
-    : source === "notification" ? existing : mergePr(existing, pr);
+    : source === "notification"
+      ? existing
+      : mergePr(existing, pr);
   if (source === "notification") {
     item.notification = {
       reason: detail,
@@ -724,10 +687,7 @@ function lifecycleFor(item) {
   if (item.authored) return "mine";
   if (item.latestReviewState === "APPROVED") return "approved";
   if (item.latestReviewState || item.reviewed) return "reviewed";
-  if (
-    item.state === "OPEN" ||
-    item.signals.some((signal) => signal.kind !== "team-covered")
-  ) {
+  if (item.state === "OPEN" || item.signals.some((signal) => signal.kind !== "team-covered")) {
     return "new";
   }
   return "other";
@@ -751,23 +711,18 @@ export function rankItems(items) {
         lifecycle,
         lifecycleLabel: lifecycleLabels[lifecycle],
         lifecycleScore: lifecycleScores[lifecycle],
-        score:
-          lifecycleScores[lifecycle] +
-          signalScore + reviewRequestScore,
+        score: lifecycleScores[lifecycle] + signalScore + reviewRequestScore,
         actionUrl: item.signals.find((signal) => signal.weight > 0)?.href ?? item.url,
       };
     })
     .sort(
       (a, b) =>
-        b.score - a.score ||
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+        b.score - a.score || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
     );
 }
 
 export function inboxFromQueue(state, username = state.sync?.username ?? "") {
-  const items = rankItems(
-    new Map(trackedQueueItems(state).map((item) => [item.id, item])),
-  );
+  const items = rankItems(new Map(trackedQueueItems(state).map((item) => [item.id, item])));
   return {
     username,
     fetchedAt: state.sync?.lastSyncedAt || null,
@@ -855,18 +810,16 @@ export function summarizeActivity(activity, username, teammates = []) {
       !["DISMISSED", "PENDING"].includes(review.state),
   );
   const postMergeComment = activity.mergedAt
-    ? [
+    ? ([
         ...(activity.comments?.nodes ?? []),
-        ...(activity.reviewThreads?.nodes ?? []).flatMap(
-          (thread) => thread.comments?.nodes ?? [],
-        ),
+        ...(activity.reviewThreads?.nodes ?? []).flatMap((thread) => thread.comments?.nodes ?? []),
       ]
         .filter(
           (comment) =>
             comment.author?.login?.toLowerCase() !== normalizedUser &&
             new Date(comment.createdAt) > new Date(activity.mergedAt),
         )
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] ?? null
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] ?? null)
     : null;
 
   return {
@@ -876,8 +829,7 @@ export function summarizeActivity(activity, username, teammates = []) {
     newComment,
     postMergeComment,
     hasNewCommits:
-      Boolean(latestReviewAt && lastCommitAt) &&
-      new Date(lastCommitAt) > new Date(latestReviewAt),
+      Boolean(latestReviewAt && lastCommitAt) && new Date(lastCommitAt) > new Date(latestReviewAt),
     coveringTeammate: coveringReview?.author?.login ?? "",
   };
 }
@@ -924,9 +876,12 @@ function notificationWebUrl(thread) {
   try {
     const parts = new URL(thread.subject.url).pathname.replace(/^\/repos\//, "").split("/");
     const [owner, repository, resource, value] = parts;
-    const route = { pulls: "pull", commits: "commit", issues: "issues", discussions: "discussions" }[
-      resource
-    ];
+    const route = {
+      pulls: "pull",
+      commits: "commit",
+      issues: "issues",
+      discussions: "discussions",
+    }[resource];
     return route && owner && repository && value
       ? `https://github.com/${owner}/${repository}/${route}/${value}`
       : repositoryUrl;
@@ -1006,21 +961,16 @@ export function activityCandidates(items, pullRequestNotifications, limit = 60) 
       item,
       changed:
         notificationAt > seenNotificationAt &&
-        (notificationAt > updatedAt ||
-          (item.state === "UNKNOWN" && notificationAt >= updatedAt)),
+        (notificationAt > updatedAt || (item.state === "UNKNOWN" && notificationAt >= updatedAt)),
       priority: Math.max(updatedAt, notificationAt),
     };
   });
   candidates.sort(
-    (left, right) =>
-      Number(right.changed) - Number(left.changed) ||
-      right.priority - left.priority,
+    (left, right) => Number(right.changed) - Number(left.changed) || right.priority - left.priority,
   );
 
   const changedCount = candidates.filter(({ changed }) => changed).length;
-  return candidates
-    .slice(0, Math.max(limit, changedCount))
-    .map(({ item }) => item);
+  return candidates.slice(0, Math.max(limit, changedCount)).map(({ item }) => item);
 }
 
 async function listRepositoryPullRequests(repository, historical, since) {
@@ -1082,9 +1032,7 @@ async function listRepositoryPullRequests(repository, historical, since) {
       60_000,
     ),
   ]);
-  return [
-    ...new Map([...open, ...merged].map((pr) => [pr.url, pr])).values(),
-  ].map((pr) => ({
+  return [...new Map([...open, ...merged].map((pr) => [pr.url, pr])).values()].map((pr) => ({
     ...pr,
     repository: { nameWithOwner: repository },
   }));
@@ -1139,16 +1087,10 @@ export async function syncNotifications(now = new Date()) {
   const startedAt = now.toISOString();
   const initialState = await readQueueState();
   const notifications = await getNotifications();
-  const items = new Map(
-    trackedQueueItems(initialState).map((item) => [item.id, item]),
-  );
+  const items = new Map(trackedQueueItems(initialState).map((item) => [item.id, item]));
   const initialIds = new Set(items.keys());
   const touched = new Set();
-  const warnings = await refreshNotificationItems(
-    items,
-    notifications.pullRequests,
-    touched,
-  );
+  const warnings = await refreshNotificationItems(items, notifications.pullRequests, touched);
   const entries = [...touched].map((id) => items.get(id)).filter(Boolean);
 
   const summary = await mutateQueueState((state) => {
@@ -1172,35 +1114,24 @@ export async function syncNotifications(now = new Date()) {
 
 export async function syncQueue(now = new Date()) {
   const startedAt = now.toISOString();
-  const [initialState, saved] = await Promise.all([
-    readQueueState(),
-    readSettings(),
-  ]);
-  const username =
-    saved.username || initialState.sync.username || (await getDetectedUser());
+  const [initialState, saved] = await Promise.all([readQueueState(), readSettings()]);
+  const username = saved.username || initialState.sync.username || (await getDetectedUser());
   const backfilled = new Set(initialState.sync.repositories);
   const previousSync = new Date(initialState.sync.lastSyncedAt).getTime();
   const since = new Date(
-    (Number.isFinite(previousSync) ? previousSync : now.getTime() - day) -
-      5 * 60_000,
+    (Number.isFinite(previousSync) ? previousSync : now.getTime() - day) - 5 * 60_000,
   ).toISOString();
   const repositoryTasks = trackedRepositories.map(async (repository) => ({
     repository,
     historical: !backfilled.has(repository),
-    pullRequests: await listRepositoryPullRequests(
-      repository,
-      !backfilled.has(repository),
-      since,
-    ),
+    pullRequests: await listRepositoryPullRequests(repository, !backfilled.has(repository), since),
   }));
   const [notificationsResult, ...repositoryResults] = await Promise.allSettled([
     getNotifications(),
     ...repositoryTasks,
   ]);
 
-  const items = new Map(
-    trackedQueueItems(initialState).map((item) => [item.id, item]),
-  );
+  const items = new Map(trackedQueueItems(initialState).map((item) => [item.id, item]));
   const initialIds = new Set(items.keys());
   const touched = new Set();
   const warnings = [];
@@ -1219,13 +1150,7 @@ export async function syncQueue(now = new Date()) {
   let pullRequestNotifications = [];
   if (notificationsResult.status === "fulfilled") {
     pullRequestNotifications = notificationsResult.value.pullRequests;
-    warnings.push(
-      ...(await refreshNotificationItems(
-        items,
-        pullRequestNotifications,
-        touched,
-      )),
-    );
+    warnings.push(...(await refreshNotificationItems(items, pullRequestNotifications, touched)));
   } else {
     warnings.push("GitHub notifications could not be synchronized.");
   }
@@ -1235,9 +1160,7 @@ export async function syncQueue(now = new Date()) {
     rememberQueueItems(state, entries, startedAt);
     applyAutomaticDone(
       state,
-      trackedQueueItems(state).filter((item) =>
-        trackedRepositories.includes(item.repository),
-      ),
+      trackedQueueItems(state).filter((item) => trackedRepositories.includes(item.repository)),
       now.getTime(),
     );
     for (const result of repositoryResults) {
@@ -1257,9 +1180,8 @@ export async function syncQueue(now = new Date()) {
       fetched: entries.length,
       added: entries.filter((item) => !initialIds.has(item.id)).length,
       tracked: Object.keys(state.items).length,
-      done: Object.values(state.items).filter(
-        (record) => record.doneVersion === record.version,
-      ).length,
+      done: Object.values(state.items).filter((record) => record.doneVersion === record.version)
+        .length,
       repositories: state.sync.repositories,
       warnings: [...new Set(warnings)],
     };
@@ -1279,13 +1201,7 @@ export async function syncQueue(now = new Date()) {
     ...summary,
     active: inbox.items.filter((item) => !item.done).length,
     autoQueued: automaticAnalysis.runs.length,
-    warnings: [
-      ...new Set([
-        ...summary.warnings,
-        ...inbox.warnings,
-        ...automaticAnalysis.warnings,
-      ]),
-    ],
+    warnings: [...new Set([...summary.warnings, ...inbox.warnings, ...automaticAnalysis.warnings])],
   };
 }
 
@@ -1483,9 +1399,7 @@ export async function collectInbox({
     if (
       summary.newComment &&
       !summary.postMergeComment &&
-      !current.signals.some((signal) =>
-        ["review-reply", "direct-mention"].includes(signal.kind),
-      )
+      !current.signals.some((signal) => ["review-reply", "direct-mention"].includes(signal.kind))
     ) {
       addSignal(
         items,
@@ -1581,15 +1495,12 @@ function alreadyAnalyzed(dashboard, candidate) {
   return pullRequest?.runs?.some(
     (run) =>
       ["queued", "running"].includes(run.status) ||
-      (run.status === "succeeded" &&
-        (!candidate.headSha || run.headSha === candidate.headSha)),
+      (run.status === "succeeded" && (!candidate.headSha || run.headSha === candidate.headSha)),
   );
 }
 
 async function enqueueMissingAnalyses(values) {
-  const candidates = sortPullRequestsBySize(
-    values.slice(0, 100).map(normalizeAnalysisCandidate),
-  );
+  const candidates = sortPullRequestsBySize(values.slice(0, 100).map(normalizeAnalysisCandidate));
   const dashboard = await cockpitJson("/api/dashboard");
   const runs = [];
   for (const candidate of candidates) {
@@ -1692,25 +1603,20 @@ async function handleApiRequest(request, response) {
   if (url.pathname === "/api/inbox/items" && request.method === "PUT") {
     try {
       const body = await readRequestJson(request);
-      const mutations = ["done", "read"].filter(
-        (field) => typeof body[field] === "boolean",
-      );
+      const mutations = ["done", "read"].filter((field) => typeof body[field] === "boolean");
       const ids = Array.isArray(body.ids) ? [...new Set(body.ids)] : null;
       const bulkDone = Boolean(
         ids?.length &&
-        ids.length === body.ids.length &&
-        ids.length <= 100 &&
-        ids.every((id) => typeof id === "string" && id && id.length <= 200) &&
-        body.id === undefined &&
-        body.done === true &&
-        mutations.length === 1,
+          ids.length === body.ids.length &&
+          ids.length <= 100 &&
+          ids.every((id) => typeof id === "string" && id && id.length <= 200) &&
+          body.id === undefined &&
+          body.done === true &&
+          mutations.length === 1,
       );
       if (
         !bulkDone &&
-        (typeof body.id !== "string" ||
-          !body.id ||
-          body.id.length > 200 ||
-          mutations.length !== 1)
+        (typeof body.id !== "string" || !body.id || body.id.length > 200 || mutations.length !== 1)
       ) {
         throw new Error("One tracked queue item update is required.");
       }
@@ -1718,19 +1624,21 @@ async function handleApiRequest(request, response) {
         bulkDone
           ? setQueueItemsDone(state, ids)
           : mutations[0] === "done"
-          ? setQueueItemDone(state, body.id, body.done)
-          : setQueueItemRead(state, body.id, body.read),
+            ? setQueueItemDone(state, body.id, body.done)
+            : setQueueItemRead(state, body.id, body.read),
       );
       if (!result) throw new Error("That queue item is not tracked.");
       if (body.done) {
         const state = await readQueueState();
         const doneIds = ids ?? [body.id];
-        const threadIds = new Set(doneIds.flatMap((id) => {
-          const stored = state.items[id]?.item?.notificationThreadId;
-          const threadId = /^notification:(\d+)$/.exec(id)?.[1]
-            ?? validNotificationThreadId(stored);
-          return threadId ? [threadId] : [];
-        }));
+        const threadIds = new Set(
+          doneIds.flatMap((id) => {
+            const stored = state.items[id]?.item?.notificationThreadId;
+            const threadId =
+              /^notification:(\d+)$/.exec(id)?.[1] ?? validNotificationThreadId(stored);
+            return threadId ? [threadId] : [];
+          }),
+        );
         try {
           if (threadIds.size < doneIds.length) {
             for (const { pr } of (await getNotifications()).pullRequests) {
@@ -1739,9 +1647,7 @@ async function handleApiRequest(request, response) {
               }
             }
           }
-          const outcomes = await Promise.allSettled(
-            [...threadIds].map(markGitHubNotificationDone),
-          );
+          const outcomes = await Promise.allSettled([...threadIds].map(markGitHubNotificationDone));
           if (outcomes.some(({ status }) => status === "rejected")) {
             throw new Error("GitHub notification update failed");
           }
@@ -1770,10 +1676,7 @@ async function handleApiRequest(request, response) {
     return true;
   }
 
-  if (
-    url.pathname === "/api/inbox/notifications/sync" &&
-    request.method === "POST"
-  ) {
+  if (url.pathname === "/api/inbox/notifications/sync" && request.method === "POST") {
     try {
       sendJson(response, 200, await syncNotifications());
     } catch (error) {
@@ -1791,13 +1694,10 @@ async function handleApiRequest(request, response) {
     try {
       const queueState = await readQueueState();
       const saved = await readSettings();
-      const inbox = inboxFromQueue(
-        queueState,
-        saved.username || queueState.sync.username,
-      );
+      const inbox = inboxFromQueue(queueState, saved.username || queueState.sync.username);
       response.writeHead(200, secureHeaders("application/json; charset=utf-8"));
       response.end(JSON.stringify(inbox));
-    } catch (error) {
+    } catch {
       sendJson(response, 500, { error: "The local queue could not be loaded." });
     }
     return true;
@@ -1831,13 +1731,14 @@ async function serveReviewArtifact(request, response) {
   try {
     if ((await stat(filePath)).isDirectory()) filePath = join(filePath, "index.html");
     const body = await readFile(filePath);
-    const contentType = {
-      ".css": "text/css; charset=utf-8",
-      ".html": "text/html; charset=utf-8",
-      ".js": "text/javascript; charset=utf-8",
-      ".json": "application/json; charset=utf-8",
-      ".svg": "image/svg+xml",
-    }[extname(filePath)] ?? "application/octet-stream";
+    const contentType =
+      {
+        ".css": "text/css; charset=utf-8",
+        ".html": "text/html; charset=utf-8",
+        ".js": "text/javascript; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".svg": "image/svg+xml",
+      }[extname(filePath)] ?? "application/octet-stream";
     response.writeHead(200, { "Cache-Control": "no-store", "Content-Type": contentType });
     response.end(request.method === "HEAD" ? undefined : body);
   } catch (error) {

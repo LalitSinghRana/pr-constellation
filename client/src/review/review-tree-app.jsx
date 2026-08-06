@@ -1,6 +1,19 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
-import ReactMarkdown from "react-markdown";
+import { DiffModeEnum, DiffView } from "@git-diff-view/react";
+import {
+  Background,
+  BackgroundVariant,
+  BaseEdge,
+  getSmoothStepPath,
+  Handle,
+  MarkerType,
+  MiniMap,
+  Position,
+  ReactFlow,
+  ReactFlowProvider,
+  useNodes,
+  useNodesInitialized,
+  useReactFlow,
+} from "@xyflow/react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -15,22 +28,9 @@ import {
   Layers3,
   UserRound,
 } from "lucide-react";
-import { DiffModeEnum, DiffView } from "@git-diff-view/react";
-import {
-  Background,
-  BackgroundVariant,
-  BaseEdge,
-  Handle,
-  MarkerType,
-  MiniMap,
-  Position,
-  ReactFlow,
-  ReactFlowProvider,
-  getSmoothStepPath,
-  useNodes,
-  useNodesInitialized,
-  useReactFlow,
-} from "@xyflow/react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
+import ReactMarkdown from "react-markdown";
 import { Badge } from "../components/ui/badge.jsx";
 import { Button } from "../components/ui/button.jsx";
 import { Collapsible, CollapsibleTrigger } from "../components/ui/collapsible.jsx";
@@ -55,11 +55,10 @@ const REVIEW_SECTION_CODE_CHARACTER_COLUMNS = 120;
 const REVIEW_SECTION_CODE_CHARACTER_WIDTH = 7;
 const REVIEW_SECTION_GUTTER_WIDTH = 102;
 const REVIEW_SECTION_HORIZONTAL_PADDING = 18;
-const REVIEW_SECTION_WIDTH = (
-  REVIEW_SECTION_CODE_CHARACTER_COLUMNS * REVIEW_SECTION_CODE_CHARACTER_WIDTH
-  + REVIEW_SECTION_GUTTER_WIDTH
-  + REVIEW_SECTION_HORIZONTAL_PADDING
-);
+const REVIEW_SECTION_WIDTH =
+  REVIEW_SECTION_CODE_CHARACTER_COLUMNS * REVIEW_SECTION_CODE_CHARACTER_WIDTH +
+  REVIEW_SECTION_GUTTER_WIDTH +
+  REVIEW_SECTION_HORIZONTAL_PADDING;
 const REVIEW_SECTION_HEADER_HEIGHT = 42;
 const REVIEW_GROUP_HEIGHT = 118;
 const REVIEW_GROUP_WIDTH = 520;
@@ -76,7 +75,8 @@ const FALLBACK_TREE_VIEWPORT = { x: 72, y: 52, zoom: 0.86 };
 const FILE_TREE_SOURCE_HANDLE = "file-tree-source";
 const FILE_TREE_TARGET_HANDLE = "file-tree-target";
 const INITIAL_COLOR_MODE = document.documentElement.classList.contains("dark") ? "dark" : "light";
-const REVIEW_STEP_BUTTON_CLASS = "review-step-button absolute z-[12] -translate-y-1/2 border-[color-mix(in_oklab,var(--primary)_38%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_12%,var(--background))] text-primary shadow-xs enabled:hover:border-[color-mix(in_oklab,var(--primary)_54%,var(--border))] enabled:hover:bg-[color-mix(in_oklab,var(--primary)_20%,var(--background))] enabled:hover:text-primary motion-reduce:transition-none";
+const REVIEW_STEP_BUTTON_CLASS =
+  "review-step-button absolute z-[12] -translate-y-1/2 border-[color-mix(in_oklab,var(--primary)_38%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_12%,var(--background))] text-primary shadow-xs enabled:hover:border-[color-mix(in_oklab,var(--primary)_54%,var(--border))] enabled:hover:bg-[color-mix(in_oklab,var(--primary)_20%,var(--background))] enabled:hover:text-primary motion-reduce:transition-none";
 const REVIEW_NAVIGATION_CONTROL_SELECTOR = [
   "a",
   "button",
@@ -126,7 +126,9 @@ const edgeTypes = {
 function App() {
   const review = useMemo(readReviewData, []);
   const treeData = useMemo(readTreeData, []);
-  const hasTree = Boolean((treeData?.files || []).some((file) => sectionTreeSections(file).length > 0));
+  const hasTree = Boolean(
+    (treeData?.files || []).some((file) => sectionTreeSections(file).length > 0),
+  );
   const expansionStorageKey = useMemo(() => {
     return `pr-review-tree-expansion:${window.location.pathname}`;
   }, []);
@@ -134,7 +136,8 @@ function App() {
     return `pr-review-source-view:${window.location.pathname}`;
   }, []);
   const [expandedGroupIds, setExpandedGroupIds] = usePersistentStringSet(expansionStorageKey);
-  const [sourceOrderViewIds, setSourceOrderViewIds] = usePersistentStringSet(sourceOrderViewStorageKey);
+  const [sourceOrderViewIds, setSourceOrderViewIds] =
+    usePersistentStringSet(sourceOrderViewStorageKey);
   const stacks = treeData?.reviewStacks || [];
   const [activeStackId, setActiveStackId] = useState(() => stacks[0]?.id ?? null);
   // First-pass layout uses the estimated reviewSectionHeight() formula; once
@@ -166,35 +169,44 @@ function App() {
       measuredHeights,
     });
   }, [activeStackId, expandedGroupIds, sourceOrderViewIds, measuredHeights, treeData]);
-  const toggleReviewGroup = useCallback((groupId) => {
-    setExpandedGroupIds((current) => {
-      const next = new Set(current);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
-      }
-      return next;
-    });
-  }, [setExpandedGroupIds]);
-  const setFileViewMode = useCallback((fileId, viewMode) => {
-    setSourceOrderViewIds((current) => {
-      const next = new Set(current);
-      if (viewMode === "source") {
-        next.add(fileId);
-      } else {
-        next.delete(fileId);
-      }
-      return next;
-    });
-  }, [setSourceOrderViewIds]);
+  const toggleReviewGroup = useCallback(
+    (groupId) => {
+      setExpandedGroupIds((current) => {
+        const next = new Set(current);
+        if (next.has(groupId)) {
+          next.delete(groupId);
+        } else {
+          next.add(groupId);
+        }
+        return next;
+      });
+    },
+    [setExpandedGroupIds],
+  );
+  const setFileViewMode = useCallback(
+    (fileId, viewMode) => {
+      setSourceOrderViewIds((current) => {
+        const next = new Set(current);
+        if (viewMode === "source") {
+          next.add(fileId);
+        } else {
+          next.delete(fileId);
+        }
+        return next;
+      });
+    },
+    [setSourceOrderViewIds],
+  );
 
   return (
     <div className="review-shell fixed inset-0 grid h-dvh w-screen min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden bg-background">
       <ReviewHeader review={review} />
       <main className="review-main grid min-h-0 overflow-hidden">
         {hasTree ? (
-          <section className="review-tree-panel size-full min-h-0 overflow-hidden rounded-none border-0 bg-card shadow-none" aria-label="PR review tree">
+          <section
+            className="review-tree-panel size-full min-h-0 overflow-hidden rounded-none border-0 bg-card shadow-none"
+            aria-label="PR review tree"
+          >
             <ReactFlowProvider>
               <ReviewTreeCanvas
                 activeStackId={activeStackId}
@@ -242,11 +254,18 @@ function ReviewHeader({ review }) {
             variant="outline"
           >
             <GitBranch aria-hidden="true" size={14} />
-            <span className="branch-name is-base min-w-0 max-w-[82px] flex-[0_1_auto] truncate">{review.baseRefName || "base"}</span>
-            <span aria-hidden="true" className="branch-arrow flex-none font-extrabold text-muted-foreground">
+            <span className="branch-name is-base min-w-0 max-w-[82px] flex-[0_1_auto] truncate">
+              {review.baseRefName || "base"}
+            </span>
+            <span
+              aria-hidden="true"
+              className="branch-arrow flex-none font-extrabold text-muted-foreground"
+            >
               &lt;-
             </span>
-            <span className="branch-name is-head min-w-0 max-w-[138px] flex-1 truncate">{review.headRefName || "head"}</span>
+            <span className="branch-name is-head min-w-0 max-w-[138px] flex-1 truncate">
+              {review.headRefName || "head"}
+            </span>
           </Badge>
           <Badge
             className="meta-chip author-chip min-w-0 max-w-[150px]"
@@ -303,9 +322,9 @@ function ReviewTreeCanvas({
   const navigation = useMemo(() => {
     const currentIndex = reviewSteps.findIndex(({ id }) => id === currentStepId);
     const current = reviewSteps[currentIndex] ?? null;
-    const fileRoots = reviewSteps.filter((step, index) => (
-      step.parentId !== reviewSteps[index - 1]?.parentId
-    ));
+    const fileRoots = reviewSteps.filter(
+      (step, index) => step.parentId !== reviewSteps[index - 1]?.parentId,
+    );
     const currentFileIndex = fileRoots.findIndex(({ parentId }) => parentId === current?.parentId);
     return {
       current,
@@ -316,36 +335,42 @@ function ReviewTreeCanvas({
       previousFile: fileRoots[currentFileIndex - 1] ?? null,
     };
   }, [currentStepId, reviewSteps]);
-  const snapToStep = useCallback((nodeId) => {
-    const stepId = reviewStepTargets.get(nodeId);
-    if (!stepId) {
-      return false;
-    }
-
-    setCurrentStepId(stepId);
-    const node = reactFlow.getInternalNode(stepId);
-    currentFileNodeIdRef.current = node?.parentId ?? currentFileNodeIdRef.current;
-    const canvas = canvasRef.current;
-    const nodeWidth = node?.measured?.width;
-    if (!nodeWidth || !node.measured.height || !canvas) {
-      pendingSnapIdRef.current = stepId;
-      if (snapRetryFrameRef.current === null) {
-        snapRetryFrameRef.current = window.requestAnimationFrame(() => {
-          snapRetryFrameRef.current = null;
-          snapToStep(pendingSnapIdRef.current);
-        });
+  const snapToStep = useCallback(
+    (nodeId) => {
+      const stepId = reviewStepTargets.get(nodeId);
+      if (!stepId) {
+        return false;
       }
-      return false;
-    }
 
-    pendingSnapIdRef.current = null;
-    reactFlow.setViewport(reviewViewportForNode(node, nodeWidth, canvas.getBoundingClientRect()), {
-      duration: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-        ? 0
-        : REVIEW_CAMERA_DURATION,
-    });
-    return true;
-  }, [reactFlow, reviewStepTargets]);
+      setCurrentStepId(stepId);
+      const node = reactFlow.getInternalNode(stepId);
+      currentFileNodeIdRef.current = node?.parentId ?? currentFileNodeIdRef.current;
+      const canvas = canvasRef.current;
+      const nodeWidth = node?.measured?.width;
+      if (!nodeWidth || !node.measured.height || !canvas) {
+        pendingSnapIdRef.current = stepId;
+        if (snapRetryFrameRef.current === null) {
+          snapRetryFrameRef.current = window.requestAnimationFrame(() => {
+            snapRetryFrameRef.current = null;
+            snapToStep(pendingSnapIdRef.current);
+          });
+        }
+        return false;
+      }
+
+      pendingSnapIdRef.current = null;
+      reactFlow.setViewport(
+        reviewViewportForNode(node, nodeWidth, canvas.getBoundingClientRect()),
+        {
+          duration: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+            ? 0
+            : REVIEW_CAMERA_DURATION,
+        },
+      );
+      return true;
+    },
+    [reactFlow, reviewStepTargets],
+  );
   useEffect(() => {
     return () => {
       if (snapRetryFrameRef.current !== null) {
@@ -353,18 +378,21 @@ function ReviewTreeCanvas({
       }
     };
   }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Stack changes reset the camera; layout measurement updates must not.
   useEffect(() => {
     snapToStep(reviewSteps[0]?.id);
     // Start each selected stack at its first file-tree root. Do not depend on
     // tree rebuilds here: measurement updates must not fight manual panning.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStackId]);
   useEffect(() => {
     if (!currentStepId || !reviewStepIds.has(currentStepId)) {
-      const fallback = reviewSteps.find(({ parentId }) => parentId === currentFileNodeIdRef.current);
+      const fallback = reviewSteps.find(
+        ({ parentId }) => parentId === currentFileNodeIdRef.current,
+      );
       snapToStep(fallback?.id ?? reviewSteps[0]?.id);
     }
   }, [currentStepId, reviewStepIds, reviewSteps, snapToStep]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Tree changes intentionally retry a pending snap after React Flow measures nodes.
   useEffect(() => {
     if (pendingSnapIdRef.current) {
       snapToStep(pendingSnapIdRef.current);
@@ -390,44 +418,54 @@ function ReviewTreeCanvas({
       onMeasuredHeightsChange(updates);
     }
   }, [liveNodes, nodesInitialized, onMeasuredHeightsChange]);
-  const handleToggleReviewGroup = useCallback((groupId) => {
-    onToggleReviewGroup(groupId);
-  }, [onToggleReviewGroup]);
-  const handleNodeClick = useCallback((event, node) => {
-    const target = event.target;
-    if (
-      !reviewStepTargets.has(node.id)
-      || window.getSelection()?.isCollapsed === false
-      || (target instanceof Element && target.closest(REVIEW_NAVIGATION_CONTROL_SELECTOR))
-    ) {
-      return;
-    }
+  const handleToggleReviewGroup = useCallback(
+    (groupId) => {
+      onToggleReviewGroup(groupId);
+    },
+    [onToggleReviewGroup],
+  );
+  const handleNodeClick = useCallback(
+    (event, node) => {
+      const target = event.target;
+      if (
+        !reviewStepTargets.has(node.id) ||
+        window.getSelection()?.isCollapsed === false ||
+        (target instanceof Element && target.closest(REVIEW_NAVIGATION_CONTROL_SELECTOR))
+      ) {
+        return;
+      }
 
-    snapToStep(node.id);
-  }, [reviewStepTargets, snapToStep]);
+      snapToStep(node.id);
+    },
+    [reviewStepTargets, snapToStep],
+  );
   useEffect(() => {
     const handleKeyDown = (event) => {
       const target = event.target;
       if (
-        event.defaultPrevented
-        || event.altKey
-        || event.ctrlKey
-        || event.metaKey
-        || window.getSelection()?.isCollapsed === false
-        || (target instanceof Element && target.closest(REVIEW_NAVIGATION_CONTROL_SELECTOR))
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        window.getSelection()?.isCollapsed === false ||
+        (target instanceof Element && target.closest(REVIEW_NAVIGATION_CONTROL_SELECTOR))
       ) {
         return;
       }
 
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
-        const destination = event.key === "ArrowLeft"
-          ? (event.shiftKey ? navigation.previousFile : navigation.previous)
-          : (event.shiftKey ? navigation.nextFile : navigation.next);
+        const destination =
+          event.key === "ArrowLeft"
+            ? event.shiftKey
+              ? navigation.previousFile
+              : navigation.previous
+            : event.shiftKey
+              ? navigation.nextFile
+              : navigation.next;
         snapToStep(destination?.id);
         return;
       }
-
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -458,13 +496,15 @@ function ReviewTreeCanvas({
       return node;
     });
   }, [tree.nodes, handleToggleReviewGroup, onFileViewModeChange]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Tree changes intentionally refresh the matching React Flow DOM node.
   useEffect(() => {
     const canvas = canvasRef.current;
     let activeNode;
     let frame;
     const applyCurrentStep = () => {
-      activeNode = [...(canvas?.querySelectorAll(".react-flow__node") || [])]
-        .find((node) => node.dataset.id === currentStepId);
+      activeNode = [...(canvas?.querySelectorAll(".react-flow__node") || [])].find(
+        (node) => node.dataset.id === currentStepId,
+      );
       canvas?.querySelector('[aria-current="step"]')?.removeAttribute("aria-current");
       activeNode?.setAttribute("aria-current", "step");
       if (!activeNode && currentStepId) {
@@ -480,8 +520,14 @@ function ReviewTreeCanvas({
   }, [currentStepId, tree.nodes]);
   const currentStepTitle = reviewStepTitle(navigation.current);
   return (
-    <div className="review-tree relative grid size-full grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden bg-card" data-review-tree>
-      <div className="tree-canvas relative col-start-1 row-start-1 size-full min-h-0 min-w-0" ref={canvasRef}>
+    <div
+      className="review-tree relative grid size-full grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden bg-card"
+      data-review-tree
+    >
+      <div
+        className="tree-canvas relative col-start-1 row-start-1 size-full min-h-0 min-w-0"
+        ref={canvasRef}
+      >
         <ReactFlow
           colorMode={INITIAL_COLOR_MODE}
           defaultViewport={defaultViewport}
@@ -517,7 +563,9 @@ function ReviewTreeCanvas({
             nodeClassName={reviewTreeMapNodeClassName}
             nodeColor={reviewTreeMapNodeColor}
             nodeComponent={ReviewTreeMapNode}
-            nodeStrokeColor={(node) => node.id === currentStepId ? "var(--primary)" : "transparent"}
+            nodeStrokeColor={(node) =>
+              node.id === currentStepId ? "var(--primary)" : "transparent"
+            }
             nodeStrokeWidth={4}
             onNodeClick={(event, node) => {
               event.stopPropagation();
@@ -525,33 +573,48 @@ function ReviewTreeCanvas({
             }}
             pannable
             position="top-right"
+            style={{ right: 18, top: 16 }}
             zoomable={false}
           />
         </ReactFlow>
-        <StackSelect activeStackId={activeStackId} onActiveStackChange={onActiveStackChange} stacks={stacks} />
+        <StackSelect
+          activeStackId={activeStackId}
+          onActiveStackChange={onActiveStackChange}
+          stacks={stacks}
+        />
         <Button
-          aria-label={navigation.previousFile
-            ? `Previous file: ${reviewStepTitle(navigation.previousFile)}`
-            : "No previous file"}
+          aria-label={
+            navigation.previousFile
+              ? `Previous file: ${reviewStepTitle(navigation.previousFile)}`
+              : "No previous file"
+          }
           className={`${REVIEW_STEP_BUTTON_CLASS} is-previous-file left-4 top-[calc(50%_+_26px)]`}
           disabled={!navigation.previousFile}
           onClick={() => snapToStep(navigation.previousFile?.id)}
           size="icon-lg"
-          title={navigation.previousFile ? `Previous file: ${reviewStepTitle(navigation.previousFile)}` : "First file"}
+          title={
+            navigation.previousFile
+              ? `Previous file: ${reviewStepTitle(navigation.previousFile)}`
+              : "First file"
+          }
           type="button"
           variant="outline"
         >
           <ChevronsLeft aria-hidden="true" />
         </Button>
         <Button
-          aria-label={navigation.previous
-            ? `Previous review step: ${reviewStepTitle(navigation.previous)}`
-            : "No previous review step"}
+          aria-label={
+            navigation.previous
+              ? `Previous review step: ${reviewStepTitle(navigation.previous)}`
+              : "No previous review step"
+          }
           className={`${REVIEW_STEP_BUTTON_CLASS} is-previous left-4 top-[calc(50%_-_26px)]`}
           disabled={!navigation.previous}
           onClick={() => snapToStep(navigation.previous?.id)}
           size="icon-lg"
-          title={navigation.previous ? `Previous: ${reviewStepTitle(navigation.previous)}` : "First step"}
+          title={
+            navigation.previous ? `Previous: ${reviewStepTitle(navigation.previous)}` : "First step"
+          }
           type="button"
           variant="outline"
         >
@@ -572,9 +635,11 @@ function ReviewTreeCanvas({
           </span>
         </Badge>
         <Button
-          aria-label={navigation.next
-            ? `Next review step: ${reviewStepTitle(navigation.next)}`
-            : "No next review step"}
+          aria-label={
+            navigation.next
+              ? `Next review step: ${reviewStepTitle(navigation.next)}`
+              : "No next review step"
+          }
           className={`${REVIEW_STEP_BUTTON_CLASS} is-next right-4 top-[calc(50%_-_26px)]`}
           disabled={!navigation.next}
           onClick={() => snapToStep(navigation.next?.id)}
@@ -586,14 +651,18 @@ function ReviewTreeCanvas({
           <ChevronRight aria-hidden="true" />
         </Button>
         <Button
-          aria-label={navigation.nextFile
-            ? `Next file: ${reviewStepTitle(navigation.nextFile)}`
-            : "No next file"}
+          aria-label={
+            navigation.nextFile
+              ? `Next file: ${reviewStepTitle(navigation.nextFile)}`
+              : "No next file"
+          }
           className={`${REVIEW_STEP_BUTTON_CLASS} is-next-file right-4 top-[calc(50%_+_26px)]`}
           disabled={!navigation.nextFile}
           onClick={() => snapToStep(navigation.nextFile?.id)}
           size="icon-lg"
-          title={navigation.nextFile ? `Next file: ${reviewStepTitle(navigation.nextFile)}` : "Last file"}
+          title={
+            navigation.nextFile ? `Next file: ${reviewStepTitle(navigation.nextFile)}` : "Last file"
+          }
           type="button"
           variant="outline"
         >
@@ -627,11 +696,13 @@ function reviewTreeMapNodeColor(node) {
     return "color-mix(in oklab, var(--card) 90%, var(--section-tree-color))";
   }
 
-  return {
-    primary: "var(--coral)",
-    secondary: "var(--ochre)",
-    skim: "var(--muted-foreground)",
-  }[node.data?.reviewSection?.reviewPriority] || "var(--section-tree-color)";
+  return (
+    {
+      primary: "var(--coral)",
+      secondary: "var(--ochre)",
+      skim: "var(--muted-foreground)",
+    }[node.data?.reviewSection?.reviewPriority] || "var(--section-tree-color)"
+  );
 }
 
 function reviewTreeMapNodeClassName(node) {
@@ -658,9 +729,14 @@ function ReviewTreeMapNode({
   const lineWidth = Math.max(10, Math.min(width, height) * 0.035);
 
   return (
-    <g
+    <a
+      aria-label={`Focus ${id} in the review tree`}
       className={`react-flow__minimap-node ${className}`}
-      onClick={onClick ? (event) => onClick(event, id) : undefined}
+      href={`#${id}`}
+      onClick={(event) => {
+        event.preventDefault();
+        onClick?.(event, id);
+      }}
     >
       <rect
         fill={isFileNode ? color : "var(--card)"}
@@ -682,18 +758,20 @@ function ReviewTreeMapNode({
         x={x}
         y={y}
       />
-      {!isFileNode && !isGroup ? [0.48, 0.64, 0.8].map((offset, index) => (
-        <line
-          key={offset}
-          opacity={0.55}
-          stroke={color}
-          strokeWidth={lineWidth}
-          x1={x + width * 0.1}
-          x2={x + width * (0.88 - index * 0.12)}
-          y1={y + height * offset}
-          y2={y + height * offset}
-        />
-      )) : null}
+      {!isFileNode && !isGroup
+        ? [0.48, 0.64, 0.8].map((offset, index) => (
+            <line
+              key={offset}
+              opacity={0.55}
+              stroke={color}
+              strokeWidth={lineWidth}
+              x1={x + width * 0.1}
+              x2={x + width * (0.88 - index * 0.12)}
+              y1={y + height * offset}
+              y2={y + height * offset}
+            />
+          ))
+        : null}
       <rect
         fill="none"
         height={height}
@@ -707,7 +785,7 @@ function ReviewTreeMapNode({
         x={x}
         y={y}
       />
-    </g>
+    </a>
   );
 }
 
@@ -756,8 +834,18 @@ function FileNode({ data }) {
       aria-label={`File review tree for ${filePath}`}
       className="file-node relative size-full rounded-lg border border-[color-mix(in_oklab,var(--primary)_34%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_5%,var(--card))]"
     >
-      <Handle className="node-handle" id={FILE_TREE_TARGET_HANDLE} position={Position.Top} type="target" />
-      <Handle className="node-handle" id={FILE_TREE_SOURCE_HANDLE} position={Position.Bottom} type="source" />
+      <Handle
+        className="node-handle"
+        id={FILE_TREE_TARGET_HANDLE}
+        position={Position.Top}
+        type="target"
+      />
+      <Handle
+        className="node-handle"
+        id={FILE_TREE_SOURCE_HANDLE}
+        position={Position.Bottom}
+        type="source"
+      />
       <div className="file-node-header absolute top-[11px] right-3.5 left-3.5 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3.5">
         <ExplanationHoverCard
           explanation={fileExplanation}
@@ -821,9 +909,12 @@ function ReviewGroupNode({ data }) {
         <article
           className={cn(
             "review-group nodrag nopan size-full overflow-hidden rounded-md border border-border bg-card shadow-sm",
-            reviewPriority === "primary" && "border-[color-mix(in_oklab,var(--coral)_46%,var(--border))] bg-[color-mix(in_oklab,var(--coral)_6%,var(--card))]",
-            reviewPriority === "secondary" && "border-[color-mix(in_oklab,var(--ochre)_46%,var(--border))] bg-[color-mix(in_oklab,var(--ochre)_6%,var(--card))]",
-            reviewPriority === "skim" && "border-[color-mix(in_oklab,var(--muted-foreground)_34%,var(--border))] bg-[color-mix(in_oklab,var(--muted)_46%,var(--card))]",
+            reviewPriority === "primary" &&
+              "border-[color-mix(in_oklab,var(--coral)_46%,var(--border))] bg-[color-mix(in_oklab,var(--coral)_6%,var(--card))]",
+            reviewPriority === "secondary" &&
+              "border-[color-mix(in_oklab,var(--ochre)_46%,var(--border))] bg-[color-mix(in_oklab,var(--ochre)_6%,var(--card))]",
+            reviewPriority === "skim" &&
+              "border-[color-mix(in_oklab,var(--muted-foreground)_34%,var(--border))] bg-[color-mix(in_oklab,var(--muted)_46%,var(--card))]",
           )}
         >
           <Handle className="node-handle" position={Position.Top} type="target" />
@@ -845,16 +936,22 @@ function ReviewGroupNode({ data }) {
                 <FolderTree aria-hidden="true" size={20} />
               </span>
               <span className="review-group-copy grid min-w-0 gap-[5px]">
-                <span className="review-group-title truncate text-sm leading-[1.1] font-extrabold">{data.reviewSection.title}</span>
+                <span className="review-group-title truncate text-sm leading-[1.1] font-extrabold">
+                  {data.reviewSection.title}
+                </span>
                 <span className="review-group-summary truncate font-mono text-[11px] leading-[1.15] font-semibold tracking-normal text-muted-foreground">
                   {`${group.branchCount} ${group.branchCount === 1 ? "branch" : "branches"} · ${group.sectionCount} sections · ${group.lineCount} changed lines`}
                 </span>
-                <span className="review-group-preview truncate text-[11px] leading-[1.15] tracking-normal text-muted-foreground">{rootPreview}</span>
+                <span className="review-group-preview truncate text-[11px] leading-[1.15] tracking-normal text-muted-foreground">
+                  {rootPreview}
+                </span>
               </span>
               <span className="review-group-toggle grid size-7 place-items-center rounded-sm text-muted-foreground">
-                {group.expanded
-                  ? <ChevronDown aria-hidden="true" size={19} />
-                  : <ChevronRight aria-hidden="true" size={19} />}
+                {group.expanded ? (
+                  <ChevronDown aria-hidden="true" size={19} />
+                ) : (
+                  <ChevronRight aria-hidden="true" size={19} />
+                )}
               </span>
             </Button>
           </CollapsibleTrigger>
@@ -877,41 +974,53 @@ function ReviewSectionNode({ data }) {
       aria-label={`Review section for ${filePath}: ${data.reviewSection.title}. ${plainTextExplanation(sectionExplanation)}`}
       className={cn(
         "review-section-node nodrag nopan w-full max-w-full cursor-text overflow-hidden rounded-md border border-border bg-card shadow-sm select-text",
-        reviewPriority === "primary" && "border-[color-mix(in_oklab,var(--coral)_46%,var(--border))]",
-        reviewPriority === "secondary" && "border-[color-mix(in_oklab,var(--ochre)_46%,var(--border))]",
-        reviewPriority === "skim" && "border-[color-mix(in_oklab,var(--muted-foreground)_34%,var(--border))]",
+        reviewPriority === "primary" &&
+          "border-[color-mix(in_oklab,var(--coral)_46%,var(--border))]",
+        reviewPriority === "secondary" &&
+          "border-[color-mix(in_oklab,var(--ochre)_46%,var(--border))]",
+        reviewPriority === "skim" &&
+          "border-[color-mix(in_oklab,var(--muted-foreground)_34%,var(--border))]",
       )}
       data-file-path={filePath}
     >
-      {showHandles ? <Handle className="node-handle" position={Position.Top} type="target" /> : null}
+      {showHandles ? (
+        <Handle className="node-handle" position={Position.Top} type="target" />
+      ) : null}
       <ExplanationHoverCard
         explanation={sectionExplanation}
         contextLabel="Review section: What / Why"
         title={data.reviewSection.title}
       >
         <header
-          aria-label={`What and why for ${data.reviewSection.title}. ${plainTextExplanation(sectionExplanation)}`}
           className={cn(
             "review-section-header flex h-[42px] w-full min-w-0 items-center overflow-hidden border-b border-border bg-muted px-3 text-xs leading-none text-card-foreground outline-none data-[slot=hover-card-trigger]:cursor-help focus-visible:shadow-[inset_0_0_0_3px_color-mix(in_oklab,var(--ring)_30%,transparent)]",
             reviewPriority === "primary" && "bg-[color-mix(in_oklab,var(--coral)_9%,var(--muted))]",
-            reviewPriority === "secondary" && "bg-[color-mix(in_oklab,var(--ochre)_9%,var(--muted))]",
+            reviewPriority === "secondary" &&
+              "bg-[color-mix(in_oklab,var(--ochre)_9%,var(--muted))]",
           )}
           tabIndex={sectionExplanation ? 0 : undefined}
         >
-          <span className="review-section-title min-w-0 truncate text-xs font-bold tracking-normal" title={data.reviewSection.title}>
+          <span
+            className="review-section-title min-w-0 truncate text-xs font-bold tracking-normal"
+            title={data.reviewSection.title}
+          >
             {data.reviewSection.title}
           </span>
         </header>
       </ExplanationHoverCard>
       <div className="review-section-scroll max-w-full overflow-x-auto overflow-y-hidden overscroll-contain">
         {(data.reviewSection.codeChunks || []).map((chunk, chunkIndex, chunks) => (
-          <React.Fragment key={`${data.reviewSection.id}-${chunkIndex}`}>
+          <React.Fragment
+            key={`${data.reviewSection.id}-${chunk.lines[0]?.id}-${chunk.lines.at(-1)?.id}`}
+          >
             <UnchangedLinesGap nextChunk={chunk} prevChunk={chunks[chunkIndex - 1]} />
             <DiffChunkView chunk={chunk} />
           </React.Fragment>
         ))}
       </div>
-      {showHandles ? <Handle className="node-handle" position={Position.Bottom} type="source" /> : null}
+      {showHandles ? (
+        <Handle className="node-handle" position={Position.Bottom} type="source" />
+      ) : null}
     </article>
   );
 }
@@ -949,12 +1058,13 @@ function ReviewBranch({
       side="top"
       title={`${sourceTitle} → ${targetTitle}`}
     >
-      <g
+      <a
         aria-label={`${sourceTitle} to ${targetTitle}. ${plainTextExplanation(explanation)}`}
         className="review-branch-trigger"
-        role="note"
-        tabIndex={explanation ? 0 : undefined}
+        href={`#${id}`}
+        onClick={(event) => event.preventDefault()}
       >
+        <title>{`${sourceTitle} to ${targetTitle}. ${plainTextExplanation(explanation)}`}</title>
         <BaseEdge
           className="review-branch-path"
           id={id}
@@ -963,19 +1073,13 @@ function ReviewBranch({
           path={edgePath}
           style={style}
         />
-        <path aria-hidden="true" className="review-branch-hit-path" d={edgePath} />
-      </g>
+        <path className="review-branch-hit-path" d={edgePath} />
+      </a>
     </ExplanationHoverCard>
   );
 }
 
-function ExplanationHoverCard({
-  children,
-  explanation,
-  contextLabel,
-  side = "top",
-  title,
-}) {
+function ExplanationHoverCard({ children, explanation, contextLabel, side = "top", title }) {
   const text = String(explanation || "").trim();
   if (!text) {
     return children;
@@ -990,8 +1094,12 @@ function ExplanationHoverCard({
         side={side}
         sideOffset={10}
       >
-        <div className="explanation-hover-label text-[11px] leading-[1.2] font-extrabold tracking-normal text-primary uppercase">{contextLabel}</div>
-        <div className="explanation-hover-title mt-1.5 text-sm leading-[1.35] font-extrabold tracking-normal text-foreground [overflow-wrap:anywhere]">{title}</div>
+        <div className="explanation-hover-label text-[11px] leading-[1.2] font-extrabold tracking-normal text-primary uppercase">
+          {contextLabel}
+        </div>
+        <div className="explanation-hover-title mt-1.5 text-sm leading-[1.35] font-extrabold tracking-normal text-foreground [overflow-wrap:anywhere]">
+          {title}
+        </div>
         <div className="explanation-hover-body mt-2.5 text-[13px] leading-[1.55] text-muted-foreground [overflow-wrap:anywhere]">
           <ReactMarkdown>{text}</ReactMarkdown>
         </div>
@@ -1146,7 +1254,7 @@ function buildLineAstNodes(lines) {
 }
 
 function tokensToAstNodes(tokens) {
-  return (tokens || []).map((token) => (
+  return (tokens || []).map((token) =>
     token.style
       ? {
           children: [{ type: "text", value: token.content }],
@@ -1154,14 +1262,14 @@ function tokensToAstNodes(tokens) {
           tagName: "span",
           type: "element",
         }
-      : { type: "text", value: token.content }
-  ));
+      : { type: "text", value: token.content },
+  );
 }
 
 // The shiki tokens are highlighted server-side (render.js); this highlighter just hands
 // pre-built per-file ASTs back to @git-diff-view/react instead of running a highlighter
 // engine (e.g. lowlight) in the browser.
-function createPreHighlightedHighlighter({ newAst, newFileContent, oldAst, oldFileContent }) {
+function createPreHighlightedHighlighter({ newAst, newFileContent, oldAst }) {
   return {
     getAST: (raw) => (raw === newFileContent ? newAst : oldAst),
     hasRegisteredCurrentLang: () => true,
@@ -1191,7 +1299,12 @@ function processPreHighlightedAst(ast) {
           if (!syntaxObj[lineNumber]) {
             node.startIndex = 0;
             node.endIndex = valueLength - 1;
-            syntaxObj[lineNumber] = { lineNumber, nodeList: [{ node, wrapper }], value: node.value, valueLength };
+            syntaxObj[lineNumber] = {
+              lineNumber,
+              nodeList: [{ node, wrapper }],
+              value: node.value,
+              valueLength,
+            };
           } else {
             node.startIndex = syntaxObj[lineNumber].valueLength;
             node.endIndex = node.startIndex + valueLength - 1;
@@ -1211,7 +1324,13 @@ function processPreHighlightedAst(ast) {
           const segmentValue = isLastSegment ? segment : `${segment}\n`;
           const segmentLineNumber = segmentIndex === 0 ? lineNumber : ++lineNumber;
           const segmentValueLength = segmentValue.length;
-          const segmentNode = { endIndex: Infinity, lineNumber: segmentLineNumber, startIndex: Infinity, type: "text", value: segmentValue };
+          const segmentNode = {
+            endIndex: Infinity,
+            lineNumber: segmentLineNumber,
+            startIndex: Infinity,
+            type: "text",
+            value: segmentValue,
+          };
 
           if (!syntaxObj[segmentLineNumber]) {
             segmentNode.startIndex = 0;
@@ -1271,7 +1390,8 @@ function buildReviewTree(
   });
 
   for (const spec of fileSpecs) {
-    const { file, reviewSections, sectionTree, nodeHeight, nodeId, nodeWidth, viewMode, x, y } = spec;
+    const { file, reviewSections, sectionTree, nodeHeight, nodeId, nodeWidth, viewMode, x, y } =
+      spec;
     if (reviewSections.length === 0) {
       continue;
     }
@@ -1286,7 +1406,8 @@ function buildReviewTree(
       initialWidth: nodeWidth,
       position: { x, y },
       selectable: false,
-      style: { height: nodeHeight, width: nodeWidth },
+      style: { height: nodeHeight, pointerEvents: "none", width: nodeWidth },
+      zIndex: 2,
       type: "fileNode",
     });
     fileNodes.push({
@@ -1317,15 +1438,21 @@ function buildReviewTree(
           y: FILE_NODE_PADDING_TOP + item.y,
         },
         selectable: false,
-        style: { width: reviewSectionWidth(item.section) },
+        style: { pointerEvents: "auto", width: reviewSectionWidth(item.section) },
         type: item.section.reviewGroup ? "reviewGroup" : "reviewSection",
+        zIndex: 4,
       });
     }
 
-    const reviewSectionById = new Map(reviewSections.map((reviewSection) => [reviewSection.id, reviewSection]));
+    const reviewSectionById = new Map(
+      reviewSections.map((reviewSection) => [reviewSection.id, reviewSection]),
+    );
     const validReviewSectionIds = new Set(reviewSectionById.keys());
     for (const branch of sectionTree.branches) {
-      if (!validReviewSectionIds.has(branch.parentId) || !validReviewSectionIds.has(branch.childId)) {
+      if (
+        !validReviewSectionIds.has(branch.parentId) ||
+        !validReviewSectionIds.has(branch.childId)
+      ) {
         continue;
       }
 
@@ -1355,7 +1482,6 @@ function buildReviewTree(
         zIndex: 4,
       });
     }
-
   }
 
   const fileSpecById = new Map(fileSpecs.map((spec) => [spec.file.id, spec]));
@@ -1419,13 +1545,16 @@ function buildFileNodeSpecs(
   const fileLayouts = (analysis?.files || [])
     .filter((file) => sectionTreeSections(file).length > 0)
     .filter((file) => !activeFileIds || activeFileIds.has(file.id))
-    .map((file) => buildFileLayout(file, {
-      expandedGroupIds,
-      getReviewSectionHeight: measuredHeights
-        ? (node) => measuredHeights.get(reviewSectionId(file, node.id)) ?? reviewSectionHeight(node)
-        : reviewSectionHeight,
-      viewMode: sourceOrderViewIds.has(file.id) ? "source" : "tree",
-    }));
+    .map((file) =>
+      buildFileLayout(file, {
+        expandedGroupIds,
+        getReviewSectionHeight: measuredHeights
+          ? (node) =>
+              measuredHeights.get(reviewSectionId(file, node.id)) ?? reviewSectionHeight(node)
+          : reviewSectionHeight,
+        viewMode: sourceOrderViewIds.has(file.id) ? "source" : "tree",
+      }),
+    );
 
   return layoutFileNodesByFileTree(fileLayouts, activeStack?.fileTree?.branches || []);
 }
@@ -1450,11 +1579,16 @@ function layoutFileNodesByFileTree(fileLayouts, branches) {
 
 function buildFileLayout(
   file,
-  { expandedGroupIds = new Set(), getReviewSectionHeight = reviewSectionHeight, viewMode = "tree" } = {},
+  {
+    expandedGroupIds = new Set(),
+    getReviewSectionHeight = reviewSectionHeight,
+    viewMode = "tree",
+  } = {},
 ) {
-  const sectionTree = viewMode === "source"
-    ? buildSourceOrderSectionTree(file)
-    : foldSectionTree(file, { expandedGroupIds });
+  const sectionTree =
+    viewMode === "source"
+      ? buildSourceOrderSectionTree(file)
+      : foldSectionTree(file, { expandedGroupIds });
   const reviewSections = sectionTree.sections;
   const layout = layoutReviewSections(reviewSections, sectionTree.branches, getReviewSectionHeight);
 
@@ -1477,16 +1611,19 @@ function buildSourceOrderSectionTree(file) {
   return {
     branches: [],
     groupIds: [],
-    sections: [{
-      id: "source-order-view",
-      title: "Source-order diff",
-      reviewPriority: file.reviewPriority,
-      changeKind: file.changeKind,
-      explanation: "This view keeps every changed hunk together in source order for reviewers who prefer top-to-bottom file context. It intentionally presents source order rather than the Section Tree.",
-      changedLineIds: file.changedLineIds || [],
-      codeChunks: file.sourceCodeChunks || [],
-      sourceOrderView: true,
-    }],
+    sections: [
+      {
+        id: "source-order-view",
+        title: "Source-order diff",
+        reviewPriority: file.reviewPriority,
+        changeKind: file.changeKind,
+        explanation:
+          "This view keeps every changed hunk together in source order for reviewers who prefer top-to-bottom file context. It intentionally presents source order rather than the Section Tree.",
+        changedLineIds: file.changedLineIds || [],
+        codeChunks: file.sourceCodeChunks || [],
+        sourceOrderView: true,
+      },
+    ],
   };
 }
 
@@ -1502,10 +1639,10 @@ function layoutTreeTopToBottom({ branches, getId, items, layerGap, siblingGap })
 
   for (const branch of branches) {
     if (
-      branch.parentId === branch.childId
-      || !itemById.has(branch.parentId)
-      || !itemById.has(branch.childId)
-      || incomingIds.has(branch.childId)
+      branch.parentId === branch.childId ||
+      !itemById.has(branch.parentId) ||
+      !itemById.has(branch.childId) ||
+      incomingIds.has(branch.childId)
     ) {
       continue;
     }
@@ -1520,8 +1657,8 @@ function layoutTreeTopToBottom({ branches, getId, items, layerGap, siblingGap })
   for (const children of childrenById.values()) {
     children.sort((leftId, rightId) => {
       return (
-        (reviewOrderById.get(leftId) ?? itemById.get(leftId).order)
-        - (reviewOrderById.get(rightId) ?? itemById.get(rightId).order)
+        (reviewOrderById.get(leftId) ?? itemById.get(leftId).order) -
+        (reviewOrderById.get(rightId) ?? itemById.get(rightId).order)
       );
     });
   }
@@ -1529,9 +1666,8 @@ function layoutTreeTopToBottom({ branches, getId, items, layerGap, siblingGap })
   const roots = items
     .filter((item) => !incomingIds.has(getId(item)))
     .sort((left, right) => left.order - right.order);
-  const orderedRoots = roots.length > 0
-    ? roots
-    : items.slice().sort((left, right) => left.order - right.order);
+  const orderedRoots =
+    roots.length > 0 ? roots : items.slice().sort((left, right) => left.order - right.order);
   const depthById = new Map();
   const measuredById = new Map();
 
@@ -1656,17 +1792,13 @@ function defaultViewportForFileNodes(fileNodes) {
     if (!best) {
       return fileNode;
     }
-    const reviewPriorityDifference = (
-      fileReviewPriority(fileNode.reviewPriority)
-      - fileReviewPriority(best.reviewPriority)
-    );
+    const reviewPriorityDifference =
+      fileReviewPriority(fileNode.reviewPriority) - fileReviewPriority(best.reviewPriority);
     if (reviewPriorityDifference !== 0) {
       return reviewPriorityDifference < 0 ? fileNode : best;
     }
-    const changeKindDifference = (
-      fileChangeKindPriority(fileNode.changeKind)
-      - fileChangeKindPriority(best.changeKind)
-    );
+    const changeKindDifference =
+      fileChangeKindPriority(fileNode.changeKind) - fileChangeKindPriority(best.changeKind);
     if (changeKindDifference !== 0) {
       return changeKindDifference < 0 ? fileNode : best;
     }
@@ -1699,7 +1831,11 @@ function fileChangeKindPriority(changeKind) {
   return FILE_CHANGE_KIND_PRIORITY.get(changeKind) ?? FILE_CHANGE_KIND_PRIORITY.size;
 }
 
-function layoutReviewSections(reviewSections, branches, getReviewSectionHeight = reviewSectionHeight) {
+function layoutReviewSections(
+  reviewSections,
+  branches,
+  getReviewSectionHeight = reviewSectionHeight,
+) {
   const items = reviewSections.map((section, order) => ({
     height: getReviewSectionHeight(section),
     section,
@@ -1731,7 +1867,10 @@ function reviewSectionHeight(reviewSection) {
     return REVIEW_GROUP_HEIGHT;
   }
 
-  const lineCount = (reviewSection.codeChunks || []).reduce((total, chunk) => total + (chunk.lines || []).length, 0);
+  const lineCount = (reviewSection.codeChunks || []).reduce(
+    (total, chunk) => total + (chunk.lines || []).length,
+    0,
+  );
   return Math.max(120, REVIEW_SECTION_HEADER_HEIGHT + lineCount * 18 + 2);
 }
 

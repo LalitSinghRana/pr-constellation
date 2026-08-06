@@ -46,7 +46,9 @@ export function SettingsDialog({ open, onOpenChange, settings, onSave }) {
       <DialogContent>
         <form className="grid gap-5" onSubmit={submit}>
           <DialogHeader>
-            <p className="mb-2 flex items-center gap-2 text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-primary">Queue inputs</p>
+            <p className="mb-2 flex items-center gap-2 text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-primary">
+              Queue inputs
+            </p>
             <DialogTitle>Configure your review orbit</DialogTitle>
             <DialogDescription>
               These lists are saved locally on disk and used to score teammate and GitHub team
@@ -55,7 +57,9 @@ export function SettingsDialog({ open, onOpenChange, settings, onSave }) {
           </DialogHeader>
 
           <div className="grid gap-2">
-            <label className="text-sm font-semibold" htmlFor="username">GitHub username</label>
+            <label className="text-sm font-semibold" htmlFor="username">
+              GitHub username
+            </label>
             <Input
               id="username"
               value={draft.username}
@@ -65,12 +69,16 @@ export function SettingsDialog({ open, onOpenChange, settings, onSave }) {
               pattern="[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
             />
             <p className="m-0 text-[0.72rem] leading-normal text-muted-foreground">
-              Leave blank to use the account currently signed into <code className="rounded bg-muted px-[0.28rem] py-[0.08rem] text-foreground">gh</code>.
+              Leave blank to use the account currently signed into{" "}
+              <code className="rounded bg-muted px-[0.28rem] py-[0.08rem] text-foreground">gh</code>
+              .
             </p>
           </div>
 
           <div className="grid gap-2">
-            <label className="text-sm font-semibold" htmlFor="people">Teammate usernames</label>
+            <label className="text-sm font-semibold" htmlFor="people">
+              Teammate usernames
+            </label>
             <Input
               id="people"
               value={draft.people}
@@ -78,11 +86,15 @@ export function SettingsDialog({ open, onOpenChange, settings, onSave }) {
               placeholder="alice, bob, carol"
               autoComplete="off"
             />
-            <p className="m-0 text-[0.72rem] leading-normal text-muted-foreground">Comma-separated. Each teammate-authored PR receives +7.</p>
+            <p className="m-0 text-[0.72rem] leading-normal text-muted-foreground">
+              Comma-separated. Each teammate-authored PR receives +7.
+            </p>
           </div>
 
           <div className="grid gap-2">
-            <label className="text-sm font-semibold" htmlFor="teams">GitHub teams</label>
+            <label className="text-sm font-semibold" htmlFor="teams">
+              GitHub teams
+            </label>
             <Input
               id="teams"
               value={draft.teams}
@@ -90,12 +102,18 @@ export function SettingsDialog({ open, onOpenChange, settings, onSave }) {
               placeholder="your-org/platform, your-org/mobile"
               autoComplete="off"
             />
-            <p className="m-0 text-[0.72rem] leading-normal text-muted-foreground">Use the full org/team name, separated by commas.</p>
+            <p className="m-0 text-[0.72rem] leading-normal text-muted-foreground">
+              Use the full org/team name, separated by commas.
+            </p>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save and refresh"}</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving…" : "Save and refresh"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

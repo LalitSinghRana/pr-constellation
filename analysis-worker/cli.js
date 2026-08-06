@@ -89,8 +89,11 @@ function parseArgs(args) {
 
   for (const arg of args) {
     if (arg === "--") {
-      continue;
-    } else if ((arg === "analyze" || arg === "view") && !options.prUrl && options.command === "review") {
+    } else if (
+      (arg === "analyze" || arg === "view") &&
+      !options.prUrl &&
+      options.command === "review"
+    ) {
       options.command = arg;
     } else if (arg === "--help" || arg === "-h") {
       options.help = true;
@@ -109,7 +112,8 @@ function parseArgs(args) {
 }
 
 async function openFile(filePath) {
-  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+  const command =
+    process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
 
   await new Promise((resolve, reject) => {
     const child = spawn(command, [filePath], {

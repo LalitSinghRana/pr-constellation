@@ -1,28 +1,16 @@
-import {
-  AlertTriangle,
-  Sparkles,
-} from "lucide-react";
+import { AlertTriangle, Sparkles } from "lucide-react";
 import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LIFECYCLE_META, LIFECYCLE_ORDER } from "@/components/review-queue/config.jsx";
 import { EmptyQueue, LoadingQueue, QueueSection } from "@/components/review-queue/queue-list.jsx";
 import { SettingsDialog } from "@/components/review-queue/settings-dialog.jsx";
 import { QueueSidebar } from "@/components/review-queue/sidebar.jsx";
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar.jsx";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar.jsx";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.jsx";
 import { useAnalysisDashboard } from "@/hooks/use-analysis-dashboard.js";
 import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { useInbox } from "@/hooks/use-inbox.js";
-import {
-  EMPTY_SETTINGS,
-  analysisFor,
-  groupByUpdatedDate,
-  matchesPrFilter,
-} from "@/lib/queue.js";
+import { EMPTY_SETTINGS, groupByUpdatedDate, matchesPrFilter } from "@/lib/queue.js";
 import { cn } from "@/lib/utils.js";
 
 export function QueuePage() {
@@ -56,18 +44,16 @@ export function QueuePage() {
       .catch((caught) => setError(caught.message || "Local settings could not be loaded."));
   }, [setError]);
 
-  const openPrs = useMemo(
-    () => data.items.filter((item) => !isDone(item)),
-    [data.items, isDone],
-  );
+  const openPrs = useMemo(() => data.items.filter((item) => !isDone(item)), [data.items, isDone]);
   const openNotifications = useMemo(
     () => data.notifications.filter((item) => !isDone(item)),
     [data.notifications, isDone],
   );
   const analyses = useMemo(
-    () => new Map(
-      (analysisDashboard.prs ?? analysisDashboard.pullRequests ?? []).map((pr) => [pr.url, pr]),
-    ),
+    () =>
+      new Map(
+        (analysisDashboard.prs ?? analysisDashboard.pullRequests ?? []).map((pr) => [pr.url, pr]),
+      ),
     [analysisDashboard],
   );
   const counts = useMemo(
@@ -152,13 +138,15 @@ export function QueuePage() {
     }
 
     const items = activeFilter === "nonpr" ? visibleNotifications : visiblePrs;
-    return [{
-      id: activeFilter,
-      label: LIFECYCLE_META[activeFilter]?.label ?? "Queue",
-      score: activeFilter === "mine" ? null : (LIFECYCLE_META[activeFilter]?.score ?? null),
-      count: items.length,
-      groups: groupByUpdatedDate(items),
-    }];
+    return [
+      {
+        id: activeFilter,
+        label: LIFECYCLE_META[activeFilter]?.label ?? "Queue",
+        score: activeFilter === "mine" ? null : (LIFECYCLE_META[activeFilter]?.score ?? null),
+        count: items.length,
+        groups: groupByUpdatedDate(items),
+      },
+    ];
   }, [activeFilter, visibleNotifications, visiblePrs]);
 
   async function saveSettings(nextSettings) {
@@ -213,7 +201,9 @@ export function QueuePage() {
       if (!response.ok) throw new Error(result.error);
       setData((current) => ({
         ...current,
-        items: current.items.map((entry) => entry.id === result.id ? { ...entry, ...result } : entry),
+        items: current.items.map((entry) =>
+          entry.id === result.id ? { ...entry, ...result } : entry,
+        ),
       }));
     } catch (caught) {
       setQueueActionError(caught.message || "Read state could not be saved.");
@@ -231,19 +221,15 @@ export function QueuePage() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
-          Array.isArray(value)
-            ? { ids, done: true }
-            : { id: value.id, done: !value.done },
+          Array.isArray(value) ? { ids, done: true } : { id: value.id, done: !value.done },
         ),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
       if (result.warning) setQueueActionError(result.warning);
       const updated = new Set(result.ids ?? [result.id]);
-      const patch = result.ids
-        ? { done: result.done, hasUpdates: result.hasUpdates }
-        : result;
-      const update = (entry) => updated.has(entry.id) ? { ...entry, ...patch } : entry;
+      const patch = result.ids ? { done: result.done, hasUpdates: result.hasUpdates } : result;
+      const update = (entry) => (updated.has(entry.id) ? { ...entry, ...patch } : entry);
       setData((current) => ({
         ...current,
         items: current.items.map(update),
@@ -275,11 +261,7 @@ export function QueuePage() {
           <section aria-label="Repository queue">
             {data.repositories.length > 0 && (
               <Tabs className="gap-0" value={selectedProject} onValueChange={setActiveProject}>
-                <TabsList
-                  aria-label="Repositories"
-                  variant="cockpit"
-                  style={{ height: "3rem" }}
-                >
+                <TabsList aria-label="Repositories" variant="cockpit" style={{ height: "3rem" }}>
                   {availableProjects.map((project) => (
                     <TabsTrigger
                       className="group"
@@ -288,7 +270,8 @@ export function QueuePage() {
                       value={project.repository}
                     >
                       {project.repository
-                        .split("/").at(-1)
+                        .split("/")
+                        .at(-1)
                         .split("-")
                         .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
                         .join(" ")}
@@ -304,16 +287,24 @@ export function QueuePage() {
             {data.warnings.length > 0 && (
               <div className="mx-3 mt-3 grid gap-2" aria-live="polite">
                 {data.warnings.map((warning) => (
-                  <p className="flex items-center gap-2 rounded-lg border border-ochre/25 bg-ochre/10 px-3 py-2 text-xs text-ochre-strong" key={warning}>
-                    <AlertTriangle className="size-3.5" />{warning}
+                  <p
+                    className="flex items-center gap-2 rounded-lg border border-ochre/25 bg-ochre/10 px-3 py-2 text-xs text-ochre-strong"
+                    key={warning}
+                  >
+                    <AlertTriangle className="size-3.5" />
+                    {warning}
                   </p>
                 ))}
               </div>
             )}
 
             {queueActionError && (
-              <p className="mx-3 mt-3 flex items-center gap-2 rounded-lg border border-coral/25 bg-coral/10 px-3 py-2 text-xs text-coral-strong" aria-live="polite">
-                <AlertTriangle className="size-3.5" />{queueActionError}
+              <p
+                className="mx-3 mt-3 flex items-center gap-2 rounded-lg border border-coral/25 bg-coral/10 px-3 py-2 text-xs text-coral-strong"
+                aria-live="polite"
+              >
+                <AlertTriangle className="size-3.5" />
+                {queueActionError}
               </p>
             )}
 
@@ -321,11 +312,17 @@ export function QueuePage() {
               <p
                 className={cn(
                   "mx-3 mt-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs",
-                  analysisError ? "border-coral/25 bg-coral/10 text-coral-strong" : "border-sky/25 bg-sky/10 text-sky-strong",
+                  analysisError
+                    ? "border-coral/25 bg-coral/10 text-coral-strong"
+                    : "border-sky/25 bg-sky/10 text-sky-strong",
                 )}
                 aria-live="polite"
               >
-                {analysisError ? <AlertTriangle className="size-3.5" /> : <Sparkles className="size-3.5" />}
+                {analysisError ? (
+                  <AlertTriangle className="size-3.5" />
+                ) : (
+                  <Sparkles className="size-3.5" />
+                )}
                 {analysisError || analysisNotice}
               </p>
             )}

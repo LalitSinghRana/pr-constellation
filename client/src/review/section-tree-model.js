@@ -11,20 +11,21 @@ export function normalizeSectionTree(file) {
 
 export function foldSectionTree(file, { expandedGroupIds = [] } = {}) {
   const sectionTree = normalizeSectionTree(file);
-  const expandedIds = expandedGroupIds instanceof Set
-    ? expandedGroupIds
-    : new Set(expandedGroupIds);
+  const expandedIds =
+    expandedGroupIds instanceof Set ? expandedGroupIds : new Set(expandedGroupIds);
   const sectionById = new Map(sectionTree.sections.map((section) => [section.id, section]));
-  const sectionOrderById = new Map(sectionTree.sections.map((section, order) => [section.id, order]));
+  const sectionOrderById = new Map(
+    sectionTree.sections.map((section, order) => [section.id, order]),
+  );
   const childrenById = new Map(sectionTree.sections.map((section) => [section.id, []]));
   const incomingIds = new Set();
 
   for (const branch of sectionTree.branches) {
     if (
-      branch.parentId === branch.childId
-      || !sectionById.has(branch.parentId)
-      || !sectionById.has(branch.childId)
-      || incomingIds.has(branch.childId)
+      branch.parentId === branch.childId ||
+      !sectionById.has(branch.parentId) ||
+      !sectionById.has(branch.childId) ||
+      incomingIds.has(branch.childId)
     ) {
       continue;
     }
@@ -39,8 +40,8 @@ export function foldSectionTree(file, { expandedGroupIds = [] } = {}) {
   for (const children of childrenById.values()) {
     children.sort((left, right) => {
       return (
-        left.branch.order - right.branch.order
-        || (sectionOrderById.get(left.sectionId) || 0) - (sectionOrderById.get(right.sectionId) || 0)
+        left.branch.order - right.branch.order ||
+        (sectionOrderById.get(left.sectionId) || 0) - (sectionOrderById.get(right.sectionId) || 0)
       );
     });
   }
@@ -68,8 +69,9 @@ export function foldSectionTree(file, { expandedGroupIds = [] } = {}) {
     const nextAncestry = new Set(ancestry);
     nextAncestry.add(sectionId);
     const section = sectionById.get(sectionId);
-    const containsVisible = isAlwaysVisibleReviewSection(section, { rootIds })
-      || (childrenById.get(sectionId) || []).some((child) => {
+    const containsVisible =
+      isAlwaysVisibleReviewSection(section, { rootIds }) ||
+      (childrenById.get(sectionId) || []).some((child) => {
         return subtreeContainsAlwaysVisible(child.sectionId, nextAncestry);
       });
 
@@ -105,11 +107,10 @@ export function foldSectionTree(file, { expandedGroupIds = [] } = {}) {
     for (const child of childrenById.get(sectionId) || []) {
       const childSection = sectionById.get(child.sectionId);
       const bucket = collapseBucketForSection(childSection, { rootIds });
-      const staysVisible = (
-        !bucket
-        || revealedBucketIds.has(bucket.id)
-        || subtreeContainsAlwaysVisible(child.sectionId)
-      );
+      const staysVisible =
+        !bucket ||
+        revealedBucketIds.has(bucket.id) ||
+        subtreeContainsAlwaysVisible(child.sectionId);
 
       if (staysVisible) {
         directChildren.push(child);
@@ -226,14 +227,10 @@ export function foldSectionTree(file, { expandedGroupIds = [] } = {}) {
 
 export function isAlwaysVisibleReviewSection(section, { rootIds } = {}) {
   return Boolean(
-    section
-    && (
-      rootIds?.has(section.id)
-      || (
-        section.reviewPriority === ALWAYS_VISIBLE_RUNTIME_PRIORITY
-        && section.changeKind === "runtime"
-      )
-    )
+    section &&
+      (rootIds?.has(section.id) ||
+        (section.reviewPriority === ALWAYS_VISIBLE_RUNTIME_PRIORITY &&
+          section.changeKind === "runtime")),
   );
 }
 

@@ -1,21 +1,17 @@
-import * as React from "react"
 import { cva } from "class-variance-authority";
-import { Tabs as TabsPrimitive } from "radix-ui"
+import { Tabs as TabsPrimitive } from "radix-ui";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
-function Tabs({
-  className,
-  orientation = "horizontal",
-  ...props
-}) {
+function Tabs({ className, orientation = "horizontal", ...props }) {
   return (
     <TabsPrimitive.Root
       data-slot="tabs"
       data-orientation={orientation}
       orientation={orientation}
       className={cn("group/tabs flex gap-2 data-[orientation=horizontal]:flex-col", className)}
-      {...props} />
+      {...props}
+    />
   );
 }
 
@@ -26,33 +22,28 @@ const tabsListVariants = cva(
       variant: {
         default: "bg-muted",
         line: "gap-1 bg-transparent",
-        cockpit: "w-full justify-start gap-2 overflow-x-auto rounded-none border-b border-border bg-transparent px-0",
+        cockpit:
+          "w-full justify-start gap-2 overflow-x-auto rounded-none border-b border-border bg-transparent px-0",
       },
     },
     defaultVariants: {
       variant: "default",
     },
-  }
-)
+  },
+);
 
-function TabsList({
-  className,
-  variant = "default",
-  ...props
-}) {
+function TabsList({ className, variant = "default", ...props }) {
   return (
     <TabsPrimitive.List
       data-slot="tabs-list"
       data-variant={variant}
       className={cn(tabsListVariants({ variant }), className)}
-      {...props} />
+      {...props}
+    />
   );
 }
 
-function TabsTrigger({
-  className,
-  ...props
-}) {
+function TabsTrigger({ className, ...props }) {
   return (
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
@@ -62,22 +53,21 @@ function TabsTrigger({
         "data-[state=active]:bg-background data-[state=active]:text-foreground dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 dark:data-[state=active]:text-foreground",
         "group-data-[variant=cockpit]/tabs-list:flex-none group-data-[variant=cockpit]/tabs-list:rounded-lg group-data-[variant=cockpit]/tabs-list:px-3 group-data-[variant=cockpit]/tabs-list:text-base group-data-[variant=cockpit]/tabs-list:font-semibold group-data-[variant=cockpit]/tabs-list:data-[state=active]:bg-accent group-data-[variant=cockpit]/tabs-list:data-[state=active]:text-accent-foreground group-data-[variant=cockpit]/tabs-list:data-[state=active]:shadow-[inset_0_-2px_0_var(--primary)] dark:group-data-[variant=cockpit]/tabs-list:data-[state=active]:border-transparent dark:group-data-[variant=cockpit]/tabs-list:data-[state=active]:bg-accent",
         "after:absolute after:bg-foreground after:opacity-0 after:transition-opacity group-data-[orientation=horizontal]/tabs:after:inset-x-0 group-data-[orientation=horizontal]/tabs:after:bottom-[-5px] group-data-[orientation=horizontal]/tabs:after:h-0.5 group-data-[orientation=vertical]/tabs:after:inset-y-0 group-data-[orientation=vertical]/tabs:after:-right-1 group-data-[orientation=vertical]/tabs:after:w-0.5 group-data-[variant=line]/tabs-list:data-[state=active]:after:opacity-100",
-        className
+        className,
       )}
-      {...props} />
+      {...props}
+    />
   );
 }
 
-function TabsContent({
-  className,
-  ...props
-}) {
+function TabsContent({ className, ...props }) {
   return (
     <TabsPrimitive.Content
       data-slot="tabs-content"
       className={cn("flex-1 outline-none", className)}
-      {...props} />
+      {...props}
+    />
   );
 }
 
-export { Tabs, TabsList, TabsTrigger, TabsContent, tabsListVariants }
+export { Tabs, TabsContent, TabsList, TabsTrigger, tabsListVariants };

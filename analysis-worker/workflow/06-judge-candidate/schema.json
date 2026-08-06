@@ -3,13 +3,7 @@
   "title": "PR Review Judge",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "verdict",
-    "confidence",
-    "summary",
-    "findings"
-  ],
+  "required": ["schemaVersion", "verdict", "confidence", "summary", "findings"],
   "properties": {
     "schemaVersion": {
       "type": "string",
@@ -17,10 +11,7 @@
     },
     "verdict": {
       "type": "string",
-      "enum": [
-        "pass",
-        "fail"
-      ]
+      "enum": ["pass", "fail"]
     },
     "confidence": {
       "type": "number",
@@ -42,20 +33,11 @@
     "finding": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "severity",
-        "type",
-        "targetId",
-        "explanation"
-      ],
+      "required": ["severity", "type", "targetId", "explanation"],
       "properties": {
         "severity": {
           "type": "string",
-          "enum": [
-            "blocker",
-            "warning",
-            "note"
-          ]
+          "enum": ["blocker", "warning", "note"]
         },
         "type": {
           "type": "string",

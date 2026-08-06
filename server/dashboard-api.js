@@ -25,8 +25,8 @@ export function createDashboardApiMiddleware({ service }) {
           throw createHttpError(400, "prUrl is required.");
         }
         if (
-          body.title != null
-          && (typeof body.title !== "string" || body.title.trim().length > 500)
+          body.title != null &&
+          (typeof body.title !== "string" || body.title.trim().length > 500)
         ) {
           throw createHttpError(400, "title must be a string of at most 500 characters.");
         }
@@ -41,9 +41,7 @@ export function createDashboardApiMiddleware({ service }) {
         return;
       }
 
-      const cancelBatchMatch = url.pathname.match(
-        /^\/api\/batches\/([^/]+)\/cancel\/?$/,
-      );
+      const cancelBatchMatch = url.pathname.match(/^\/api\/batches\/([^/]+)\/cancel\/?$/);
       if (request.method === "POST" && cancelBatchMatch) {
         const batchId = decodePathPart(cancelBatchMatch[1]);
         const cancellation = await service.cancelBatch({ batchId });
@@ -51,9 +49,7 @@ export function createDashboardApiMiddleware({ service }) {
         return;
       }
 
-      const rerunBatchMatch = url.pathname.match(
-        /^\/api\/batches\/([^/]+)\/rerun\/?$/,
-      );
+      const rerunBatchMatch = url.pathname.match(/^\/api\/batches\/([^/]+)\/rerun\/?$/);
       if (request.method === "POST" && rerunBatchMatch) {
         const batchId = decodePathPart(rerunBatchMatch[1]);
         const body = await readOptionalJsonBody(request);
@@ -66,9 +62,7 @@ export function createDashboardApiMiddleware({ service }) {
         return;
       }
 
-      const cancelRunMatch = url.pathname.match(
-        /^\/api\/runs\/([^/]+)\/([^/]+)\/cancel\/?$/,
-      );
+      const cancelRunMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/([^/]+)\/cancel\/?$/);
       if (request.method === "POST" && cancelRunMatch) {
         const slug = decodePathPart(cancelRunMatch[1]);
         const runId = decodePathPart(cancelRunMatch[2]);
@@ -77,9 +71,7 @@ export function createDashboardApiMiddleware({ service }) {
         return;
       }
 
-      const rerunMatch = url.pathname.match(
-        /^\/api\/runs\/([^/]+)\/([^/]+)\/rerun\/?$/,
-      );
+      const rerunMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/([^/]+)\/rerun\/?$/);
       if (request.method === "POST" && rerunMatch) {
         const slug = decodePathPart(rerunMatch[1]);
         const runId = decodePathPart(rerunMatch[2]);
@@ -94,9 +86,7 @@ export function createDashboardApiMiddleware({ service }) {
         return;
       }
 
-      const deleteBatchMatch = url.pathname.match(
-        /^\/api\/batches\/([^/]+)\/?$/,
-      );
+      const deleteBatchMatch = url.pathname.match(/^\/api\/batches\/([^/]+)\/?$/);
       if (request.method === "DELETE" && deleteBatchMatch) {
         const batchId = decodePathPart(deleteBatchMatch[1]);
         const deletion = await service.deleteBatchHistory({ batchId });
@@ -104,9 +94,7 @@ export function createDashboardApiMiddleware({ service }) {
         return;
       }
 
-      const deleteRunMatch = url.pathname.match(
-        /^\/api\/runs\/([^/]+)\/([^/]+)\/?$/,
-      );
+      const deleteRunMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/([^/]+)\/?$/);
       if (request.method === "DELETE" && deleteRunMatch) {
         const slug = decodePathPart(deleteRunMatch[1]);
         const runId = decodePathPart(deleteRunMatch[2]);
@@ -159,10 +147,7 @@ async function readOptionalJsonBody(request) {
 }
 
 function validateOptionalModel(model) {
-  if (
-    model != null
-    && (typeof model !== "string" || model.trim() === "")
-  ) {
+  if (model != null && (typeof model !== "string" || model.trim() === "")) {
     throw createHttpError(400, "model must be a non-empty string.");
   }
 }
@@ -213,13 +198,13 @@ function httpStatusForError(error) {
     return 409;
   }
   if (
-    error?.code === "INVALID_STORAGE_ID"
-    || error?.code === "INVALID_MODEL"
-    || error?.code === "INVALID_REASONING_EFFORT"
-    || error?.code === "INVALID_SOURCE_INPUT"
-    || error?.code === "INVALID_SOURCE_RUN"
-    || error instanceof TypeError
-    || /Expected a GitHub pull request URL/.test(error?.message || "")
+    error?.code === "INVALID_STORAGE_ID" ||
+    error?.code === "INVALID_MODEL" ||
+    error?.code === "INVALID_REASONING_EFFORT" ||
+    error?.code === "INVALID_SOURCE_INPUT" ||
+    error?.code === "INVALID_SOURCE_RUN" ||
+    error instanceof TypeError ||
+    /Expected a GitHub pull request URL/.test(error?.message || "")
   ) {
     return 400;
   }

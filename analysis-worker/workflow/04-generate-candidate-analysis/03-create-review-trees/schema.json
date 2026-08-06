@@ -3,14 +3,7 @@
   "title": "PR Review Trees",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "intent",
-    "summary",
-    "confidence",
-    "files",
-    "fileTree"
-  ],
+  "required": ["schemaVersion", "intent", "summary", "confidence", "files", "fileTree"],
   "properties": {
     "schemaVersion": {
       "type": "string",
@@ -43,11 +36,7 @@
   "$defs": {
     "reviewPriority": {
       "type": "string",
-      "enum": [
-        "primary",
-        "secondary",
-        "skim"
-      ]
+      "enum": ["primary", "secondary", "skim"]
     },
     "changeKind": {
       "type": "string",
@@ -68,10 +57,7 @@
     "changedLineRange": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "start",
-        "end"
-      ],
+      "required": ["start", "end"],
       "properties": {
         "start": {
           "description": "Inclusive first changed-line id in this source-ordered range.",
@@ -88,14 +74,7 @@
     "file": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "path",
-        "reviewPriority",
-        "changeKind",
-        "explanation",
-        "sectionTree"
-      ],
+      "required": ["id", "path", "reviewPriority", "changeKind", "explanation", "sectionTree"],
       "properties": {
         "id": {
           "type": "string",
@@ -124,10 +103,7 @@
     "sectionTree": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "sections",
-        "branches"
-      ],
+      "required": ["sections", "branches"],
       "properties": {
         "sections": {
           "type": "array",
@@ -189,9 +165,7 @@
     "fileTree": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "branches"
-      ],
+      "required": ["branches"],
       "properties": {
         "branches": {
           "description": "Ordered parent-child branches defining file review order for this Review Stack.",
@@ -205,12 +179,7 @@
     "branch": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "parentId",
-        "childId",
-        "order",
-        "explanation"
-      ],
+      "required": ["parentId", "childId", "order", "explanation"],
       "properties": {
         "parentId": {
           "type": "string",

@@ -1,18 +1,14 @@
 import { randomUUID } from "node:crypto";
-import {
-  copyFile,
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createDiffInventory, createDiffSummary } from "./workflow/03-build-diff-inventory/diff-inventory.js";
-import { runCodexReviewAnalysis } from "./workflow/07-run-retry-loop/codex-agent.js";
-import { runClaudeExec } from "./workflow/07-run-retry-loop/claude-agent.js";
-import { fetchPullRequest, parseGitHubPrUrl } from "./workflow/02-fetch-pr/github.js";
 import { renderDiffHtml } from "../client/src/review/render.js";
+import { fetchPullRequest, parseGitHubPrUrl } from "./workflow/02-fetch-pr/github.js";
+import {
+  createDiffInventory,
+  createDiffSummary,
+} from "./workflow/03-build-diff-inventory/diff-inventory.js";
+import { runClaudeExec } from "./workflow/07-run-retry-loop/claude-agent.js";
+import { runCodexReviewAnalysis } from "./workflow/07-run-retry-loop/codex-agent.js";
 
 export async function createReviewRun({ prUrl, reviewsDir }) {
   const { diff, metadata, paths, runDir } = await createPrInputRun({ prUrl, reviewsDir });
@@ -103,11 +99,12 @@ export async function createBenchmarkRun({
         onEvent,
         signal,
         stageId: "input.fetch",
-        task: () => fetchPullRequest(prUrl, {
-          onEvent,
-          parentStageId: "input.fetch",
-          signal,
-        }),
+        task: () =>
+          fetchPullRequest(prUrl, {
+            onEvent,
+            parentStageId: "input.fetch",
+            signal,
+          }),
       });
 
   const { diffInventory, diffSummary } = await runTimedStage({
@@ -161,28 +158,17 @@ export async function createBenchmarkRun({
     onEvent,
     signal,
     stageId: "input.persist",
-    task: () => Promise.all([
-      writeFile(
-        paths.diffInventoryPath,
-        `${JSON.stringify(diffInventory, null, 2)}\n`,
-        "utf8",
-      ),
-      writeFile(
-        paths.diffSummaryPath,
-        `${JSON.stringify(diffSummary)}\n`,
-        "utf8",
-      ),
-      writeFile(
-        paths.metadataPath,
-        `${JSON.stringify(input.metadata, null, 2)}\n`,
-        "utf8",
-      ),
-      writeFile(paths.diffPath, input.diff, "utf8"),
-    ]),
+    task: () =>
+      Promise.all([
+        writeFile(paths.diffInventoryPath, `${JSON.stringify(diffInventory, null, 2)}\n`, "utf8"),
+        writeFile(paths.diffSummaryPath, `${JSON.stringify(diffSummary)}\n`, "utf8"),
+        writeFile(paths.metadataPath, `${JSON.stringify(input.metadata, null, 2)}\n`, "utf8"),
+        writeFile(paths.diffPath, input.diff, "utf8"),
+      ]),
   });
 
-  const executeAnalysis = executeCodex
-    || (selectedProvider === "claude" ? executeClaude : undefined);
+  const executeAnalysis =
+    executeCodex || (selectedProvider === "claude" ? executeClaude : undefined);
   const analysisResult = await runCodexReviewAnalysis({
     ...(executeAnalysis ? { executeCodex: executeAnalysis } : {}),
     model,
@@ -211,11 +197,12 @@ export async function createBenchmarkRun({
           parentStageId: "render",
           signal,
           stageId: "render.build",
-          task: () => renderDiffHtml({
-            analysis: analysisResult.analysis,
-            diff: input.diff,
-            pr: input.metadata,
-          }),
+          task: () =>
+            renderDiffHtml({
+              analysis: analysisResult.analysis,
+              diff: input.diff,
+              pr: input.metadata,
+            }),
         });
 
         await runTimedStage({
@@ -223,10 +210,11 @@ export async function createBenchmarkRun({
           onEvent,
           parentStageId: "render",
           stageId: "render.persist",
-          task: () => writeRunReviewHtml({
-            html: documentHtml,
-            htmlPath: paths.htmlPath,
-          }),
+          task: () =>
+            writeRunReviewHtml({
+              html: documentHtml,
+              htmlPath: paths.htmlPath,
+            }),
         });
 
         return documentHtml;
@@ -308,16 +296,8 @@ async function createPrInputRun({ prUrl, reviewsDir }) {
   const paths = buildRunPaths({ runDir, stableHtmlPath });
 
   await Promise.all([
-    writeFile(
-      paths.diffInventoryPath,
-      `${JSON.stringify(diffInventory, null, 2)}\n`,
-      "utf8",
-    ),
-    writeFile(
-      paths.diffSummaryPath,
-      `${JSON.stringify(diffSummary)}\n`,
-      "utf8",
-    ),
+    writeFile(paths.diffInventoryPath, `${JSON.stringify(diffInventory, null, 2)}\n`, "utf8"),
+    writeFile(paths.diffSummaryPath, `${JSON.stringify(diffSummary)}\n`, "utf8"),
     writeFile(paths.metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8"),
     writeFile(paths.diffPath, diff, "utf8"),
   ]);
@@ -408,9 +388,8 @@ function throwIfAborted(signal) {
 }
 
 function createAbortError(reason) {
-  const message = reason instanceof Error && reason.message
-    ? reason.message
-    : "The operation was aborted.";
+  const message =
+    reason instanceof Error && reason.message ? reason.message : "The operation was aborted.";
   const error = new Error(message, reason === undefined ? undefined : { cause: reason });
   error.name = "AbortError";
   error.code = "ABORT_ERR";

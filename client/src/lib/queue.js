@@ -82,7 +82,14 @@ export function relativeTime(date) {
 }
 
 export function parseList(value) {
-  return [...new Set(value.split(",").map((part) => part.trim()).filter(Boolean))];
+  return [
+    ...new Set(
+      value
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 const updatedDateFormatter = new Intl.DateTimeFormat("en", {

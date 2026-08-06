@@ -1,18 +1,8 @@
 import assert from "node:assert/strict";
-import {
-  mkdtemp,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {
-  createBenchmarkRun,
-  publishStableReview,
-} from "../review-run.js";
+import { createBenchmarkRun, publishStableReview } from "../review-run.js";
 import { parseGitHubPrUrl } from "../workflow/02-fetch-pr/github.js";
 
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "pr-review-benchmark-"));
@@ -28,12 +18,14 @@ const stableHtmlPath = path.join(reviewsDir, reviewSlug, "index.html");
 const previousStableHtml = "<p>previous successful review</p>";
 const reviewStacksFixtureResult = {
   schemaVersion: "pr-review-stacks/v1",
-  reviewStacks: [{
-    id: "core-change",
-    title: "Fixture value update",
-    explanation: "Single cohesive change to the example file.",
-    fileIds: ["file-1"],
-  }],
+  reviewStacks: [
+    {
+      id: "core-change",
+      title: "Fixture value update",
+      explanation: "Single cohesive change to the example file.",
+      fileIds: ["file-1"],
+    },
+  ],
 };
 const reviewTreesFixtureResult = {
   schemaVersion: "pr-review-trees/v1",
@@ -56,10 +48,12 @@ const reviewTreesFixtureResult = {
             reviewPriority: "primary",
             changeKind: "runtime",
             explanation: "The changed assignment is the complete runtime contract.",
-            changedLineRanges: [{
-              start: "file-1:hunk-1:line-1",
-              end: "file-1:hunk-1:line-2",
-            }],
+            changedLineRanges: [
+              {
+                start: "file-1:hunk-1:line-1",
+                end: "file-1:hunk-1:line-2",
+              },
+            ],
           },
         ],
         branches: [],
@@ -112,13 +106,7 @@ index 1111111..2222222 100644
   ]);
 
   const result = await createBenchmarkRun({
-    executeCodex: async ({
-      model,
-      outputPath,
-      reasoningEffort,
-      schemaPath,
-      signal,
-    }) => {
+    executeCodex: async ({ model, outputPath, reasoningEffort, schemaPath, signal }) => {
       assert.equal(signal, runController.signal);
       codexCalls.push({ model, reasoningEffort, schemaPath });
       const value = schemaPath.includes("02-create-review-stacks")
@@ -156,19 +144,11 @@ index 1111111..2222222 100644
     ],
   );
   assert.match(await readFile(result.htmlPath, "utf8"), /Benchmark fixture/);
-  assert.equal(
-    await readFile(result.stableHtmlPath, "utf8"),
-    previousStableHtml,
-  );
+  assert.equal(await readFile(result.stableHtmlPath, "utf8"), previousStableHtml);
   const claudeCalls = [];
   const claudeRunDir = path.join(reviewsDir, reviewSlug, "claude-run");
   await createBenchmarkRun({
-    executeClaude: async ({
-      model,
-      outputPath,
-      reasoningEffort,
-      schemaPath,
-    }) => {
+    executeClaude: async ({ model, outputPath, reasoningEffort, schemaPath }) => {
       claudeCalls.push({ model, reasoningEffort });
       const value = schemaPath.includes("02-create-review-stacks")
         ? reviewStacksFixtureResult
@@ -216,14 +196,10 @@ index 1111111..2222222 100644
   await writeFile(stableHtmlPath, previousStableHtml, "utf8");
 
   const starts = new Set(
-    events
-      .filter((event) => event.type === "stage-start")
-      .map((event) => event.stageId),
+    events.filter((event) => event.type === "stage-start").map((event) => event.stageId),
   );
   const finishes = new Map(
-    events
-      .filter((event) => event.type === "stage-finish")
-      .map((event) => [event.stageId, event]),
+    events.filter((event) => event.type === "stage-finish").map((event) => [event.stageId, event]),
   );
 
   for (const stageId of [
@@ -247,24 +223,14 @@ index 1111111..2222222 100644
     assert.equal(finishes.get(stageId)?.status, "completed");
     assert.equal(typeof finishes.get(stageId)?.metrics?.elapsedMs, "number");
   }
-  assert.equal(
-    finishes.get("analysis.attempt-1.evaluation.judge-candidate")?.status,
-    "skipped",
-  );
+  assert.equal(finishes.get("analysis.attempt-1.evaluation.judge-candidate")?.status, "skipped");
 
-  assert.equal(
-    finishes.get("inventory.parse").parentStageId,
-    "inventory",
-  );
+  assert.equal(finishes.get("inventory.parse").parentStageId, "inventory");
   assert.equal(finishes.get("render.persist").parentStageId, "render");
 
   const renderCancelController = new AbortController();
   const renderCancelEvents = [];
-  const canceledRenderRunDir = path.join(
-    reviewsDir,
-    reviewSlug,
-    "canceled-render-run",
-  );
+  const canceledRenderRunDir = path.join(reviewsDir, reviewSlug, "canceled-render-run");
   let renderCancelError;
 
   await assert.rejects(
@@ -292,13 +258,8 @@ index 1111111..2222222 100644
       model: "gpt-fixture",
       onEvent: async (event) => {
         renderCancelEvents.push(event);
-        if (
-          event.type === "stage-start"
-          && event.stageId === "render.persist"
-        ) {
-          renderCancelController.abort(
-            new Error("Canceled before persisting the review page."),
-          );
+        if (event.type === "stage-start" && event.stageId === "render.persist") {
+          renderCancelController.abort(new Error("Canceled before persisting the review page."));
         }
       },
       prUrl,
@@ -327,17 +288,13 @@ index 1111111..2222222 100644
     "completed",
   );
   assert.equal(
-    renderCancelEvents.find(
-      (event) => event.type === "stage-finish" && event.stageId === "render",
-    )?.status,
+    renderCancelEvents.find((event) => event.type === "stage-finish" && event.stageId === "render")
+      ?.status,
     "canceled",
   );
   assert.equal(
     renderCancelEvents.find(
-      (event) => (
-        event.type === "stage-finish"
-        && event.stageId === "render.persist"
-      ),
+      (event) => event.type === "stage-finish" && event.stageId === "render.persist",
     )?.status,
     "completed",
   );

@@ -3,10 +3,7 @@
   "title": "PR Review Stacks",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "reviewStacks"
-  ],
+  "required": ["schemaVersion", "reviewStacks"],
   "properties": {
     "schemaVersion": {
       "type": "string",
@@ -24,12 +21,7 @@
     "reviewStack": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "title",
-        "explanation",
-        "fileIds"
-      ],
+      "required": ["id", "title", "explanation", "fileIds"],
       "properties": {
         "id": {
           "type": "string",

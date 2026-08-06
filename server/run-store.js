@@ -1,15 +1,6 @@
-import {
-  lstat,
-  mkdir,
-  open,
-  readFile,
-  readdir,
-  realpath,
-  rename,
-  rm,
-} from "node:fs/promises";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
+import path from "node:path";
 
 export const RUN_SCHEMA_VERSION = "pr-review-run/v1";
 export const TIMINGS_SCHEMA_VERSION = "pr-review-timings/v1";
@@ -368,8 +359,7 @@ export class RunStore {
    */
   async resolveSourceInputs({ slug, runId }) {
     const manifest = await this.readRun(slug, runId);
-    const sourceRunId =
-      manifest.sourceMode === "frozen" ? manifest.sourceRunId : manifest.runId;
+    const sourceRunId = manifest.sourceMode === "frozen" ? manifest.sourceRunId : manifest.runId;
     return this.resolveFrozenSource({ slug, sourceRunId });
   }
 
@@ -508,10 +498,7 @@ export function createRunManifest(input, now = new Date().toISOString()) {
   if (sourceMode === "frozen") {
     assertStorageId(input.sourceRunId, "sourceRunId");
     if (input.sourceRunId === runId) {
-      throw createStoreError(
-        "INVALID_SOURCE_RUN",
-        "A frozen run cannot use itself as its source.",
-      );
+      throw createStoreError("INVALID_SOURCE_RUN", "A frozen run cannot use itself as its source.");
     }
   } else if (input.sourceRunId != null) {
     throw createStoreError(
@@ -595,7 +582,7 @@ export function applyStageEvent(timings, event, fallbackAt = new Date().toISOStr
       startedAt: normalized.at,
       endedAt: null,
       durationMs: 0,
-      status: isStart ? normalized.status ?? "running" : normalized.status ?? "running",
+      status: isStart ? (normalized.status ?? "running") : (normalized.status ?? "running"),
       error: normalized.error ?? null,
       metrics: normalized.metrics ?? {},
     });
@@ -662,15 +649,11 @@ function mergeRunManifest(current, patch, now) {
 
   const status = patch.status ?? current.status;
   const sourceMode = patch.sourceMode ?? current.sourceMode;
-  const sourceRunId =
-    patch.sourceRunId === undefined ? current.sourceRunId : patch.sourceRunId;
+  const sourceRunId = patch.sourceRunId === undefined ? current.sourceRunId : patch.sourceRunId;
   if (sourceMode === "frozen") {
     assertStorageId(sourceRunId, "sourceRunId");
     if (sourceRunId === current.runId) {
-      throw createStoreError(
-        "INVALID_SOURCE_RUN",
-        "A frozen run cannot use itself as its source.",
-      );
+      throw createStoreError("INVALID_SOURCE_RUN", "A frozen run cannot use itself as its source.");
     }
   } else if (sourceRunId != null) {
     throw createStoreError(
@@ -694,22 +677,25 @@ function mergeRunManifest(current, patch, now) {
     timestamps.completedAt = now;
   }
 
-  return createRunManifest({
-    ...current,
-    ...patch,
-    schemaVersion: RUN_SCHEMA_VERSION,
-    runId: current.runId,
-    slug: current.slug,
-    status,
-    sourceMode,
-    sourceRunId: sourceMode === "frozen" ? sourceRunId : null,
-    timestamps,
-    metrics:
-      patch.metrics == null
-        ? current.metrics
-        : normalizeRunMetrics({ ...current.metrics, ...patch.metrics }),
-    error: patch.error === undefined ? current.error : normalizeError(patch.error),
-  }, now);
+  return createRunManifest(
+    {
+      ...current,
+      ...patch,
+      schemaVersion: RUN_SCHEMA_VERSION,
+      runId: current.runId,
+      slug: current.slug,
+      status,
+      sourceMode,
+      sourceRunId: sourceMode === "frozen" ? sourceRunId : null,
+      timestamps,
+      metrics:
+        patch.metrics == null
+          ? current.metrics
+          : normalizeRunMetrics({ ...current.metrics, ...patch.metrics }),
+      error: patch.error === undefined ? current.error : normalizeError(patch.error),
+    },
+    now,
+  );
 }
 
 function normalizeRunDocument(manifest) {
@@ -930,10 +916,7 @@ function assertPathContained(root, candidate, label) {
   if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
     return;
   }
-  throw createStoreError(
-    "SOURCE_PATH_ESCAPE",
-    `Resolved ${label} escapes the reviews directory.`,
-  );
+  throw createStoreError("SOURCE_PATH_ESCAPE", `Resolved ${label} escapes the reviews directory.`);
 }
 
 async function readJson(filePath) {

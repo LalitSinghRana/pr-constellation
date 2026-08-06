@@ -26,9 +26,7 @@ export function useAnalysisDashboard() {
     refresh();
   }, [refresh]);
 
-  const running = Boolean(
-    dashboard.queue?.activeRunId || dashboard.queue?.queuedRunIds?.length,
-  );
+  const running = Boolean(dashboard.queue?.activeRunId || dashboard.queue?.queuedRunIds?.length);
 
   useEffect(() => {
     const timer = window.setInterval(refresh, running ? 3_000 : 30_000);

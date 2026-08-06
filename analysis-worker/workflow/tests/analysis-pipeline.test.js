@@ -2,11 +2,7 @@ import assert from "node:assert/strict";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import {
-  fetchPullRequest,
-  ghText,
-  parseGitHubPrUrl,
-} from "../02-fetch-pr/github.js";
+import { fetchPullRequest, ghText, parseGitHubPrUrl } from "../02-fetch-pr/github.js";
 import { createDiffInventory } from "../03-build-diff-inventory/diff-inventory.js";
 import {
   buildCodexExecArgs,
@@ -29,18 +25,14 @@ assert.deepEqual(parsedPr, {
 });
 assert.notEqual(
   parsedPr.slug,
-  parseGitHubPrUrl(
-    "https://github.com/AnotherOwner/picnic-store-config/pull/4812",
-  ).slug,
+  parseGitHubPrUrl("https://github.com/AnotherOwner/picnic-store-config/pull/4812").slug,
 );
 assert.notEqual(
   parseGitHubPrUrl("https://github.com/a-b/c/pull/1").slug,
   parseGitHubPrUrl("https://github.com/a/b-c/pull/1").slug,
 );
 assert.equal(
-  parseGitHubPrUrl(
-    "https://github.com/PICNICSUPERMARKET/PICNIC-STORE-CONFIG/pull/4812",
-  ).slug,
+  parseGitHubPrUrl("https://github.com/PICNICSUPERMARKET/PICNIC-STORE-CONFIG/pull/4812").slug,
   parsedPr.slug,
 );
 
@@ -75,34 +67,20 @@ const snapshotResult = await fetchPullRequest(snapshotPrUrl, {
 
 assert.equal(snapshotResult.diff, "diff from head-b");
 assert.deepEqual(snapshotResult.metadata, updatedSnapshotMetadata);
-assert.equal(
-  snapshotCalls.filter((args) => args[0] === "pr" && args[1] === "diff").length,
-  2,
-);
+assert.equal(snapshotCalls.filter((args) => args[0] === "pr" && args[1] === "diff").length, 2);
 assertStagePairs(snapshotEvents);
-assert.equal(
-  findFinishEvent(snapshotEvents, "input.fetch.snapshot").metrics.attempts,
-  2,
-);
-assert.equal(
-  findFinishEvent(snapshotEvents, "input.fetch.snapshot.attempt-1").status,
-  "failed",
-);
+assert.equal(findFinishEvent(snapshotEvents, "input.fetch.snapshot").metrics.attempts, 2);
+assert.equal(findFinishEvent(snapshotEvents, "input.fetch.snapshot.attempt-1").status, "failed");
 assert.equal(
   findFinishEvent(snapshotEvents, "input.fetch.snapshot.attempt-1").metrics.willRetry,
   true,
 );
 assert.equal(
-  findFinishEvent(
-    snapshotEvents,
-    "input.fetch.snapshot.attempt-1.verify-refs",
-  ).metrics.snapshotConsistent,
+  findFinishEvent(snapshotEvents, "input.fetch.snapshot.attempt-1.verify-refs").metrics
+    .snapshotConsistent,
   false,
 );
-assert.equal(
-  findFinishEvent(snapshotEvents, "input.fetch.snapshot.attempt-2").status,
-  "completed",
-);
+assert.equal(findFinishEvent(snapshotEvents, "input.fetch.snapshot.attempt-2").status, "completed");
 assert.equal(
   findFinishEvent(snapshotEvents, "input.fetch.snapshot.attempt-2").metrics.headSha,
   "head-b",
@@ -131,23 +109,15 @@ await assert.rejects(
   /changed during 3 consecutive snapshot attempts/,
 );
 assert.equal(
-  movingSnapshotCalls.filter(
-    (args) => args[0] === "pr" && args[1] === "diff",
-  ).length,
+  movingSnapshotCalls.filter((args) => args[0] === "pr" && args[1] === "diff").length,
   3,
 );
 assertStagePairs(movingSnapshotEvents);
 assert.equal(
-  findFinishEvent(
-    movingSnapshotEvents,
-    "input.fetch.snapshot.attempt-3",
-  ).metrics.willRetry,
+  findFinishEvent(movingSnapshotEvents, "input.fetch.snapshot.attempt-3").metrics.willRetry,
   false,
 );
-assert.equal(
-  findFinishEvent(movingSnapshotEvents, "input.fetch.snapshot").status,
-  "failed",
-);
+assert.equal(findFinishEvent(movingSnapshotEvents, "input.fetch.snapshot").status, "failed");
 
 const fetchAbortController = new AbortController();
 const fetchAbortEvents = [];
@@ -170,16 +140,20 @@ await assert.rejects(
         return JSON.stringify(fetchAbortMetadata);
       }
       if (args[0] === "pr" && args[1] === "diff") {
-        queueMicrotask(() => fetchAbortController.abort(
-          new Error("Canceled while fetching the PR diff."),
-        ));
-        return new Promise((resolve, reject) => {
-          signal.addEventListener("abort", () => {
-            const error = new Error("Canceled while fetching the PR diff.");
-            error.name = "AbortError";
-            error.code = "ABORT_ERR";
-            reject(error);
-          }, { once: true });
+        queueMicrotask(() =>
+          fetchAbortController.abort(new Error("Canceled while fetching the PR diff.")),
+        );
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              const error = new Error("Canceled while fetching the PR diff.");
+              error.name = "AbortError";
+              error.code = "ABORT_ERR";
+              reject(error);
+            },
+            { once: true },
+          );
         });
       }
 
@@ -200,10 +174,7 @@ assert.equal(
   findFinishEvent(fetchAbortEvents, "input.fetch.snapshot.attempt-1").status,
   "canceled",
 );
-assert.equal(
-  findFinishEvent(fetchAbortEvents, "input.fetch.snapshot").status,
-  "canceled",
-);
+assert.equal(findFinishEvent(fetchAbortEvents, "input.fetch.snapshot").status, "canceled");
 
 const sectionTreeSchema = JSON.parse(
   await readFile(
@@ -224,10 +195,7 @@ assert.match(
   /What this cohesive code section changes or proves and why/,
 );
 assert.ok(sectionTreeSchema.$defs.reviewSection.properties.changedLineRanges);
-assert.equal(
-  sectionTreeSchema.$defs.reviewSection.properties.changedLineIds,
-  undefined,
-);
+assert.equal(sectionTreeSchema.$defs.reviewSection.properties.changedLineIds, undefined);
 assert.match(
   sectionTreeSchema.$defs.branch.properties.explanation.description,
   /child belongs under the parent/,
@@ -259,10 +227,7 @@ assert.deepEqual(
     reasoningEffort: "high",
   },
 );
-assert.throws(
-  () => resolveCodexExecutionConfig({ model: 123 }),
-  /model must be a string/,
-);
+assert.throws(() => resolveCodexExecutionConfig({ model: 123 }), /model must be a string/);
 
 const codexArgs = buildCodexExecArgs({
   cwd: "/tmp/review",
@@ -272,21 +237,23 @@ const codexArgs = buildCodexExecArgs({
   schemaPath: "/tmp/schema.json",
 });
 assert.ok(codexArgs.includes("--json"));
-assert.deepEqual(
-  codexArgs.slice(codexArgs.indexOf("--model"), codexArgs.indexOf("--model") + 2),
-  ["--model", "selected-model"],
-);
+assert.deepEqual(codexArgs.slice(codexArgs.indexOf("--model"), codexArgs.indexOf("--model") + 2), [
+  "--model",
+  "selected-model",
+]);
 assert.deepEqual(
   codexArgs.slice(codexArgs.indexOf("--config"), codexArgs.indexOf("--config") + 2),
   ["--config", 'model_reasoning_effort="high"'],
 );
 assert.deepEqual(
-  parseCodexJsonUsage([
-    '{"type":"thread.started","thread_id":"thread-1"}',
-    '{"type":"turn.completed","usage":{"input_tokens":120,"cached_input_tokens":80,"output_tokens":30,"reasoning_output_tokens":10}}',
-    "not-json",
-    '{"type":"turn.completed","usage":{"input_tokens":20,"cached_input_tokens":5,"output_tokens":4,"reasoning_output_tokens":1}}',
-  ].join("\n")),
+  parseCodexJsonUsage(
+    [
+      '{"type":"thread.started","thread_id":"thread-1"}',
+      '{"type":"turn.completed","usage":{"input_tokens":120,"cached_input_tokens":80,"output_tokens":30,"reasoning_output_tokens":10}}',
+      "not-json",
+      '{"type":"turn.completed","usage":{"input_tokens":20,"cached_input_tokens":5,"output_tokens":4,"reasoning_output_tokens":1}}',
+    ].join("\n"),
+  ),
   {
     inputTokens: 140,
     cachedInputTokens: 85,
@@ -329,10 +296,7 @@ setInterval(() => {}, 1000);
     writeFile(fakeGhPath, fakeProcessSource, "utf8"),
     writeFile(fakeCodexPath, fakeProcessSource, "utf8"),
   ]);
-  await Promise.all([
-    chmod(fakeGhPath, 0o755),
-    chmod(fakeCodexPath, 0o755),
-  ]);
+  await Promise.all([chmod(fakeGhPath, 0o755), chmod(fakeCodexPath, 0o755)]);
   process.env.PATH = `${fakeProcessDir}:${originalPath}`;
 
   const ghPidPath = path.join(fakeProcessDir, "gh.pid");
@@ -363,10 +327,7 @@ setInterval(() => {}, 1000);
   );
 
   const codexPidPath = path.join(fakeProcessDir, "codex.pid");
-  const codexDescendantPidPath = path.join(
-    fakeProcessDir,
-    "codex-descendant.pid",
-  );
+  const codexDescendantPidPath = path.join(fakeProcessDir, "codex-descendant.pid");
   process.env.PRC_TEST_PROCESS_PID_PATH = codexPidPath;
   process.env.PRC_TEST_DESCENDANT_PID_PATH = codexDescendantPidPath;
   process.env.PRC_TEST_EMIT_USAGE = "1";
@@ -379,19 +340,14 @@ setInterval(() => {}, 1000);
     signal: codexAbortController.signal,
   });
   const codexPid = Number(await waitForFileText(codexPidPath));
-  const codexDescendantPid = Number(
-    await waitForFileText(codexDescendantPidPath),
-  );
+  const codexDescendantPid = Number(await waitForFileText(codexDescendantPidPath));
   await new Promise((resolve) => setTimeout(resolve, 50));
   codexAbortController.abort(new Error("Stop Codex analysis."));
   let codexAbortError;
-  await assert.rejects(
-    codexPromise,
-    (error) => {
-      codexAbortError = error;
-      return error?.name === "AbortError" && error?.code === "ABORT_ERR";
-    },
-  );
+  await assert.rejects(codexPromise, (error) => {
+    codexAbortError = error;
+    return error?.name === "AbortError" && error?.code === "ABORT_ERR";
+  });
   assert.deepEqual(codexAbortError.usage, {
     inputTokens: 9,
     cachedInputTokens: 3,
@@ -455,42 +411,51 @@ const multiHunkCandidate = {
   summary: "The constants change together.",
   confidence: 1,
   fileTree: { branches: [] },
-  files: [{
-    id: multiHunkFile.id,
-    path: multiHunkFile.path,
-    reviewPriority: "primary",
-    changeKind: "runtime",
-    explanation: "Both constants form one runtime contract.",
-    sectionTree: {
-      sections: [{
-        id: "update-constants",
-        title: "Update related constants",
-        reviewPriority: "primary",
-        changeKind: "runtime",
-        explanation: "The related defaults must move together.",
-        changedLineRanges: [
+  files: [
+    {
+      id: multiHunkFile.id,
+      path: multiHunkFile.path,
+      reviewPriority: "primary",
+      changeKind: "runtime",
+      explanation: "Both constants form one runtime contract.",
+      sectionTree: {
+        sections: [
           {
-            start: firstHunk.changedLineIds[0],
-            end: firstHunk.changedLineIds.at(-1),
-          },
-          {
-            start: secondHunk.changedLineIds[0],
-            end: secondHunk.changedLineIds.at(-1),
+            id: "update-constants",
+            title: "Update related constants",
+            reviewPriority: "primary",
+            changeKind: "runtime",
+            explanation: "The related defaults must move together.",
+            changedLineRanges: [
+              {
+                start: firstHunk.changedLineIds[0],
+                end: firstHunk.changedLineIds.at(-1),
+              },
+              {
+                start: secondHunk.changedLineIds[0],
+                end: secondHunk.changedLineIds.at(-1),
+              },
+            ],
           },
         ],
-      }],
-      branches: [],
+        branches: [],
+      },
     },
-  }],
+  ],
 };
-const materializedMultiHunk = assembleCandidate(materializeLineOwnership(multiHunkCandidate, {
-  inventory: multiHunkInventory,
-}), [{
-  id: "multi-hunk",
-  title: "Related constants",
-  explanation: "Both constants belong to one Review Stack.",
-  fileIds: [multiHunkFile.id],
-}]);
+const materializedMultiHunk = assembleCandidate(
+  materializeLineOwnership(multiHunkCandidate, {
+    inventory: multiHunkInventory,
+  }),
+  [
+    {
+      id: "multi-hunk",
+      title: "Related constants",
+      explanation: "Both constants belong to one Review Stack.",
+      fileIds: [multiHunkFile.id],
+    },
+  ],
+);
 validateReviewAnalysis(materializedMultiHunk, {
   inventory: multiHunkInventory,
 });
@@ -498,27 +463,34 @@ assert.deepEqual(
   materializedMultiHunk.files[0].sectionTree.sections[0].changedLineIds,
   multiHunkFile.changedLineIds,
 );
-assert.deepEqual(
-  materializedMultiHunk.files[0].changedLineIds,
-  multiHunkFile.changedLineIds,
-);
+assert.deepEqual(materializedMultiHunk.files[0].changedLineIds, multiHunkFile.changedLineIds);
 assert.throws(
-  () => materializeLineOwnership({
-    ...multiHunkCandidate,
-    files: [{
-      ...multiHunkCandidate.files[0],
-      sectionTree: {
-        ...multiHunkCandidate.files[0].sectionTree,
-        sections: [{
-          ...multiHunkCandidate.files[0].sectionTree.sections[0],
-          changedLineRanges: [{
-            start: firstHunk.changedLineIds[0],
-            end: secondHunk.changedLineIds.at(-1),
-          }],
-        }],
+  () =>
+    materializeLineOwnership(
+      {
+        ...multiHunkCandidate,
+        files: [
+          {
+            ...multiHunkCandidate.files[0],
+            sectionTree: {
+              ...multiHunkCandidate.files[0].sectionTree,
+              sections: [
+                {
+                  ...multiHunkCandidate.files[0].sectionTree.sections[0],
+                  changedLineRanges: [
+                    {
+                      start: firstHunk.changedLineIds[0],
+                      end: secondHunk.changedLineIds.at(-1),
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
       },
-    }],
-  }, { inventory: multiHunkInventory }),
+      { inventory: multiHunkInventory },
+    ),
   /stay within one hunk/,
 );
 
@@ -548,12 +520,14 @@ try {
   let judgeAttempt = 0;
   const reviewStacksResult = {
     schemaVersion: "pr-review-stacks/v1",
-    reviewStacks: [{
-      id: "core-change",
-      title: "Example value update",
-      explanation: "Single cohesive change to the example file.",
-      fileIds: [inventoryFile.id],
-    }],
+    reviewStacks: [
+      {
+        id: "core-change",
+        title: "Example value update",
+        explanation: "Single cohesive change to the example file.",
+        fileIds: [inventoryFile.id],
+      },
+    ],
   };
   const incompleteCandidateNormalized = assembleCandidate(
     materializeLineOwnership(incompleteCandidate, { inventory }),
@@ -570,13 +544,7 @@ try {
     runDir,
   });
 
-  const executeCodex = async ({
-    model,
-    outputPath,
-    prompt,
-    reasoningEffort,
-    schemaPath,
-  }) => {
+  const executeCodex = async ({ model, outputPath, prompt, reasoningEffort, schemaPath }) => {
     executionOptions.push({ model, reasoningEffort });
 
     if (schemaPath.includes("02-create-review-stacks")) {
@@ -604,17 +572,17 @@ try {
           schemaVersion: "pr-review-judge/v1",
           verdict: passes ? "pass" : "fail",
           confidence: 1,
-          summary: passes
-            ? "Candidate is ready."
-            : "Repair the incomplete Section Tree.",
+          summary: passes ? "Candidate is ready." : "Repair the incomplete Section Tree.",
           findings: passes
             ? []
-            : [{
-                severity: "blocker",
-                type: "validation",
-                targetId: "validate-value",
-                explanation: "The affected file is missing one changed line.",
-              }],
+            : [
+                {
+                  severity: "blocker",
+                  type: "validation",
+                  targetId: "validate-value",
+                  explanation: "The affected file is missing one changed line.",
+                },
+              ],
         })}\n`,
         "utf8",
       );
@@ -661,14 +629,11 @@ try {
   });
 
   assert.deepEqual(calls, ["review-stacks-1", "review-trees-1", "repair-1"]);
-  assert.deepEqual(
-    executionOptions,
-    [
-      { model: "selected-model", reasoningEffort: "xhigh" },
-      { model: "selected-model", reasoningEffort: "xhigh" },
-      { model: "selected-model", reasoningEffort: "xhigh" },
-    ],
-  );
+  assert.deepEqual(executionOptions, [
+    { model: "selected-model", reasoningEffort: "xhigh" },
+    { model: "selected-model", reasoningEffort: "xhigh" },
+    { model: "selected-model", reasoningEffort: "xhigh" },
+  ]);
   assertStageTimeline(events, [
     "stage-start:analysis",
     "stage-start:analysis.review-stacks",
@@ -704,41 +669,23 @@ try {
     findFinishEvent(events, "analysis.attempt-1.generate-review-trees").parentStageId,
     "analysis.attempt-1",
   );
-  assert.equal(
-    findFinishEvent(events, "analysis.attempt-2").metrics.strategy,
-    "targeted-repair",
-  );
-  assert.equal(
-    findFinishEvent(events, "analysis.persist-artifacts").parentStageId,
-    "analysis",
-  );
+  assert.equal(findFinishEvent(events, "analysis.attempt-2").metrics.strategy, "targeted-repair");
+  assert.equal(findFinishEvent(events, "analysis.persist-artifacts").parentStageId, "analysis");
   assert.match(
-    findFinishEvent(
-      events,
-      "analysis.attempt-1.evaluation.validate-candidate",
-    ).error,
+    findFinishEvent(events, "analysis.attempt-1.evaluation.validate-candidate").error,
     /file file-1 sectionTree changedLineIds must exactly match covered diff ids/,
   );
   assert.equal(judgePrompts.length, 0);
   assert.equal(
-    findFinishEvent(
-      events,
-      "analysis.attempt-1.evaluation.judge-candidate",
-    ).metrics.reason,
+    findFinishEvent(events, "analysis.attempt-1.evaluation.judge-candidate").metrics.reason,
     "semantic-judge-disabled",
   );
   assert.deepEqual(
     extractJsonTag(repairPrompts[0], "analysis_candidate_json"),
     assembleCandidate(incompleteCandidate, reviewStacksResult.reviewStacks),
   );
-  assert.deepEqual(
-    extractJsonTag(repairPrompts[0], "affected_file_ids_json"),
-    [inventoryFile.id],
-  );
-  const combinedFeedback = extractJsonTag(
-    repairPrompts[0],
-    "combined_evaluation_feedback_json",
-  );
+  assert.deepEqual(extractJsonTag(repairPrompts[0], "affected_file_ids_json"), [inventoryFile.id]);
+  const combinedFeedback = extractJsonTag(repairPrompts[0], "combined_evaluation_feedback_json");
   assert.equal(combinedFeedback.deterministicValidation.status, "fail");
   assert.equal(combinedFeedback.semanticJudge.status, "skipped");
   const affectedDiff = extractJsonTag(repairPrompts[0], "affected_diff_json");
@@ -749,26 +696,17 @@ try {
   assert.match(sectionTreePrompts[0], /<structured_diff_json>/);
   assert.doesNotMatch(sectionTreePrompts[0], /<diff_line_map_json>|<diff_patch>/);
   assert.equal(
-    extractJsonTag(
-      sectionTreePrompts[0],
-      "structured_diff_json",
-    ).schemaVersion,
+    extractJsonTag(sectionTreePrompts[0], "structured_diff_json").schemaVersion,
     "pr-structured-diff/v1",
   );
   assert.match(sectionTreePrompts[0], /## Explanations: What and Why/);
-  assert.match(
-    sectionTreePrompts[0],
-    /attached code already tells the reviewer \*\*how\*\*/,
-  );
+  assert.match(sectionTreePrompts[0], /attached code already tells the reviewer \*\*how\*\*/);
   assert.match(sectionTreePrompts[0], /Use Markdown bullets for multiple distinct reasons/);
   assert.match(
     sectionTreePrompts[0],
     /Never omit useful context merely to reach a\s+length target/,
   );
-  assert.match(
-    sectionTreePrompts[0],
-    /never treat\s+formatting alone as a quality failure/i,
-  );
+  assert.match(sectionTreePrompts[0], /never treat\s+formatting alone as a quality failure/i);
   assert.match(sectionTreePrompts[0], /## Cohesive Review Units/);
   assert.match(
     sectionTreePrompts[0],
@@ -777,19 +715,13 @@ try {
   assert.match(sectionTreePrompts[0], /Do not emit numeric section depths/);
   assert.match(judgeContract, /## Section cohesion/);
   assert.match(judgeContract, /## Explanations/);
-  assert.match(
-    judgeContract,
-    /attached code answers how the implementation works/,
-  );
+  assert.match(judgeContract, /attached code answers how the implementation works/);
   assert.match(
     judgeContract,
     /length and\s+Markdown formatting alone never determine the verdict/i,
   );
   assert.match(judgeContract, /imperfect but useful enough to help a reviewer/);
-  assert.match(
-    judgeContract,
-    /one contiguous render or JSX phase/,
-  );
+  assert.match(judgeContract, /one contiguous render or JSX phase/);
   assert.deepEqual(result.analysis, finalMergedCandidate);
   assert.deepEqual(result.execution, {
     model: "selected-model",
@@ -823,10 +755,7 @@ try {
     JSON.parse(await readFile(path.join(runDir, "review-stacks.json"), "utf8")),
     reviewStacksResult,
   );
-  assert.equal(
-    JSON.parse(await readFile(path.join(runDir, "judge.json"), "utf8")),
-    null,
-  );
+  assert.equal(JSON.parse(await readFile(path.join(runDir, "judge.json"), "utf8")), null);
 } finally {
   await rm(runDir, { force: true, recursive: true });
 }
@@ -851,23 +780,27 @@ try {
       executeCodex: async ({ signal }) => {
         executeCalls += 1;
         assert.equal(signal, controller.signal);
-        queueMicrotask(() => controller.abort(
-          new Error("Canceled during section tree generation."),
-        ));
+        queueMicrotask(() =>
+          controller.abort(new Error("Canceled during section tree generation.")),
+        );
 
-        return new Promise((resolve, reject) => {
-          signal.addEventListener("abort", () => {
-            const error = new Error("Canceled during section tree generation.");
-            error.name = "AbortError";
-            error.code = "ABORT_ERR";
-            error.usage = {
-              inputTokens: 17,
-              cachedInputTokens: 4,
-              outputTokens: 3,
-              totalTokens: 20,
-            };
-            reject(error);
-          }, { once: true });
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              const error = new Error("Canceled during section tree generation.");
+              error.name = "AbortError";
+              error.code = "ABORT_ERR";
+              error.usage = {
+                inputTokens: 17,
+                cachedInputTokens: 4,
+                outputTokens: 3,
+                totalTokens: 20,
+              };
+              reject(error);
+            },
+            { once: true },
+          );
         });
       },
       onEvent: async (event) => {
@@ -889,10 +822,7 @@ try {
     outputTokens: 3,
     totalTokens: 20,
   });
-  assert.equal(
-    findFinishEvent(events, "analysis.review-stacks").status,
-    "canceled",
-  );
+  assert.equal(findFinishEvent(events, "analysis.review-stacks").status, "canceled");
   assert.equal(findFinishEvent(events, "analysis").status, "canceled");
   assert.equal(findFinishEvent(events, "analysis").metrics.totalTokens, 20);
   assertStagePairs(events);
@@ -928,12 +858,14 @@ try {
         outputPath,
         `${JSON.stringify({
           schemaVersion: "pr-review-stacks/v1",
-          reviewStacks: [{
-            id: "core-change",
-            title: "Example value update",
-            explanation: "Single cohesive change to the example file.",
-            fileIds: [inventoryFile.id],
-          }],
+          reviewStacks: [
+            {
+              id: "core-change",
+              title: "Example value update",
+              explanation: "Single cohesive change to the example file.",
+              fileIds: [inventoryFile.id],
+            },
+          ],
         })}\n`,
         "utf8",
       );
@@ -974,12 +906,14 @@ try {
         verdict: "fail",
         confidence: 1,
         summary: "Coverage remains incomplete.",
-        findings: [{
-          severity: "blocker",
-          type: "validation",
-          targetId: "validate-value",
-          explanation: "Do not accept or replace this with a fallback tree.",
-        }],
+        findings: [
+          {
+            severity: "blocker",
+            type: "validation",
+            targetId: "validate-value",
+            explanation: "Do not accept or replace this with a fallback tree.",
+          },
+        ],
       })}\n`,
       "utf8",
     );
@@ -1004,17 +938,10 @@ try {
     }),
     (error) => {
       terminalError = error;
-      return /PR review tree analysis failed after 3 complete attempts/.test(
-        error.message,
-      );
+      return /PR review tree analysis failed after 3 complete attempts/.test(error.message);
     },
   );
-  assert.deepEqual(calls, [
-    "review-stacks-1",
-    "review-trees-1",
-    "repair-1",
-    "repair-2",
-  ]);
+  assert.deepEqual(calls, ["review-stacks-1", "review-trees-1", "repair-1", "repair-2"]);
   assert.deepEqual(terminalError.usage, {
     inputTokens: 40,
     cachedInputTokens: 8,
@@ -1023,10 +950,7 @@ try {
   });
   assertStagePairs(events);
   assert.equal(findFinishEvent(events, "analysis").status, "failed");
-  assert.match(
-    findFinishEvent(events, "analysis").error,
-    /failed after 3 complete attempts/,
-  );
+  assert.match(findFinishEvent(events, "analysis").error, /failed after 3 complete attempts/);
   assert.equal(findFinishEvent(events, "analysis").metrics.totalTokens, 44);
   assert.equal(
     events.some((event) => event.stageId === "analysis.persist-artifacts"),
@@ -1038,15 +962,9 @@ try {
     const attemptFinish = findFinishEvent(events, stageId);
 
     assert.equal(attemptFinish.status, "failed");
+    assert.equal(attemptFinish.metrics.willRetry, failedAttempt < 3);
     assert.equal(
-      attemptFinish.metrics.willRetry,
-      failedAttempt < 3,
-    );
-    assert.equal(
-      findFinishEvent(
-        events,
-        `${stageId}.evaluation.validate-candidate`,
-      ).status,
+      findFinishEvent(events, `${stageId}.evaluation.validate-candidate`).status,
       "failed",
     );
     assert.equal(
@@ -1081,8 +999,18 @@ try {
   const inventory = createDiffInventory(shardedDiff);
   const stackAFiles = inventory.files.slice(0, 16);
   const stackBFiles = inventory.files.slice(16);
-  const stackA = { id: "stack-a", title: "Stack A", explanation: "The oversized change.", fileIds: stackAFiles.map((file) => file.id) };
-  const stackB = { id: "stack-b", title: "Stack B", explanation: "The independent change.", fileIds: stackBFiles.map((file) => file.id) };
+  const stackA = {
+    id: "stack-a",
+    title: "Stack A",
+    explanation: "The oversized change.",
+    fileIds: stackAFiles.map((file) => file.id),
+  };
+  const stackB = {
+    id: "stack-b",
+    title: "Stack B",
+    explanation: "The independent change.",
+    fileIds: stackBFiles.map((file) => file.id),
+  };
   const shardedReviewStacks = {
     schemaVersion: "pr-review-stacks/v1",
     reviewStacks: [stackA, stackB],
@@ -1123,14 +1051,16 @@ try {
       changeKind: "runtime",
       explanation: "This file owns its constant update.",
       sectionTree: {
-        sections: [{
-          id: "change-constant",
-          title: "Change the constant",
-          reviewPriority: "primary",
-          changeKind: "runtime",
-          explanation: "The constant value changes.",
-          changedLineRanges: toRanges(file.changedLineIds),
-        }],
+        sections: [
+          {
+            id: "change-constant",
+            title: "Change the constant",
+            reviewPriority: "primary",
+            changeKind: "runtime",
+            explanation: "The constant value changes.",
+            changedLineRanges: toRanges(file.changedLineIds),
+          },
+        ],
         branches: [],
       },
     })),
@@ -1154,10 +1084,12 @@ try {
     }
 
     assert.match(schemaPath, /03-create-review-trees/);
-    const inputFileIds = extractJsonTag(prompt, "structured_diff_json").files.map((file) => file.id);
-    const inputFiles = inputFileIds.map((fileId) => (
-      inventory.files.find((file) => file.id === fileId)
-    ));
+    const inputFileIds = extractJsonTag(prompt, "structured_diff_json").files.map(
+      (file) => file.id,
+    );
+    const inputFiles = inputFileIds.map((fileId) =>
+      inventory.files.find((file) => file.id === fileId),
+    );
 
     if (prompt.includes(`"${stackA.title}" review stack`)) {
       calls.push(`review-trees-a-${inputFiles.length}`);
@@ -1198,10 +1130,9 @@ try {
     result.analysis.reviewStacks.find((stack) => stack.id === stackA.id)?.fileTree,
     fullStackATree,
   );
-  assert.deepEqual(
-    result.analysis.reviewStacks.find((stack) => stack.id === stackB.id)?.fileTree,
-    { branches: [] },
-  );
+  assert.deepEqual(result.analysis.reviewStacks.find((stack) => stack.id === stackB.id)?.fileTree, {
+    branches: [],
+  });
   validateReviewAnalysis(result.analysis, { inventory });
   const shardedAnalysisMetrics = findFinishEvent(shardedEvents, "analysis").metrics;
   assert.equal(shardedAnalysisMetrics.invalidFileTreeRootCount, 0);
@@ -1213,11 +1144,7 @@ try {
 
 function assertStageTimeline(events, expected) {
   assert.deepEqual(
-    events.map((event) => [
-      event.type,
-      event.stageId,
-      event.status,
-    ].filter(Boolean).join(":")),
+    events.map((event) => [event.type, event.stageId, event.status].filter(Boolean).join(":")),
     expected,
   );
 }
@@ -1234,10 +1161,10 @@ function assertStagePairs(events) {
 
     if (event.type === "stage-finish") {
       assert.ok(
-        event.status === "completed"
-        || event.status === "failed"
-        || event.status === "canceled"
-        || event.status === "skipped",
+        event.status === "completed" ||
+          event.status === "failed" ||
+          event.status === "canceled" ||
+          event.status === "skipped",
       );
       assert.equal(typeof event.metrics.elapsedMs, "number");
       assert.ok(event.metrics.elapsedMs >= 0);
@@ -1253,9 +1180,7 @@ function assertStagePairs(events) {
 
 function findFinishEvent(events, stageId) {
   const event = events.find(
-    (candidate) => (
-      candidate.type === "stage-finish" && candidate.stageId === stageId
-    ),
+    (candidate) => candidate.type === "stage-finish" && candidate.stageId === stageId,
   );
 
   assert.ok(event, `Expected a finish event for ${stageId}`);
@@ -1346,20 +1271,14 @@ function buildCandidate({ coveredLineIds, fileId, filePath }) {
 }
 
 function toRanges(lineIds) {
-  return lineIds.length === 0
-    ? []
-    : [{ start: lineIds[0], end: lineIds.at(-1) }];
+  return lineIds.length === 0 ? [] : [{ start: lineIds[0], end: lineIds.at(-1) }];
 }
 
 async function writeRunInputs({ inventory, metadata, runDir }) {
   await Promise.all([
     writeFile(path.join(runDir, "metadata.json"), `${JSON.stringify(metadata)}\n`, "utf8"),
     writeFile(path.join(runDir, "diff.patch"), diff, "utf8"),
-    writeFile(
-      path.join(runDir, "diff-inventory.json"),
-      `${JSON.stringify(inventory)}\n`,
-      "utf8",
-    ),
+    writeFile(path.join(runDir, "diff-inventory.json"), `${JSON.stringify(inventory)}\n`, "utf8"),
   ]);
 }
 

@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { publishStableReview } from "../../analysis-worker/review-run.js";
+import { parseGitHubPrUrl } from "../../analysis-worker/workflow/02-fetch-pr/github.js";
 import { createDashboardApiMiddleware } from "../dashboard-api.js";
 import {
   createInputFingerprint,
   DashboardService,
   loadDashboardConfiguration,
 } from "../dashboard-service.js";
-import { publishStableReview } from "../../analysis-worker/review-run.js";
 import { RunStore } from "../run-store.js";
-import { parseGitHubPrUrl } from "../../analysis-worker/workflow/02-fetch-pr/github.js";
 
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "pr-dashboard-service-"));
 const reviewsDir = path.join(temporaryRoot, ".reviews");
@@ -80,10 +80,7 @@ try {
           {
             slug: "gpt-visible-b",
             visibility: "list",
-            supported_reasoning_levels: [
-              { effort: "low" },
-              { effort: "high" },
-            ],
+            supported_reasoning_levels: [{ effort: "low" }, { effort: "high" }],
           },
           {
             slug: "gpt-hidden",
@@ -129,11 +126,7 @@ try {
     }),
     {
       defaultModel: "gpt-visible-a",
-      models: [
-        "gpt-visible-a",
-        "gpt-visible-b",
-        "claude-opus-4-6[1m]",
-      ],
+      models: ["gpt-visible-a", "gpt-visible-b", "claude-opus-4-6[1m]"],
       modelProviders: {
         "gpt-visible-a": "codex",
         "gpt-visible-b": "codex",
@@ -170,10 +163,7 @@ try {
       sourceRunDir,
     }) => {
       activeExecutions += 1;
-      maximumActiveExecutions = Math.max(
-        maximumActiveExecutions,
-        activeExecutions,
-      );
+      maximumActiveExecutions = Math.max(maximumActiveExecutions, activeExecutions);
       executions.push({
         model,
         prUrl,
@@ -218,16 +208,8 @@ try {
         }
         await mkdir(runDir, { recursive: true });
         await Promise.all([
-          writeFile(
-            path.join(runDir, "metadata.json"),
-            `${JSON.stringify(metadata)}\n`,
-            "utf8",
-          ),
-          writeFile(
-            path.join(runDir, "diff.patch"),
-            diff,
-            "utf8",
-          ),
+          writeFile(path.join(runDir, "metadata.json"), `${JSON.stringify(metadata)}\n`, "utf8"),
+          writeFile(path.join(runDir, "diff.patch"), diff, "utf8"),
           writeFile(
             path.join(runDir, "diff-inventory.json"),
             `${JSON.stringify({ schemaVersion: "diff-inventory/v1" })}\n`,
@@ -315,20 +297,14 @@ try {
   });
   assert.equal(frozen.sourceMode, "frozen");
   assert.equal(frozen.sourceRunId, first.runId);
-  assert.equal(
-    frozen.metrics.inputFingerprint,
-    storedFirst.metrics.inputFingerprint,
-  );
+  assert.equal(frozen.metrics.inputFingerprint, storedFirst.metrics.inputFingerprint);
   await service.waitForIdle();
   assert.equal(
     executions.at(-1).sourceRunDir,
     await realpath(service.store.getRunDir(first.slug, first.runId)),
   );
   const storedFrozen = await service.store.readRun(frozen.slug, frozen.runId);
-  assert.equal(
-    storedFrozen.metrics.inputFingerprint,
-    storedFirst.metrics.inputFingerprint,
-  );
+  assert.equal(storedFrozen.metrics.inputFingerprint, storedFirst.metrics.inputFingerprint);
 
   const refreshed = await service.enqueue({
     prUrl: "https://github.com/example/alpha/pull/1",
@@ -338,14 +314,8 @@ try {
   assert.equal(refreshed.sourceRunId, null);
   await service.waitForIdle();
   assert.equal(executions.at(-1).sourceRunDir, null);
-  const storedRefreshed = await service.store.readRun(
-    refreshed.slug,
-    refreshed.runId,
-  );
-  assert.notEqual(
-    storedRefreshed.metrics.inputFingerprint,
-    storedFirst.metrics.inputFingerprint,
-  );
+  const storedRefreshed = await service.store.readRun(refreshed.slug, refreshed.runId);
+  assert.notEqual(storedRefreshed.metrics.inputFingerprint, storedFirst.metrics.inputFingerprint);
   assert.equal(codeVersionReads, executions.length);
 
   const dashboard = await service.snapshot();
@@ -384,10 +354,7 @@ try {
     batch.runs.map((run) => run.metrics.reasoningEffort),
     ["low", "medium", "high", "xhigh"],
   );
-  assert.equal(
-    new Set(batch.runs.map((run) => run.metrics.batchId)).size,
-    1,
-  );
+  assert.equal(new Set(batch.runs.map((run) => run.metrics.batchId)).size, 1);
   await service.waitForIdle();
 
   const batchExecutions = executions.slice(-4);
@@ -414,10 +381,7 @@ try {
     storedBatchRuns.map((run) => run.status),
     Array(4).fill("succeeded"),
   );
-  assert.equal(
-    new Set(storedBatchRuns.map((run) => run.metrics.inputFingerprint)).size,
-    1,
-  );
+  assert.equal(new Set(storedBatchRuns.map((run) => run.metrics.inputFingerprint)).size, 1);
   const snapshotAfterBatch = await service.snapshot();
   assert.deepEqual(snapshotAfterBatch.configuration, {
     defaultModel: "gpt-fixture",
@@ -441,10 +405,7 @@ try {
     refresh: true,
   });
   assert.equal(claudeBatch.provider, "claude");
-  assert.deepEqual(
-    claudeBatch.reasoningEfforts,
-    ["low", "medium", "high", "max"],
-  );
+  assert.deepEqual(claudeBatch.reasoningEfforts, ["low", "medium", "high", "max"]);
   assert.deepEqual(
     claudeBatch.runs.map((run) => run.metrics.provider),
     Array(4).fill("claude"),
@@ -468,26 +429,29 @@ try {
   );
 
   await assert.rejects(
-    () => service.enqueueBatch({
-      model: "gpt-unknown",
-      prUrl: "https://github.com/example/gamma/pull/3",
-    }),
+    () =>
+      service.enqueueBatch({
+        model: "gpt-unknown",
+        prUrl: "https://github.com/example/gamma/pull/3",
+      }),
     { code: "INVALID_MODEL" },
   );
   await assert.rejects(
-    () => service.enqueue({
-      model: "gpt-other",
-      prUrl: "https://github.com/example/gamma/pull/3",
-      reasoningEffort: "max",
-    }),
+    () =>
+      service.enqueue({
+        model: "gpt-other",
+        prUrl: "https://github.com/example/gamma/pull/3",
+        reasoningEffort: "max",
+      }),
     { code: "INVALID_REASONING_EFFORT" },
   );
   await assert.rejects(
-    () => service.enqueue({
-      model: "claude-sonnet-4-6",
-      prUrl: "https://github.com/example/claude/pull/4",
-      reasoningEffort: "xhigh",
-    }),
+    () =>
+      service.enqueue({
+        model: "claude-sonnet-4-6",
+        prUrl: "https://github.com/example/claude/pull/4",
+        reasoningEffort: "xhigh",
+      }),
     { code: "INVALID_REASONING_EFFORT" },
   );
 
@@ -510,10 +474,11 @@ try {
   });
   assert.equal(batchRerun.metrics.model, "gpt-fixture");
   await assert.rejects(
-    () => service.deleteRunHistory({
-      runId: batchRerun.runId,
-      slug: batchRerun.slug,
-    }),
+    () =>
+      service.deleteRunHistory({
+        runId: batchRerun.runId,
+        slug: batchRerun.slug,
+      }),
     { code: "HISTORY_TARGET_ACTIVE" },
   );
   await service.waitForIdle();
@@ -523,10 +488,7 @@ try {
     slug: frozen.slug,
   });
   assert.equal(deletedRun.deletedRunCount, 1);
-  await assert.rejects(
-    () => service.store.readRun(frozen.slug, frozen.runId),
-    { code: "ENOENT" },
-  );
+  await assert.rejects(() => service.store.readRun(frozen.slug, frozen.runId), { code: "ENOENT" });
 
   const deletedBatch = await service.deleteBatchHistory({
     batchId: claudeBatch.batchId,
@@ -536,10 +498,9 @@ try {
     deletedBatch.deletedRunIds.sort(),
     claudeBatch.runs.map((run) => run.runId).sort(),
   );
-  await assert.rejects(
-    () => service.deleteBatchHistory({ batchId: claudeBatch.batchId }),
-    { code: "HISTORY_TARGET_NOT_FOUND" },
-  );
+  await assert.rejects(() => service.deleteBatchHistory({ batchId: claudeBatch.batchId }), {
+    code: "HISTORY_TARGET_NOT_FOUND",
+  });
   assert.equal(maximumActiveExecutions, 1);
 
   const failingService = new DashboardService({
@@ -567,10 +528,7 @@ try {
     prUrl: "https://github.com/example/failure/pull/4",
   });
   await failingService.waitForIdle();
-  const storedFailed = await failingService.store.readRun(
-    failed.slug,
-    failed.runId,
-  );
+  const storedFailed = await failingService.store.readRun(failed.slug, failed.runId);
   assert.equal(storedFailed.status, "failed");
   assert.deepEqual(storedFailed.metrics.usage, {
     cachedInputTokens: 25,
@@ -630,15 +588,15 @@ async function checkCancellation() {
   const activeBatchExecution = await batchStarted;
   assert.equal(activeBatchExecution.reasoningEffort, "low");
   assert.equal(activeBatchExecution.signal.aborted, false);
+  await assert.rejects(() => batchService.deleteBatchHistory({ batchId: batch.batchId }), {
+    code: "HISTORY_TARGET_ACTIVE",
+  });
   await assert.rejects(
-    () => batchService.deleteBatchHistory({ batchId: batch.batchId }),
-    { code: "HISTORY_TARGET_ACTIVE" },
-  );
-  await assert.rejects(
-    () => batchService.deleteRunHistory({
-      runId: batch.runs[0].runId,
-      slug: batch.runs[0].slug,
-    }),
+    () =>
+      batchService.deleteRunHistory({
+        runId: batch.runs[0].runId,
+        slug: batch.runs[0].slug,
+      }),
     { code: "HISTORY_TARGET_ACTIVE" },
   );
 
@@ -671,33 +629,23 @@ async function checkCancellation() {
     canceledBatchRuns.map((run) => run.phase),
     Array(4).fill("Canceled"),
   );
-  assert.ok(
-    canceledBatchRuns.every((run) => run.error?.code === "RUN_CANCELED"),
-  );
-  assert.match(
-    canceledBatchRuns[0].metrics.inputFingerprint,
-    /^[a-f0-9]{64}$/,
-  );
+  assert.ok(canceledBatchRuns.every((run) => run.error?.code === "RUN_CANCELED"));
+  assert.match(canceledBatchRuns[0].metrics.inputFingerprint, /^[a-f0-9]{64}$/);
   const canceledBatchTimings = await batchService.store.readTimings(
     batch.runs[0].slug,
     batch.runs[0].runId,
   );
   assert.equal(
-    canceledBatchTimings.stages.find(
-      (stage) => stage.stageId === "fixture.cancelable",
-    )?.status,
+    canceledBatchTimings.stages.find((stage) => stage.stageId === "fixture.cancelable")?.status,
     "canceled",
   );
   assert.equal(
-    canceledBatchTimings.stages.find(
-      (stage) => stage.stageId === "run.total",
-    )?.status,
+    canceledBatchTimings.stages.find((stage) => stage.stageId === "run.total")?.status,
     "canceled",
   );
-  await assert.rejects(
-    () => batchService.cancelBatch({ batchId: batch.batchId }),
-    { code: "CANCEL_TARGET_NOT_FOUND" },
-  );
+  await assert.rejects(() => batchService.cancelBatch({ batchId: batch.batchId }), {
+    code: "CANCEL_TARGET_NOT_FOUND",
+  });
 
   const delegatedBatch = await batchService.enqueueBatch({
     prUrl: "https://github.com/example/cancel-delegated/pull/13",
@@ -713,9 +661,7 @@ async function checkCancellation() {
   assert.equal(delegatedCancellation.canceledRunCount, 4);
   await batchService.waitForIdle();
   const delegatedRuns = await Promise.all(
-    delegatedBatch.runs.map((run) =>
-      batchService.store.readRun(run.slug, run.runId),
-    ),
+    delegatedBatch.runs.map((run) => batchService.store.readRun(run.slug, run.runId)),
   );
   assert.deepEqual(
     delegatedRuns.map((run) => run.status),
@@ -753,18 +699,16 @@ async function checkCancellation() {
   assert.deepEqual(legacyCancellation.canceledRunIds, [legacy.runId]);
   assert.equal(activeLegacyExecution.signal.aborted, true);
   await legacyService.waitForIdle();
-  const canceledLegacy = await legacyService.store.readRun(
-    legacy.slug,
-    legacy.runId,
-  );
+  const canceledLegacy = await legacyService.store.readRun(legacy.slug, legacy.runId);
   assert.equal(canceledLegacy.status, "canceled");
   assert.equal(canceledLegacy.phase, "Canceled");
   assert.equal(canceledLegacy.error.code, "RUN_CANCELED");
   await assert.rejects(
-    () => legacyService.cancelRun({
-      runId: legacy.runId,
-      slug: legacy.slug,
-    }),
+    () =>
+      legacyService.cancelRun({
+        runId: legacy.runId,
+        slug: legacy.slug,
+      }),
     { code: "CANCEL_TARGET_NOT_FOUND" },
   );
   legacyService.close();
@@ -794,10 +738,7 @@ async function checkCancellation() {
   closeService.close();
   assert.equal(closingExecution.signal.aborted, true);
   await closeService.waitForIdle();
-  const storedClosingRun = await closeService.store.readRun(
-    closingRun.slug,
-    closingRun.runId,
-  );
+  const storedClosingRun = await closeService.store.readRun(closingRun.slug, closingRun.runId);
   assert.equal(storedClosingRun.status, "canceled");
 }
 
@@ -826,10 +767,7 @@ async function checkCancellationCommitRace() {
     get(target, property) {
       if (property === "recordStageEvent") {
         return async (slug, runId, event) => {
-          if (
-            event.stageId === "run.total"
-            && event.status === "completed"
-          ) {
+          if (event.stageId === "run.total" && event.status === "completed") {
             reportCompletedTiming();
             await completedTimingGate;
           }
@@ -877,21 +815,13 @@ async function checkCancellationCommitRace() {
       };
       await mkdir(runDir, { recursive: true });
       await Promise.all([
-        writeFile(
-          path.join(runDir, "metadata.json"),
-          `${JSON.stringify(metadata)}\n`,
-          "utf8",
-        ),
+        writeFile(path.join(runDir, "metadata.json"), `${JSON.stringify(metadata)}\n`, "utf8"),
         writeFile(
           path.join(runDir, "diff.patch"),
           "diff --git a/race.js b/race.js\n+race fixture\n",
           "utf8",
         ),
-        writeFile(
-          path.join(runDir, "index.html"),
-          "<p>canceled race review</p>",
-          "utf8",
-        ),
+        writeFile(path.join(runDir, "index.html"), "<p>canceled race review</p>", "utf8"),
       ]);
       await onEvent({
         at: new Date().toISOString(),
@@ -936,22 +866,14 @@ async function checkCancellationCommitRace() {
   const immediatelyCanceled = await backingStore.readRun(run.slug, run.runId);
   const immediateTimings = await backingStore.readTimings(run.slug, run.runId);
   assert.equal(immediatelyCanceled.status, "canceled");
-  assert.ok(
-    immediateTimings.stages.every(
-      (stage) => stage.endedAt && stage.status !== "running",
-    ),
-  );
+  assert.ok(immediateTimings.stages.every((stage) => stage.endedAt && stage.status !== "running"));
   assert.equal(
-    immediateTimings.stages.find((stage) => stage.stageId === "run.total")
-      ?.status,
+    immediateTimings.stages.find((stage) => stage.stageId === "run.total")?.status,
     "canceled",
   );
   assert.equal(await readFile(stableHtmlPath, "utf8"), previousStableHtml);
   assert.equal(
-    await readFile(path.join(
-      service.store.getRunDir(run.slug, run.runId),
-      "index.html",
-    ), "utf8"),
+    await readFile(path.join(service.store.getRunDir(run.slug, run.runId), "index.html"), "utf8"),
     "<p>canceled race review</p>",
   );
 
@@ -968,10 +890,7 @@ async function checkCancellationCommitRace() {
     },
   });
   await restartedService.initialize();
-  const afterRestart = await restartedService.store.readTimings(
-    run.slug,
-    run.runId,
-  );
+  const afterRestart = await restartedService.store.readTimings(run.slug, run.runId);
   assert.ok(afterRestart.stages.every((stage) => stage.endedAt));
   restartedService.close();
 
@@ -1041,11 +960,7 @@ async function checkSuccessPublicationWinsCancellation() {
       const htmlPath = path.join(runDir, "index.html");
       await mkdir(runDir, { recursive: true });
       await Promise.all([
-        writeFile(
-          path.join(runDir, "metadata.json"),
-          `${JSON.stringify(metadata)}\n`,
-          "utf8",
-        ),
+        writeFile(path.join(runDir, "metadata.json"), `${JSON.stringify(metadata)}\n`, "utf8"),
         writeFile(
           path.join(runDir, "diff.patch"),
           "diff --git a/publish.js b/publish.js\n+publish fixture\n",
@@ -1073,10 +988,7 @@ async function checkSuccessPublicationWinsCancellation() {
   const publicationPaths = await publicationStarted;
   assert.equal(
     publicationPaths.htmlPath,
-    path.join(
-      service.store.getRunDir(batch.runs[0].slug, batch.runs[0].runId),
-      "index.html",
-    ),
+    path.join(service.store.getRunDir(batch.runs[0].slug, batch.runs[0].runId), "index.html"),
   );
   const committedBeforePublication = await service.store.readRun(
     batch.runs[0].slug,
@@ -1104,9 +1016,7 @@ async function checkSuccessPublicationWinsCancellation() {
     successfulRun.runId,
   );
   assert.equal(
-    successfulTimings.stages.find(
-      (stage) => stage.stageId === "run.total",
-    )?.status,
+    successfulTimings.stages.find((stage) => stage.stageId === "run.total")?.status,
     "completed",
   );
   assert.equal(await readFile(stableHtmlPath, "utf8"), promotedHtml);
@@ -1144,11 +1054,7 @@ async function checkSuccessPublicationWinsCancellation() {
       const htmlPath = path.join(runDir, "index.html");
       await mkdir(runDir, { recursive: true });
       await Promise.all([
-        writeFile(
-          path.join(runDir, "metadata.json"),
-          `${JSON.stringify(metadata)}\n`,
-          "utf8",
-        ),
+        writeFile(path.join(runDir, "metadata.json"), `${JSON.stringify(metadata)}\n`, "utf8"),
         writeFile(
           path.join(runDir, "diff.patch"),
           "diff --git a/failed.js b/failed.js\n+failed publish fixture\n",
@@ -1181,13 +1087,16 @@ async function checkSuccessPublicationWinsCancellation() {
   assert.equal(storedFailedPublication.error.code, "RUN_FAILED");
   assert.equal(await readFile(stableHtmlPath, "utf8"), promotedHtml);
   assert.equal(
-    await readFile(path.join(
-      failedPublicationService.store.getRunDir(
-        failedPublicationRun.slug,
-        failedPublicationRun.runId,
+    await readFile(
+      path.join(
+        failedPublicationService.store.getRunDir(
+          failedPublicationRun.slug,
+          failedPublicationRun.runId,
+        ),
+        "index.html",
       ),
-      "index.html",
-    ), "utf8"),
+      "utf8",
+    ),
     failedPublicationHtml,
   );
   failedPublicationService.close();
@@ -1294,10 +1203,12 @@ async function checkApiMiddleware() {
         metrics: { model: "gpt-fixture", reasoningEffort: "xhigh" },
         runId: "new-run",
       },
-      runs: [{
-        metrics: { model: "gpt-fixture", reasoningEffort: "xhigh" },
-        runId: "new-run",
-      }],
+      runs: [
+        {
+          metrics: { model: "gpt-fixture", reasoningEffort: "xhigh" },
+          runId: "new-run",
+        },
+      ],
     });
     assert.deepEqual(calls[0], [
       "enqueue",
@@ -1309,38 +1220,28 @@ async function checkApiMiddleware() {
       },
     ]);
 
-    const rerunResponse = await fetch(
-      `${baseUrl}/api/runs/alpha-1/source-run/rerun`,
-      {
-        body: JSON.stringify({ model: "gpt-other" }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      },
-    );
+    const rerunResponse = await fetch(`${baseUrl}/api/runs/alpha-1/source-run/rerun`, {
+      body: JSON.stringify({ model: "gpt-other" }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
     assert.equal(rerunResponse.status, 202);
     assert.deepEqual(calls[1], [
       "rerun",
       { model: "gpt-other", runId: "source-run", slug: "alpha-1" },
     ]);
 
-    const rerunBatchResponse = await fetch(
-      `${baseUrl}/api/batches/source-batch/rerun`,
-      {
-        body: JSON.stringify({ model: "gpt-other" }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      },
-    );
+    const rerunBatchResponse = await fetch(`${baseUrl}/api/batches/source-batch/rerun`, {
+      body: JSON.stringify({ model: "gpt-other" }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
     assert.equal(rerunBatchResponse.status, 202);
-    assert.deepEqual(calls[2], [
-      "rerunBatch",
-      { batchId: "source-batch", model: "gpt-other" },
-    ]);
+    assert.deepEqual(calls[2], ["rerunBatch", { batchId: "source-batch", model: "gpt-other" }]);
 
-    const cancelBatchResponse = await fetch(
-      `${baseUrl}/api/batches/batch-to-cancel/cancel`,
-      { method: "POST" },
-    );
+    const cancelBatchResponse = await fetch(`${baseUrl}/api/batches/batch-to-cancel/cancel`, {
+      method: "POST",
+    });
     assert.equal(cancelBatchResponse.status, 200);
     assert.deepEqual(await cancelBatchResponse.json(), {
       cancellation: {
@@ -1349,15 +1250,11 @@ async function checkApiMiddleware() {
         canceledRunCount: 4,
       },
     });
-    assert.deepEqual(calls[3], [
-      "cancelBatch",
-      { batchId: "batch-to-cancel" },
-    ]);
+    assert.deepEqual(calls[3], ["cancelBatch", { batchId: "batch-to-cancel" }]);
 
-    const cancelRunResponse = await fetch(
-      `${baseUrl}/api/runs/alpha-1/run-to-cancel/cancel`,
-      { method: "POST" },
-    );
+    const cancelRunResponse = await fetch(`${baseUrl}/api/runs/alpha-1/run-to-cancel/cancel`, {
+      method: "POST",
+    });
     assert.equal(cancelRunResponse.status, 200);
     assert.deepEqual(await cancelRunResponse.json(), {
       cancellation: {
@@ -1368,15 +1265,11 @@ async function checkApiMiddleware() {
         requestedSlug: "alpha-1",
       },
     });
-    assert.deepEqual(calls[4], [
-      "cancelRun",
-      { runId: "run-to-cancel", slug: "alpha-1" },
-    ]);
+    assert.deepEqual(calls[4], ["cancelRun", { runId: "run-to-cancel", slug: "alpha-1" }]);
 
-    const deleteRunResponse = await fetch(
-      `${baseUrl}/api/runs/alpha-1/run-to-delete`,
-      { method: "DELETE" },
-    );
+    const deleteRunResponse = await fetch(`${baseUrl}/api/runs/alpha-1/run-to-delete`, {
+      method: "DELETE",
+    });
     assert.equal(deleteRunResponse.status, 200);
     assert.deepEqual(await deleteRunResponse.json(), {
       deletion: {
@@ -1386,15 +1279,11 @@ async function checkApiMiddleware() {
         slug: "alpha-1",
       },
     });
-    assert.deepEqual(calls[5], [
-      "deleteRun",
-      { runId: "run-to-delete", slug: "alpha-1" },
-    ]);
+    assert.deepEqual(calls[5], ["deleteRun", { runId: "run-to-delete", slug: "alpha-1" }]);
 
-    const deleteBatchResponse = await fetch(
-      `${baseUrl}/api/batches/batch-to-delete`,
-      { method: "DELETE" },
-    );
+    const deleteBatchResponse = await fetch(`${baseUrl}/api/batches/batch-to-delete`, {
+      method: "DELETE",
+    });
     assert.equal(deleteBatchResponse.status, 200);
     assert.deepEqual(await deleteBatchResponse.json(), {
       deletion: {
@@ -1403,15 +1292,11 @@ async function checkApiMiddleware() {
         deletedRunCount: 4,
       },
     });
-    assert.deepEqual(calls[6], [
-      "deleteBatch",
-      { batchId: "batch-to-delete" },
-    ]);
+    assert.deepEqual(calls[6], ["deleteBatch", { batchId: "batch-to-delete" }]);
 
-    const inactiveCancelResponse = await fetch(
-      `${baseUrl}/api/runs/alpha-1/inactive-run/cancel`,
-      { method: "POST" },
-    );
+    const inactiveCancelResponse = await fetch(`${baseUrl}/api/runs/alpha-1/inactive-run/cancel`, {
+      method: "POST",
+    });
     assert.equal(inactiveCancelResponse.status, 404);
     assert.deepEqual(await inactiveCancelResponse.json(), {
       error: "Run is not active.",
@@ -1439,13 +1324,7 @@ async function checkApiMiddleware() {
 }
 
 function createCancelableExecutor({ onStarted }) {
-  return async function cancelableExecutor({
-    onEvent,
-    prUrl,
-    reasoningEffort,
-    runDir,
-    signal,
-  }) {
+  return async function cancelableExecutor({ onEvent, prUrl, reasoningEffort, runDir, signal }) {
     assert.equal(typeof signal?.aborted, "boolean");
     const parsed = parseFixturePrUrl(prUrl);
     const metadata = {
@@ -1460,11 +1339,7 @@ function createCancelableExecutor({ onStarted }) {
     };
     await mkdir(runDir, { recursive: true });
     await Promise.all([
-      writeFile(
-        path.join(runDir, "metadata.json"),
-        `${JSON.stringify(metadata)}\n`,
-        "utf8",
-      ),
+      writeFile(path.join(runDir, "metadata.json"), `${JSON.stringify(metadata)}\n`, "utf8"),
       writeFile(
         path.join(runDir, "diff.patch"),
         "diff --git a/a.js b/a.js\n+cancel fixture\n",
@@ -1480,16 +1355,12 @@ function createCancelableExecutor({ onStarted }) {
     onStarted({ reasoningEffort, signal });
 
     try {
-      await new Promise((resolve, reject) => {
+      await new Promise((_resolve, reject) => {
         if (signal.aborted) {
           reject(signal.reason);
           return;
         }
-        signal.addEventListener(
-          "abort",
-          () => reject(signal.reason),
-          { once: true },
-        );
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
       });
     } catch (error) {
       await onEvent({

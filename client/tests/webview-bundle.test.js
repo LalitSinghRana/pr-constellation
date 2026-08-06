@@ -8,47 +8,53 @@ const html = await renderDiffHtml({
     intent: "Check review tree rendering",
     summary: "A minimal Section Tree verifies the embedded review bundle.",
     confidence: 1,
-    reviewStacks: [{
-      id: "stack-1",
-      title: "Runtime change",
-      explanation: "Review the runtime change as one stack.",
-      fileIds: ["file-1"],
-      fileTree: { branches: [] },
-    }],
-    files: [{
-      id: "file-1",
-      path: "src/example.js",
-      reviewPriority: "primary",
-      changeKind: "runtime",
-      explanation: "This file owns the runtime behavior under review.",
-      changedLineIds: ["file-1:hunk-1:line-1", "file-1:hunk-1:line-2"],
-      sectionTree: {
-        sections: [
-          {
-            id: "replace-old-value",
-            title: "Replace old value",
-            reviewPriority: "primary",
-            changeKind: "runtime",
-            explanation: "Callers must observe the updated behavior.",
-            changedLineIds: ["file-1:hunk-1:line-1"],
-          },
-          {
-            id: "set-new-value",
-            title: "Set new value",
-            reviewPriority: "secondary",
-            changeKind: "runtime",
-            explanation: "The replacement value supports the reviewed behavior.",
-            changedLineIds: ["file-1:hunk-1:line-2"],
-          },
-        ],
-        branches: [{
-          parentId: "replace-old-value",
-          childId: "set-new-value",
-          order: 0,
-          explanation: "The assignment supplies the value callers now observe.",
-        }],
+    reviewStacks: [
+      {
+        id: "stack-1",
+        title: "Runtime change",
+        explanation: "Review the runtime change as one stack.",
+        fileIds: ["file-1"],
+        fileTree: { branches: [] },
       },
-    }],
+    ],
+    files: [
+      {
+        id: "file-1",
+        path: "src/example.js",
+        reviewPriority: "primary",
+        changeKind: "runtime",
+        explanation: "This file owns the runtime behavior under review.",
+        changedLineIds: ["file-1:hunk-1:line-1", "file-1:hunk-1:line-2"],
+        sectionTree: {
+          sections: [
+            {
+              id: "replace-old-value",
+              title: "Replace old value",
+              reviewPriority: "primary",
+              changeKind: "runtime",
+              explanation: "Callers must observe the updated behavior.",
+              changedLineIds: ["file-1:hunk-1:line-1"],
+            },
+            {
+              id: "set-new-value",
+              title: "Set new value",
+              reviewPriority: "secondary",
+              changeKind: "runtime",
+              explanation: "The replacement value supports the reviewed behavior.",
+              changedLineIds: ["file-1:hunk-1:line-2"],
+            },
+          ],
+          branches: [
+            {
+              parentId: "replace-old-value",
+              childId: "set-new-value",
+              order: 0,
+              explanation: "The assignment supplies the value callers now observe.",
+            },
+          ],
+        },
+      },
+    ],
   },
   diff: `diff --git a/src/example.js b/src/example.js
 index 0000000..1111111 100644
@@ -111,7 +117,7 @@ assert.match(treeAppSource, /filter\(\(\{ type \}\) => type === "reviewSection"\
 assert.match(treeAppSource, /foldSectionTree\(file, \{ expandedGroupIds \}\)/);
 assert.match(treeAppSource, /value="source"/);
 assert.match(treeAppSource, /ariaLabel="Review tree map"/);
-assert.match(webStyles, /\.react-flow__node-reviewSection\s*\{[^}]*pointer-events:\s*auto\s*!important;/s);
+assert.match(treeAppSource, /pointerEvents: "auto"/);
 assert.match(webStyles, /\.explanation-hover-body ul/);
 assert.match(webStyles, /\.review-branch-hit-path/);
 assert.match(webStyles, /\.review-tree-map/);

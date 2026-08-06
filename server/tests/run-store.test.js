@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import {
-  mkdtemp,
   mkdir,
-  readFile,
+  mkdtemp,
   readdir,
+  readFile,
   realpath,
   rm,
   symlink,
@@ -12,12 +12,12 @@ import {
 import os from "node:os";
 import path from "node:path";
 import {
+  assertStorageId,
   DASHBOARD_SCHEMA_VERSION,
   FROZEN_INPUT_FILES,
   RUN_SCHEMA_VERSION,
   RunStore,
   TIMINGS_SCHEMA_VERSION,
-  assertStorageId,
 } from "../run-store.js";
 
 const reviewsDir = await mkdtemp(path.join(os.tmpdir(), "pr-review-run-store-"));
@@ -185,17 +185,15 @@ try {
   }
 
   const recovered = await reloadedStore.recoverInterruptedRuns();
-  assert.deepEqual(
-    recovered.map((run) => `${run.slug}/${run.runId}`).sort(),
-    ["widgets-42/run-1", "widgets-42/run-2"],
-  );
+  assert.deepEqual(recovered.map((run) => `${run.slug}/${run.runId}`).sort(), [
+    "widgets-42/run-1",
+    "widgets-42/run-2",
+  ]);
   assert.equal((await reloadedStore.readRun("widgets-42", "run-1")).status, "interrupted");
   assert.equal((await reloadedStore.readRun("widgets-42", "run-2")).status, "interrupted");
   assert.equal((await reloadedStore.readRun("other-7", "run-1")).status, "succeeded");
   const recoveredTimings = await reloadedStore.readTimings("widgets-42", "run-1");
-  const interruptedStage = recoveredTimings.stages.find(
-    (stage) => stage.stageId === "analysis",
-  );
+  const interruptedStage = recoveredTimings.stages.find((stage) => stage.stageId === "analysis");
   assert.equal(interruptedStage.status, "interrupted");
   assert.equal(interruptedStage.endedAt, "2026-07-27T10:05:00.000Z");
   assert.equal(interruptedStage.durationMs, 299_000);
@@ -206,10 +204,9 @@ try {
       code: "INVALID_STORAGE_ID",
     });
   }
-  await assert.rejects(
-    () => reloadedStore.readRun("../escape", "run-1"),
-    { code: "INVALID_STORAGE_ID" },
-  );
+  await assert.rejects(() => reloadedStore.readRun("../escape", "run-1"), {
+    code: "INVALID_STORAGE_ID",
+  });
 
   const outsideDir = await mkdtemp(path.join(os.tmpdir(), "pr-review-run-store-outside-"));
   try {
@@ -263,14 +260,12 @@ try {
     (await reloadedStore.deleteRun(disposableRun.slug, disposableRun.runId)).runId,
     disposableRun.runId,
   );
-  await assert.rejects(
-    () => reloadedStore.readRun(disposableRun.slug, disposableRun.runId),
-    { code: "ENOENT" },
-  );
-  await assert.rejects(
-    () => reloadedStore.deleteRun("../escape", disposableRun.runId),
-    { code: "INVALID_STORAGE_ID" },
-  );
+  await assert.rejects(() => reloadedStore.readRun(disposableRun.slug, disposableRun.runId), {
+    code: "ENOENT",
+  });
+  await assert.rejects(() => reloadedStore.deleteRun("../escape", disposableRun.runId), {
+    code: "INVALID_STORAGE_ID",
+  });
 
   console.log("run store checks passed");
 } finally {
