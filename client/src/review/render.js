@@ -6,7 +6,7 @@ import tailwindcss from "@tailwindcss/postcss";
 import esbuild from "esbuild";
 import postcss from "postcss";
 import { createHighlighter } from "shiki";
-import { createDiffInventory } from "../../workflows/pr-review-analysis/03-build-diff-inventory/diff-inventory.js";
+import { createDiffInventory } from "../../../analysis-worker/workflow/03-build-diff-inventory/diff-inventory.js";
 
 const require = createRequire(import.meta.url);
 const REVIEW_TREE_APP_ENTRY = fileURLToPath(new URL("./review-tree-app.jsx", import.meta.url));

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { foldSectionTree } from "../../src/review/section-tree-model.js";
+import { foldSectionTree } from "../src/review/section-tree-model.js";
 
 const file = {
   id: "file-1",

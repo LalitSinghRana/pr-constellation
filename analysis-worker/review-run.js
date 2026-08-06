@@ -8,11 +8,11 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import { createDiffInventory, createDiffSummary } from "../workflows/pr-review-analysis/03-build-diff-inventory/diff-inventory.js";
-import { runCodexReviewAnalysis } from "../workflows/pr-review-analysis/07-run-retry-loop/codex-agent.js";
-import { runClaudeExec } from "../workflows/pr-review-analysis/07-run-retry-loop/claude-agent.js";
-import { fetchPullRequest, parseGitHubPrUrl } from "../workflows/pr-review-analysis/02-fetch-pr/github.js";
-import { renderDiffHtml } from "../src/review/render.js";
+import { createDiffInventory, createDiffSummary } from "./workflow/03-build-diff-inventory/diff-inventory.js";
+import { runCodexReviewAnalysis } from "./workflow/07-run-retry-loop/codex-agent.js";
+import { runClaudeExec } from "./workflow/07-run-retry-loop/claude-agent.js";
+import { fetchPullRequest, parseGitHubPrUrl } from "./workflow/02-fetch-pr/github.js";
+import { renderDiffHtml } from "../client/src/review/render.js";
 
 export async function createReviewRun({ prUrl, reviewsDir }) {
   const { diff, metadata, paths, runDir } = await createPrInputRun({ prUrl, reviewsDir });

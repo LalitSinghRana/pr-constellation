@@ -11,7 +11,8 @@ const exec = promisify(execFile);
 export const defaultPort = 4397;
 const port = Number.parseInt(process.env.PORT ?? String(defaultPort), 10);
 const host = "127.0.0.1";
-const projectRoot = fileURLToPath(new URL(".", import.meta.url));
+const projectRoot = fileURLToPath(new URL("../", import.meta.url));
+const clientRoot = join(projectRoot, "client");
 const cockpitOrigin = `http://${host}:${port}`;
 const reviewsDir = join(projectRoot, ".reviews");
 const settingsPath = join(homedir(), ".config", "pr-review-cockpit", "settings.json");
@@ -1850,14 +1851,14 @@ async function serveReviewArtifact(request, response) {
 
 export async function startServer() {
   const { createServer: createViteServer } = await import("vite");
-  const { createDashboardVitePlugin } = await import("./cli/dashboard-vite-plugin.js");
+  const { createDashboardVitePlugin } = await import("./dashboard-vite-plugin.js");
   const server = createHttpServer();
   const dashboardPlugin = createDashboardVitePlugin({ projectRoot, reviewsDir });
   const appVite = await createViteServer({
     appType: "spa",
-    configFile: join(projectRoot, "vite.config.js"),
+    configFile: join(clientRoot, "vite.config.js"),
     plugins: [dashboardPlugin],
-    root: projectRoot,
+    root: clientRoot,
     server: { middlewareMode: true, ws: { server } },
   });
 

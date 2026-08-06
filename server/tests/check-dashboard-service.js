@@ -3,15 +3,15 @@ import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createDashboardApiMiddleware } from "../cli/dashboard-api.js";
+import { createDashboardApiMiddleware } from "../dashboard-api.js";
 import {
   createInputFingerprint,
   DashboardService,
   loadDashboardConfiguration,
-} from "../cli/dashboard-service.js";
-import { publishStableReview } from "../cli/review-run.js";
-import { RunStore } from "../cli/run-store.js";
-import { parseGitHubPrUrl } from "../workflows/pr-review-analysis/02-fetch-pr/github.js";
+} from "../dashboard-service.js";
+import { publishStableReview } from "../../analysis-worker/review-run.js";
+import { RunStore } from "../run-store.js";
+import { parseGitHubPrUrl } from "../../analysis-worker/workflow/02-fetch-pr/github.js";
 
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "pr-dashboard-service-"));
 const reviewsDir = path.join(temporaryRoot, ".reviews");

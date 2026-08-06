@@ -9,18 +9,15 @@ tests, fixtures, or Storybook noise.
 
 ## Code Organization
 
-- `src/App.jsx` and `src/main.jsx` are the unified review inbox entry points;
-  pages, feature components, hooks, and shared helpers use the standard
-  `src/pages/`, `src/components/`, `src/hooks/`, and `src/lib/` layout.
-- `src/review/` owns the generated React Flow review pages served by the same
-  local website. Shared shadcn primitives live only in `src/components/ui/`.
-- `cli/` contains the command-line interface and the run coordinator that
-  connects analysis output to rendering.
-- `workflows/pr-review-analysis/` contains the complete headless AI analysis
-  workflow: PR fetching, diff inventory, prompts, schemas, validation, judging,
-  retry orchestration, and analysis tests.
-- `tests/webview/` contains website rendering and presentation-model regression
-  checks.
+- `client/` owns the cockpit UI, generated React Flow review pages, renderer,
+  Shiki integration, shared shadcn primitives, and browser-facing checks.
+- `server/` owns the continuously running HTTP server, GitHub notification sync,
+  dashboard API, queue coordination, persistence, and server checks.
+- `analysis-worker/` owns the CLI, run coordinator, PR fetching, diff inventory,
+  prompts, schemas, validation, judging, retry orchestration, and analysis checks.
+
+These directories are ownership boundaries inside one Node and pnpm project,
+not independently packaged workspaces.
 
 ## Dirty v0
 

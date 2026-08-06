@@ -1,25 +1,26 @@
 # Review Website
 
-The `src/` directory owns the complete local cockpit and generated review
+The `client/src/` directory owns the complete local cockpit and generated review
 website.
 
 ## Layout
 
-- `src/App.jsx` and `src/main.jsx`: root cockpit application and browser entry.
-- `src/pages/`: review queue, analysis queue, and scoring pages.
-- `src/components/`, `src/hooks/`, and `src/lib/`: shared UI, state, and helpers.
-- `src/review/render.js`: builds the standalone review HTML and transforms analysis
+- `client/src/App.jsx` and `client/src/main.jsx`: root cockpit application and browser entry.
+- `client/src/pages/`: review queue, analysis queue, and scoring pages.
+- `client/src/components/`, `client/src/hooks/`, and `client/src/lib/`: shared UI, state, and helpers.
+- `client/src/review/render.js`: builds the standalone review HTML and transforms analysis
   plus diff data for the browser.
-- `src/review/review-tree-app.jsx`: React Flow review application.
-- `src/review/section-tree-model.js`: deterministic presentation-only tree folding.
-- `src/index.css`: cockpit Tailwind entry; `src/review/styles.css` styles generated reviews.
-- `src/components/ui/`: shadcn components used by the application.
-- `server.mjs`: serves the cockpit, APIs, and generated pages on one port.
-- `tests/webview/`: renderer, hosting, and presentation-model regression checks.
+- `client/src/review/review-tree-app.jsx`: React Flow review application.
+- `client/src/review/section-tree-model.js`: deterministic presentation-only tree folding.
+- `client/src/index.css`: cockpit Tailwind entry; `client/src/review/styles.css` styles generated reviews.
+- `client/src/components/ui/`: shadcn components used by the application.
+- `server/server.mjs`: serves the cockpit, APIs, and generated pages on one port.
+- `client/tests/`: renderer and presentation-model regression checks.
+- `analysis-worker/tests/check-review-hosting.js`: generated-review publication regression check.
 - `docs/dev-agent-browser.md`: browser-development guidance.
 
 The website consumes the validated analysis schema and diff inventory from
-`workflows/pr-review-analysis/`; it does not author or repair AI analysis.
+`analysis-worker/workflow/`; it does not author or repair AI analysis.
 Review Stack headers, Review Section headers, Review Groups, and Review Branches
 expose their explanations through shadcn Hover Cards. Markdown is rendered
 with `react-markdown`, including structured bullet lists for longer
