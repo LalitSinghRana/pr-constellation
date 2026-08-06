@@ -11,7 +11,7 @@ import {
 } from "../cli/dashboard-service.js";
 import { publishStableReview } from "../cli/review-run.js";
 import { RunStore } from "../cli/run-store.js";
-import { parseGitHubPrUrl } from "../workflows/pr-graph-analysis/02-fetch-pr/github.js";
+import { parseGitHubPrUrl } from "../workflows/pr-review-analysis/02-fetch-pr/github.js";
 
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "pr-dashboard-service-"));
 const reviewsDir = path.join(temporaryRoot, ".reviews");
@@ -806,7 +806,7 @@ async function checkCancellationCommitRace() {
   const racePrUrl = "https://github.com/example/cancel-race/pull/14";
   const raceSlug = parseGitHubPrUrl(racePrUrl).slug;
   const stableHtmlPath = path.join(raceReviewsDir, raceSlug, "index.html");
-  const previousStableHtml = "<p>previous successful race graph</p>";
+  const previousStableHtml = "<p>previous successful race review</p>";
   await mkdir(path.dirname(stableHtmlPath), { recursive: true });
   await writeFile(stableHtmlPath, previousStableHtml, "utf8");
   const backingStore = new RunStore({ reviewsDir: raceReviewsDir });
@@ -889,7 +889,7 @@ async function checkCancellationCommitRace() {
         ),
         writeFile(
           path.join(runDir, "index.html"),
-          "<p>canceled race graph</p>",
+          "<p>canceled race review</p>",
           "utf8",
         ),
       ]);
@@ -952,7 +952,7 @@ async function checkCancellationCommitRace() {
       service.store.getRunDir(run.slug, run.runId),
       "index.html",
     ), "utf8"),
-    "<p>canceled race graph</p>",
+    "<p>canceled race review</p>",
   );
 
   const restartedService = new DashboardService({
@@ -994,8 +994,8 @@ async function checkSuccessPublicationWinsCancellation() {
   const prUrl = "https://github.com/example/success-publish-race/pull/15";
   const slug = parseGitHubPrUrl(prUrl).slug;
   const stableHtmlPath = path.join(reviewsDir, slug, "index.html");
-  const previousStableHtml = "<p>previous successful graph</p>";
-  const promotedHtml = "<p>new successful graph</p>";
+  const previousStableHtml = "<p>previous successful review</p>";
+  const promotedHtml = "<p>new successful review</p>";
   await mkdir(path.dirname(stableHtmlPath), { recursive: true });
   await writeFile(stableHtmlPath, previousStableHtml, "utf8");
 
@@ -1112,7 +1112,7 @@ async function checkSuccessPublicationWinsCancellation() {
   assert.equal(await readFile(stableHtmlPath, "utf8"), promotedHtml);
   service.close();
 
-  const failedPublicationHtml = "<p>failed publication graph</p>";
+  const failedPublicationHtml = "<p>failed publication review</p>";
   const failedPublicationService = new DashboardService({
     configuration: {
       defaultModel: "gpt-fixture",

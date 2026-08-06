@@ -6,10 +6,10 @@ import tailwindcss from "@tailwindcss/postcss";
 import esbuild from "esbuild";
 import postcss from "postcss";
 import { createHighlighter } from "shiki";
-import { createDiffInventory } from "../../workflows/pr-graph-analysis/03-build-diff-inventory/diff-inventory.js";
+import { createDiffInventory } from "../../workflows/pr-review-analysis/03-build-diff-inventory/diff-inventory.js";
 
 const require = createRequire(import.meta.url);
-const GRAPH_APP_ENTRY = fileURLToPath(new URL("./graph-app.jsx", import.meta.url));
+const REVIEW_TREE_APP_ENTRY = fileURLToPath(new URL("./review-tree-app.jsx", import.meta.url));
 const SRC_DIR = fileURLToPath(new URL("..", import.meta.url));
 const WEB_STYLES_ENTRY = fileURLToPath(new URL("./styles.css", import.meta.url));
 const SHIKI_THEMES = { light: "light-plus", dark: "dark-plus" };
@@ -84,8 +84,8 @@ let syntaxHighlighterPromise;
 
 export async function renderDiffHtml({ analysis = null, pr, diff }) {
   const syntaxHighlighter = await getSyntaxHighlighter();
-  const graphAssets = await getGraphAssets();
-  const graphData = analysis ? buildGraphData({ analysis, diff, syntaxHighlighter }) : null;
+  const reviewAssets = await getReviewAssets();
+  const treeData = analysis ? buildReviewTreeData({ analysis, diff, syntaxHighlighter }) : null;
 
   return `<!doctype html>
 <html lang="en">
@@ -106,30 +106,30 @@ export async function renderDiffHtml({ analysis = null, pr, diff }) {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap" rel="stylesheet" />
     <style>
-${graphAssets?.css || ""}
+${reviewAssets?.css || ""}
     </style>
   </head>
   <body>
     <div id="pr-review-root"></div>
-    <script id="pr-review-data" type="application/json">${serializeJsonForScript(buildReviewData({ graphData, pr }))}</script>
-    <script id="pr-analysis-data" type="application/json">${serializeJsonForScript(graphData)}</script>
-    <script>${escapeScript(graphAssets.js)}</script>
+    <script id="pr-review-data" type="application/json">${serializeJsonForScript(buildReviewData({ pr }))}</script>
+    <script id="pr-analysis-data" type="application/json">${serializeJsonForScript(treeData)}</script>
+    <script>${escapeScript(reviewAssets.js)}</script>
   </body>
 </html>`;
 }
 
-async function getGraphAssets() {
-  return buildGraphAssets();
+async function getReviewAssets() {
+  return buildReviewAssets();
 }
 
-async function buildGraphAssets() {
+async function buildReviewAssets() {
   const [bundle, webCss] = await Promise.all([
     esbuild.build({
-      entryPoints: [GRAPH_APP_ENTRY],
+      entryPoints: [REVIEW_TREE_APP_ENTRY],
       bundle: true,
       write: false,
       format: "iife",
-      globalName: "PrReviewGraph",
+      globalName: "PrReviewTree",
       target: "es2020",
       jsx: "automatic",
       plugins: [aliasAtPlugin()],
@@ -141,7 +141,7 @@ async function buildGraphAssets() {
   const js = bundle.outputFiles[0]?.text;
 
   if (!js) {
-    throw new Error("Failed to build graph website bundle.");
+    throw new Error("Failed to build review tree bundle.");
   }
 
   const diffViewCss = await readFile(require.resolve("@git-diff-view/react/styles/diff-view.css"), "utf8");
@@ -182,321 +182,46 @@ function aliasAtPlugin() {
   };
 }
 
-function buildGraphData({ analysis, diff, syntaxHighlighter }) {
-  const inventory = createDiffInventory(diff);
-  const inventoryIndex = indexDiffInventory(inventory);
-
-  if (
-    analysis.schemaVersion === "pr-graph-mini-trees/v1"
-    || analysis.schemaVersion === "pr-graph-mini-trees/v2"
-  ) {
-    return buildGraphDataMiniTrees({
-      analysis,
-      inventoryIndex,
-      syntaxHighlighter,
-    });
+function buildReviewTreeData({ analysis, diff, syntaxHighlighter }) {
+  if (analysis.schemaVersion !== "pr-review-analysis/v1") {
+    throw new Error(`Unsupported review analysis schema: ${analysis.schemaVersion}`);
   }
 
-  if (analysis.superTree?.nodes) {
-    return buildGraphDataV3({
-      analysis,
-      inventoryIndex,
-      syntaxHighlighter,
-    });
-  }
-
-  if (Array.isArray(analysis.reviewGroups)) {
-    return buildGraphDataV2({
-      analysis,
-      inventoryIndex,
-      syntaxHighlighter,
-    });
-  }
-
-  return buildGraphDataV1({
-    analysis,
-    inventoryIndex,
-    diff,
-    syntaxHighlighter,
-  });
-}
-
-function buildGraphDataMiniTrees({ analysis, inventoryIndex, syntaxHighlighter }) {
+  const inventoryIndex = indexDiffInventory(createDiffInventory(diff));
   return {
     schemaVersion: analysis.schemaVersion,
-    intent: analysis.intent || "",
-    summary: analysis.summary || "",
-    confidence: analysis.confidence ?? null,
-    reviewStack: analysis.reviewStack || null,
-    fileFlows: analysis.fileFlows || null,
-    files: (analysis.files || []).map((file) => {
-      const miniTree = {
-        relations: file.miniTree?.relations || [],
-        reviewEdges: normalizeReviewEdges(file.miniTree),
-        nodes: file.miniTree?.nodes || [],
-      };
-
-      return {
-        id: file.id,
-        path: file.path,
-        reviewClass: file.reviewClass,
-        changeRole: file.changeRole,
-        comment: file.comment || "",
-        codeRefs: normalizeCodeRefs(file.codeRefs),
-        fileOrderCodeChunks: buildCodeChunksForFile({
-          file,
-          inventoryIndex,
-          syntaxHighlighter,
-        }),
-        miniTree: {
-          nodes: miniTree.nodes.map((miniNode) => ({
-            id: miniNode.id,
-            title: miniNode.title,
-            reviewClass: miniNode.reviewClass,
-            changeRole: miniNode.changeRole,
-            depth: miniNode.depth,
-            comment: miniNode.comment || "",
-            changedLineIds: miniNode.changedLineIds || [],
-            codeChunks: buildCodeChunksForMiniNode({
-              file,
-              miniNode,
-              inventoryIndex,
-              syntaxHighlighter,
-            }),
-          })),
-          reviewEdges: miniTree.reviewEdges.map((edge) => ({
-            from: edge.from,
-            to: edge.to,
-            order: edge.order,
-            comment: edge.comment || "",
-          })),
-          relations: miniTree.relations.map((relation) => ({
-            from: relation.from,
-            to: relation.to,
-            relation: relation.relation || "",
-            comment: relation.comment || "",
-          })),
-        },
-      };
-    }),
-  };
-}
-
-function normalizeReviewEdges(miniTree) {
-  const edges = miniTree?.reviewEdges || miniTree?.edges || [];
-  const nextOrderByParentId = new Map();
-
-  return edges.map((edge) => {
-    const fallbackOrder = nextOrderByParentId.get(edge.from) || 0;
-    const order = Number.isInteger(edge.order) ? edge.order : fallbackOrder;
-    nextOrderByParentId.set(edge.from, Math.max(fallbackOrder, order) + 1);
-
-    return {
-      ...edge,
-      order,
-    };
-  });
-}
-
-function buildGraphDataV3({ analysis, inventoryIndex, syntaxHighlighter }) {
-  const superNodeById = new Map((analysis.superTree?.nodes || []).map((node) => [node.id, node]));
-
-  return {
-    schemaVersion: analysis.schemaVersion,
-    intent: analysis.intent || "",
-    summary: analysis.summary || "",
-    confidence: analysis.confidence ?? null,
-    files: (analysis.files || []).map((file) => {
-      const miniTree = {
-        edges: file.miniTree?.edges || file.miniEdges || [],
-        nodes: file.miniTree?.nodes || file.miniNodes || [],
-      };
-      const miniNodes = miniTree.nodes.map((miniNode) => ({
-        id: miniNode.id,
-        title: miniNode.title,
-        reviewClass: miniNode.reviewClass,
-        changeRole: miniNode.changeRole,
-        depth: miniNode.depth,
-        comment: miniNode.comment || "",
-        changedLineIds: miniNode.changedLineIds || [],
-        codeChunks: buildCodeChunksForMiniNode({
-          file,
-          miniNode,
-          inventoryIndex,
-          syntaxHighlighter,
-        }),
-      }));
-
-      return {
-        id: file.id,
-        path: file.path,
-        reviewClass: file.reviewClass,
-        changeRole: file.changeRole,
-        comment: file.comment || "",
-        codeRefs: normalizeCodeRefs(file.codeRefs),
-        miniTree: {
-          nodes: miniNodes,
-          edges: miniTree.edges || [],
-        },
-      };
-    }),
-    superTree: {
-      nodes: (analysis.superTree?.nodes || []).map((superNode) => ({
-        id: superNode.id,
-        title: superNode.title,
-        reviewClass: superNode.reviewClass,
-        changeRole: superNode.changeRole,
-        depth: superNode.depth,
-        comment: superNode.comment || "",
-        confidence: superNode.confidence ?? null,
-        codeRefs: normalizeCodeRefs(superNode.codeRefs),
-        tree: {
-          nodes: (superNode.tree?.nodes || []).map((treeNode) => ({
-            id: treeNode.id,
-            title: treeNode.title,
-            reviewClass: treeNode.reviewClass,
-            changeRole: treeNode.changeRole,
-            depth: treeNode.depth,
-            comment: treeNode.comment || "",
-            confidence: treeNode.confidence ?? null,
-            codeRefs: normalizeCodeRefs(treeNode.codeRefs),
-          })),
-          edges: (superNode.tree?.edges || []).map((edge) => ({
-            from: edge.from,
-            to: edge.to,
-            relation: edge.relation || "",
-            comment: edge.comment || "",
-          })),
-        },
-      })),
-      edges: (analysis.superTree?.edges || [])
-        .filter((edge) => superNodeById.has(edge.from) && superNodeById.has(edge.to))
-        .map((edge) => ({
-          from: edge.from,
-          to: edge.to,
-          relation: edge.relation || "",
-          comment: edge.comment || "",
-        })),
-    },
-  };
-}
-
-function buildGraphDataV2({ analysis, inventoryIndex, syntaxHighlighter }) {
-  const groupById = new Map((analysis.reviewGroups || []).map((group) => [group.id, group]));
-
-  return {
-    schemaVersion: analysis.schemaVersion,
-    intent: analysis.intent || "",
-    summary: analysis.summary || "",
-    confidence: analysis.confidence ?? null,
-    files: (analysis.files || []).map((file) => ({
+    intent: analysis.intent,
+    summary: analysis.summary,
+    confidence: analysis.confidence,
+    reviewStacks: analysis.reviewStacks,
+    files: analysis.files.map((file) => ({
       id: file.id,
       path: file.path,
-      reviewClass: file.reviewClass,
-      changeRole: file.changeRole,
-      comment: file.comment || "",
-      miniNodes: (file.miniNodes || []).map((miniNode) => ({
-        id: miniNode.id,
-        title: miniNode.title,
-        reviewClass: miniNode.reviewClass,
-        changeRole: miniNode.changeRole,
-        depth: miniNode.depth,
-        comment: miniNode.comment || "",
-        changedLineIds: miniNode.changedLineIds || [],
-        codeChunks: buildCodeChunksForMiniNode({
-          file,
-          miniNode,
-          inventoryIndex,
-          syntaxHighlighter,
-        }),
-      })),
-      miniEdges: file.miniEdges || [],
+      reviewPriority: file.reviewPriority,
+      changeKind: file.changeKind,
+      explanation: file.explanation,
+      changedLineIds: file.changedLineIds,
+      sourceCodeChunks: buildCodeChunksForFile({ file, inventoryIndex, syntaxHighlighter }),
+      fileTree: {
+        branches: file.fileTree.branches,
+        sections: file.fileTree.sections.map((section) => ({
+          ...section,
+          codeChunks: buildCodeChunksForReviewSection({
+            file,
+            inventoryIndex,
+            reviewSection: section,
+            syntaxHighlighter,
+          }),
+        })),
+      },
     })),
-    reviewGroups: (analysis.reviewGroups || []).map((group) => ({
-      id: group.id,
-      title: group.title,
-      reviewClass: group.reviewClass,
-      changeRole: group.changeRole,
-      depth: group.depth,
-      comment: group.comment || "",
-      confidence: group.confidence ?? null,
-      fileIds: group.fileIds || [],
-    })),
-    superEdges: (analysis.superEdges || [])
-      .filter((edge) => groupById.has(edge.from) && groupById.has(edge.to))
-      .map((edge) => ({
-        from: edge.from,
-        to: edge.to,
-        relation: edge.relation || "",
-        comment: edge.comment || "",
-      })),
   };
 }
 
-function normalizeCodeRefs(codeRefs) {
-  return {
-    fileIds: codeRefs?.fileIds || [],
-    changedLineIds: codeRefs?.changedLineIds || [],
-  };
-}
-
-function buildGraphDataV1({ analysis, inventoryIndex, diff, syntaxHighlighter }) {
-  const parsedDiff = parseUnifiedDiff(diff);
-  const nodeById = new Map(analysis.nodes.map((node) => [node.id, node]));
-  const sectionById = new Map((analysis.sections || []).map((section) => [section.id, section]));
-
-  return {
-    schemaVersion: analysis.schemaVersion,
-    sections: (analysis.sections || []).map((section) => ({
-      id: section.id,
-      title: section.title,
-      file: section.file,
-      classification: section.classification,
-      comment: section.comment || "",
-      changedLineIds: section.changedLineIds || [],
-    })),
-    nodes: analysis.nodes.map((node) => ({
-      id: node.id,
-      title: node.title,
-      kind: node.kind,
-      depth: node.depth,
-      comment: node.comment || "",
-      confidence: node.confidence ?? null,
-      sectionIds: node.sectionIds || [],
-      codeChunks: buildCodeChunksForNode({
-        inventoryIndex,
-        node,
-        parsedDiff,
-        sectionById,
-        syntaxHighlighter,
-      }),
-    })),
-    edges: (analysis.edges || [])
-      .filter((edge) => nodeById.has(edge.from) && nodeById.has(edge.to))
-      .map((edge) => ({
-        from: edge.from,
-        to: edge.to,
-        relation: edge.relation || "",
-        comment: edge.comment || "",
-      })),
-    virtualStacks: (analysis.virtualStacks || [])
-      .slice()
-      .sort((left, right) => (left.priority ?? 0) - (right.priority ?? 0))
-      .map((stack) => ({
-        id: stack.id,
-        title: stack.title,
-        priority: stack.priority,
-        comment: stack.comment || "",
-        nodeIds: stack.nodeIds || [],
-        sectionIds: stack.sectionIds || [],
-      })),
-  };
-}
-
-function buildCodeChunksForMiniNode({ file, inventoryIndex, miniNode, syntaxHighlighter }) {
+function buildCodeChunksForReviewSection({ file, inventoryIndex, reviewSection, syntaxHighlighter }) {
   const changedLinesByHunk = new Map();
 
-  for (const changedLineId of miniNode.changedLineIds || []) {
+  for (const changedLineId of reviewSection.changedLineIds || []) {
     const indexedLine = inventoryIndex.lineById.get(changedLineId);
 
     if (!indexedLine) {
@@ -557,7 +282,7 @@ function buildCodeChunksForMiniNode({ file, inventoryIndex, miniNode, syntaxHigh
 
       return {
         file: file.path,
-        hunk: `${miniNode.reviewClass}/${miniNode.changeRole} · ${miniNode.title} · ${hunk.header}`.trim(),
+        hunk: `${reviewSection.reviewPriority}/${reviewSection.changeKind} · ${reviewSection.title} · ${hunk.header}`.trim(),
         lines: highlightSnippetLines({
           contextLines: hunk.lines
             .slice(0, start)
@@ -617,116 +342,6 @@ function contextBoundary({ direction, hunk, ownedLineIds, startIndex }) {
   }
 
   return boundary;
-}
-
-function buildCodeChunksForNode({ inventoryIndex, node, parsedDiff, sectionById, syntaxHighlighter }) {
-  if (Array.isArray(node.sectionIds) && node.sectionIds.length > 0) {
-    const chunks = [];
-
-    for (const sectionId of node.sectionIds) {
-      const section = sectionById.get(sectionId);
-
-      if (!section) {
-        continue;
-      }
-
-      chunks.push(...buildCodeChunksForSection({
-        inventoryIndex,
-        section,
-        syntaxHighlighter,
-      }));
-    }
-
-    if (chunks.length > 0) {
-      return chunks.slice(0, 4);
-    }
-  }
-
-  const chunks = [];
-  const seen = new Set();
-  const evidenceGroups = new Map();
-
-  for (const evidence of node.evidence || []) {
-    const groupKey = `${evidence.file}:${evidence.hunk || ""}`;
-    if (!evidenceGroups.has(groupKey)) {
-      evidenceGroups.set(groupKey, evidence);
-    }
-  }
-
-  for (const evidence of evidenceGroups.values()) {
-    const file = parsedDiff.files.find((candidate) => candidate.path === evidence.file);
-    const hunk = findHunk(file, evidence.hunk);
-    const lines = hunk ? selectSnippetLines({ hunk, evidence }) : fallbackSnippetLines(evidence.excerpt);
-    const key = `${evidence.file}:${evidence.hunk}:${lines.map((line) => `${line.type}:${line.oldLine}:${line.newLine}:${line.content}`).join("|")}`;
-
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    chunks.push({
-      file: evidence.file,
-      hunk: evidence.hunk || hunk?.header || "",
-      lines: highlightSnippetLines({
-        file: evidence.file,
-        lines,
-        syntaxHighlighter,
-      }),
-    });
-  }
-
-  if (chunks.length === 0) {
-    const fallbackLines = fallbackSnippetLines(node.title);
-
-    chunks.push({
-      file: "unknown",
-      hunk: "",
-      lines: highlightSnippetLines({
-        file: "unknown",
-        lines: fallbackLines,
-        syntaxHighlighter,
-      }),
-    });
-  }
-
-  return chunks.slice(0, 3);
-}
-
-function buildCodeChunksForSection({ inventoryIndex, section, syntaxHighlighter }) {
-  const changedLinesByHunk = new Map();
-
-  for (const changedLineId of section.changedLineIds || []) {
-    const indexedLine = inventoryIndex.lineById.get(changedLineId);
-
-    if (!indexedLine) {
-      continue;
-    }
-
-    const hunkLines = changedLinesByHunk.get(indexedLine.hunk.id) || [];
-    hunkLines.push(indexedLine);
-    changedLinesByHunk.set(indexedLine.hunk.id, hunkLines);
-  }
-
-  return [...changedLinesByHunk.values()].map((changedLines) => {
-    const hunk = changedLines[0].hunk;
-    const indexes = changedLines.map((entry) => entry.lineIndex);
-    const start = Math.max(0, Math.min(...indexes) - 2);
-    const end = Math.min(hunk.lines.length, Math.max(...indexes) + 3);
-    const lines = hunk.lines.slice(start, end).map((line) => inventoryLineToSnippetLine(line));
-
-    return {
-      file: section.file,
-      hunk: `${section.title} · ${hunk.header}`.trim(),
-      lines: highlightSnippetLines({
-        contextLines: hunk.lines
-          .slice(0, start)
-          .map((line) => inventoryLineToSnippetLine(line)),
-        file: section.file,
-        lines,
-        syntaxHighlighter,
-      }),
-    };
-  });
 }
 
 function indexDiffInventory(inventory) {
@@ -884,166 +499,14 @@ function normalizeShikiLanguage(language) {
   return SHIKI_LANGUAGE_SET.has(normalized) ? normalized : "plaintext";
 }
 
-function parseUnifiedDiff(diff) {
-  const files = [];
-  let currentFile = null;
-  let currentHunk = null;
-  let oldLine = 0;
-  let newLine = 0;
-
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("diff --git ")) {
-      currentFile = { path: "", hunks: [] };
-      currentHunk = null;
-      files.push(currentFile);
-      continue;
-    }
-
-    if (!currentFile) {
-      continue;
-    }
-
-    if (line.startsWith("+++ b/")) {
-      currentFile.path = line.slice("+++ b/".length);
-      continue;
-    }
-
-    if (line.startsWith("@@ ")) {
-      const ranges = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-      oldLine = ranges ? Number(ranges[1]) : 0;
-      newLine = ranges ? Number(ranges[2]) : 0;
-      currentHunk = {
-        header: line,
-        lines: [],
-      };
-      currentFile.hunks.push(currentHunk);
-      continue;
-    }
-
-    if (!currentHunk) {
-      continue;
-    }
-
-    if (line.startsWith("+") && !line.startsWith("+++")) {
-      currentHunk.lines.push({ content: line.slice(1), newLine, oldLine: null, prefix: "+", type: "add" });
-      newLine += 1;
-    } else if (line.startsWith("-") && !line.startsWith("---")) {
-      currentHunk.lines.push({ content: line.slice(1), newLine: null, oldLine, prefix: "-", type: "del" });
-      oldLine += 1;
-    } else if (line.startsWith(" ")) {
-      currentHunk.lines.push({ content: line.slice(1), newLine, oldLine, prefix: " ", type: "context" });
-      oldLine += 1;
-      newLine += 1;
-    }
-  }
-
-  return { files };
-}
-
-function findHunk(file, hunkLabel) {
-  if (!file || file.hunks.length === 0) {
-    return null;
-  }
-
-  if (!hunkLabel) {
-    return file.hunks[0];
-  }
-
-  return file.hunks.find((hunk) => hunk.header.startsWith(hunkLabel)) || file.hunks[0];
-}
-
-function selectSnippetLines({ hunk, evidence }) {
-  const scoredIndex = bestMatchingLineIndex({ lines: hunk.lines, excerpt: evidence.excerpt });
-  const changedIndexes = hunk.lines
-    .map((line, index) => (line.type === "add" || line.type === "del" ? index : -1))
-    .filter((index) => index >= 0);
-
-  if (scoredIndex >= 0) {
-    return trimSnippet(expandAroundIndex({ lines: hunk.lines, index: scoredIndex }));
-  }
-
-  if (changedIndexes.length > 0) {
-    return trimSnippet(expandAroundIndex({ lines: hunk.lines, index: changedIndexes[0] }));
-  }
-
-  return trimSnippet(hunk.lines.slice(0, 8));
-}
-
-function bestMatchingLineIndex({ lines, excerpt }) {
-  const tokens = significantTokens(excerpt);
-  const excerptText = String(excerpt).toLowerCase();
-  let best = { index: -1, score: 0 };
-
-  lines.forEach((line, index) => {
-    const content = line.content.toLowerCase();
-    let score = tokens.reduce((sum, token) => (content.includes(token) ? sum + 1 : sum), 0);
-
-    for (const keyword of ["focus", "pressable", "ref", "pointerevents", "onpress"]) {
-      if (excerptText.includes(keyword) && content.includes(keyword)) {
-        score += 4;
-      }
-    }
-
-    if (score > best.score) {
-      best = { index, score };
-    }
-  });
-
-  return best.score > 0 ? best.index : -1;
-}
-
-function significantTokens(text) {
-  const ignored = new Set(["const", "event", "props", "string", "code", "value", "length", "null", "true", "false"]);
-
-  return [...new Set(String(text).toLowerCase().match(/[a-z0-9_]+/g) || [])]
-    .filter((token) => token.length > 2 && !ignored.has(token))
-    .slice(0, 12);
-}
-
-function expandAroundIndex({ lines, index }) {
-  const start = Math.max(0, index - 2);
-  const end = Math.min(lines.length, index + 6);
-  return lines.slice(start, end);
-}
-
-function trimSnippet(lines) {
-  const changedIndexes = lines
-    .map((line, index) => (line.type === "add" || line.type === "del" ? index : -1))
-    .filter((index) => index >= 0);
-
-  if (changedIndexes.length === 0) {
-    return lines.slice(0, 8);
-  }
-
-  const start = Math.max(0, changedIndexes[0] - 2);
-  const end = Math.min(lines.length, changedIndexes[changedIndexes.length - 1] + 3);
-  return lines.slice(start, end).slice(0, 9);
-}
-
-function fallbackSnippetLines(excerpt) {
-  return String(excerpt)
-    .split("\n")
-    .filter(Boolean)
-    .slice(0, 6)
-    .map((line) => ({
-      content: line,
-      newLine: null,
-      oldLine: null,
-      prefix: " ",
-      type: "context",
-    }));
-}
-
-function buildReviewData({ graphData, pr }) {
+function buildReviewData({ pr }) {
   return {
     additions: pr.additions ?? null,
     authorLogin: pr.author?.login || "",
     baseRefName: pr.baseRefName || "",
     changedFiles: pr.changedFiles ?? null,
     deletions: pr.deletions ?? null,
-    edgeCount: graphData?.superTree?.edges?.length ?? graphData?.superEdges?.length ?? graphData?.edges?.length ?? 0,
     headRefName: pr.headRefName || "",
-    nodeCount: graphData?.superTree?.nodes?.length ?? graphData?.reviewGroups?.length ?? graphData?.nodes?.length ?? 0,
     number: pr.number ?? null,
     state: pr.state || "",
     title: pr.title || "",

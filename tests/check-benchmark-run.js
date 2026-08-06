@@ -13,7 +13,7 @@ import {
   createBenchmarkRun,
   publishStableReview,
 } from "../cli/review-run.js";
-import { parseGitHubPrUrl } from "../workflows/pr-graph-analysis/02-fetch-pr/github.js";
+import { parseGitHubPrUrl } from "../workflows/pr-review-analysis/02-fetch-pr/github.js";
 
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "pr-review-benchmark-"));
 const reviewsDir = path.join(temporaryRoot, ".reviews");
@@ -25,15 +25,54 @@ const events = [];
 const codexCalls = [];
 const runController = new AbortController();
 const stableHtmlPath = path.join(reviewsDir, reviewSlug, "index.html");
-const previousStableHtml = "<p>previous successful graph</p>";
-const reviewStackFixtureResult = {
-  schemaVersion: "pr-graph-review-stack/v1",
-  stacks: [{
+const previousStableHtml = "<p>previous successful review</p>";
+const reviewStacksFixtureResult = {
+  schemaVersion: "pr-review-stacks/v1",
+  reviewStacks: [{
     id: "core-change",
     title: "Fixture value update",
-    comment: "Single cohesive change to the example file.",
+    explanation: "Single cohesive change to the example file.",
     fileIds: ["file-1"],
   }],
+};
+const fileTreesFixtureResult = {
+  schemaVersion: "pr-file-trees/v1",
+  intent: "Replace the fixture value.",
+  summary: "The fixture verifies frozen-input benchmark runs.",
+  confidence: 1,
+  stackTree: { branches: [] },
+  files: [
+    {
+      id: "file-1",
+      path: "src/example.js",
+      reviewPriority: "primary",
+      changeKind: "runtime",
+      explanation: "This file changes the fixture value used by the benchmark.",
+      fileTree: {
+        sections: [
+          {
+            id: "replace-value",
+            title: "Replace the fixture value",
+            reviewPriority: "primary",
+            changeKind: "runtime",
+            explanation: "The changed assignment is the complete runtime contract.",
+            changedLineRanges: [{
+              start: "file-1:hunk-1:line-1",
+              end: "file-1:hunk-1:line-2",
+            }],
+          },
+        ],
+        branches: [],
+      },
+    },
+  ],
+};
+const judgeFixtureResult = {
+  schemaVersion: "pr-review-judge/v1",
+  verdict: "pass",
+  confidence: 1,
+  summary: "The fixture candidate is valid.",
+  findings: [],
 };
 
 try {
@@ -82,49 +121,11 @@ index 1111111..2222222 100644
     }) => {
       assert.equal(signal, runController.signal);
       codexCalls.push({ model, reasoningEffort, schemaPath });
-      const value = schemaPath.includes("03-create-review-stack")
-        ? reviewStackFixtureResult
+      const value = schemaPath.includes("02-create-review-stacks")
+        ? reviewStacksFixtureResult
         : schemaPath.includes("06-judge-candidate")
-        ? {
-            schemaVersion: "pr-graph-judge/v1",
-            verdict: "pass",
-            confidence: 1,
-            summary: "The fixture candidate is valid.",
-            findings: [],
-          }
-        : {
-            schemaVersion: "pr-graph-mini-trees/v2",
-            intent: "Replace the fixture value.",
-            summary: "The fixture verifies frozen-input benchmark runs.",
-            confidence: 1,
-            fileFlow: { edges: [] },
-            files: [
-              {
-                id: "file-1",
-                path: "src/example.js",
-                reviewClass: "important",
-                changeRole: "runtime",
-                comment: "This file changes the fixture value used by the benchmark.",
-                miniTree: {
-                  nodes: [
-                    {
-                      id: "replace-value",
-                      title: "Replace the fixture value",
-                      reviewClass: "important",
-                      changeRole: "runtime",
-                      comment: "The changed assignment is the complete runtime contract.",
-                      changedLineRanges: [{
-                        start: "file-1:hunk-1:line-1",
-                        end: "file-1:hunk-1:line-2",
-                      }],
-                    },
-                  ],
-                  reviewEdges: [],
-                  relations: [],
-                },
-              },
-            ],
-          };
+          ? judgeFixtureResult
+          : fileTreesFixtureResult;
 
       await writeFile(outputPath, `${JSON.stringify(value)}\n`, "utf8");
     },
@@ -159,16 +160,6 @@ index 1111111..2222222 100644
     await readFile(result.stableHtmlPath, "utf8"),
     previousStableHtml,
   );
-  const {
-    fileFlows: fixtureFileFlows,
-    reviewStack: _fixtureReviewStack,
-    ...fixtureAnalysis
-  } = JSON.parse(await readFile(result.analysisPath, "utf8"));
-  const miniTreesFixture = `${JSON.stringify({
-    ...fixtureAnalysis,
-    fileFlow: fixtureFileFlows[reviewStackFixtureResult.stacks[0].id],
-  })}\n`;
-
   const claudeCalls = [];
   const claudeRunDir = path.join(reviewsDir, reviewSlug, "claude-run");
   await createBenchmarkRun({
@@ -179,13 +170,12 @@ index 1111111..2222222 100644
       schemaPath,
     }) => {
       claudeCalls.push({ model, reasoningEffort });
-      if (schemaPath.includes("03-create-review-stack")) {
-        await writeFile(outputPath, await readFile(path.join(result.runDir, "review-stack.json"), "utf8"), "utf8");
-      } else if (schemaPath.includes("06-judge-candidate")) {
-        await writeFile(outputPath, await readFile(result.judgePath, "utf8"), "utf8");
-      } else {
-        await writeFile(outputPath, miniTreesFixture, "utf8");
-      }
+      const value = schemaPath.includes("02-create-review-stacks")
+        ? reviewStacksFixtureResult
+        : schemaPath.includes("06-judge-candidate")
+          ? judgeFixtureResult
+          : fileTreesFixtureResult;
+      await writeFile(outputPath, `${JSON.stringify(value)}\n`, "utf8");
     },
     model: "claude-sonnet-4-6",
     prUrl,
@@ -243,9 +233,9 @@ index 1111111..2222222 100644
     "inventory.summary",
     "input.persist",
     "analysis",
-    "analysis.review-stack",
+    "analysis.review-stacks",
     "analysis.attempt-1",
-    "analysis.attempt-1.generate-mini-trees",
+    "analysis.attempt-1.generate-file-trees",
     "analysis.attempt-1.evaluation",
     "analysis.attempt-1.evaluation.validate-candidate",
     "analysis.persist-artifacts",
@@ -275,10 +265,6 @@ index 1111111..2222222 100644
     reviewSlug,
     "canceled-render-run",
   );
-  const [judgeFixture, reviewStackFixture] = await Promise.all([
-    readFile(result.judgePath, "utf8"),
-    readFile(path.join(result.runDir, "review-stack.json"), "utf8"),
-  ]);
   let renderCancelError;
 
   await assert.rejects(
@@ -287,11 +273,11 @@ index 1111111..2222222 100644
         assert.equal(signal, renderCancelController.signal);
         await writeFile(
           outputPath,
-          schemaPath.includes("03-create-review-stack")
-            ? reviewStackFixture
+          schemaPath.includes("02-create-review-stacks")
+            ? `${JSON.stringify(reviewStacksFixtureResult)}\n`
             : schemaPath.includes("06-judge-candidate")
-              ? judgeFixture
-              : miniTreesFixture,
+              ? `${JSON.stringify(judgeFixtureResult)}\n`
+              : `${JSON.stringify(fileTreesFixtureResult)}\n`,
           "utf8",
         );
         return {
@@ -311,7 +297,7 @@ index 1111111..2222222 100644
           && event.stageId === "render.persist"
         ) {
           renderCancelController.abort(
-            new Error("Canceled before rendering the review graph."),
+            new Error("Canceled before persisting the review page."),
           );
         }
       },

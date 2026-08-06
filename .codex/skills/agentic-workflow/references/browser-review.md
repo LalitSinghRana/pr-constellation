@@ -43,7 +43,7 @@ pnpm ab -- react tree
 - The intended page or generated review artifact loaded.
 - The key visible UI exists in the snapshot.
 - Console/page errors are empty or understood.
-- Screenshot shows no obvious overlap, clipping, blank graph, or broken layout.
+- Screenshot shows no obvious overlap, clipping, blank review tree, or broken layout.
 - Interactive controls are reachable by stable snapshot refs where relevant.
 
 Always close sessions after inspection:

@@ -10,7 +10,7 @@ import {
   publishStableReview,
 } from "./review-run.js";
 import { assertStorageId, RunStore } from "./run-store.js";
-import { parseGitHubPrUrl } from "../workflows/pr-graph-analysis/02-fetch-pr/github.js";
+import { parseGitHubPrUrl } from "../workflows/pr-review-analysis/02-fetch-pr/github.js";
 
 const execFileAsync = promisify(execFile);
 const ACTIVE_STATUSES = new Set(["queued", "running"]);
@@ -703,7 +703,6 @@ export class DashboardService {
         return {
           baseSha: resolveBaseSha(result.metadata),
           error: null,
-          graphUrl: `/reviews/${job.slug}/${job.runId}/`,
           headSha: resolveHeadSha(result.metadata),
           metrics: {
             additions: result.metadata?.additions ?? 0,

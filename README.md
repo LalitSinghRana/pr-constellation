@@ -3,7 +3,7 @@
 An early-stage project for a human-first pull request review assistant.
 
 The goal is to help reviewers move through large PRs quickly by showing the
-feature intent, highest-signal files, causal change path, acceptance criteria,
+feature intent, highest-signal files, causal review tree, acceptance criteria,
 and senior/product/QA review risks without drowning them in generated files,
 tests, fixtures, or Storybook noise.
 
@@ -16,7 +16,7 @@ tests, fixtures, or Storybook noise.
   local website. Shared shadcn primitives live only in `src/components/ui/`.
 - `cli/` contains the command-line interface and the run coordinator that
   connects analysis output to rendering.
-- `workflows/pr-graph-analysis/` contains the complete headless AI analysis
+- `workflows/pr-review-analysis/` contains the complete headless AI analysis
   workflow: PR fetching, diff inventory, prompts, schemas, validation, judging,
   retry orchestration, and analysis tests.
 - `tests/webview/` contains website rendering and presentation-model regression
@@ -42,13 +42,13 @@ Open it automatically:
 pnpm prc -- https://github.com/OWNER/REPO/pull/123 --open
 ```
 
-Generate a Codex-backed logical review graph:
+Generate a Codex-backed logical review tree:
 
 ```sh
 pnpm prc -- analyze https://github.com/OWNER/REPO/pull/123
 ```
 
-Render an existing run directory, including the graph when `analysis.json`
+Render an existing run directory, including the review tree when `analysis.json`
 exists:
 
 ```sh
@@ -70,7 +70,7 @@ http://127.0.0.1:4397/analysis
 
 The inbox persists tracked PRs independently from GitHub's read state. The
 analysis page shows not-started, queued, running, completed, and failed work;
-mini-tree generation and repair use the provider's highest configured effort
+File Review Tree generation and repair use the provider's highest configured effort
 (`xhigh` for Codex, `max` for Claude).
 
 The latest generated run for each PR is available at a stable URL:
@@ -98,10 +98,11 @@ Run `pnpm sync` for a manual refresh. Queue state is stored in
 gitignored `.reviews/` directory.
 
 The `analyze` command is headless. It invokes `codex exec` in read-only mode and
-writes one file-local mini-tree per changed file to `analysis.json`; it does not
-render the webview. The Tree view places those independent file mini-trees on
-the canvas and renders their nodes as code diffs. Primary edges follow the
-AI-authored review hierarchy. Technical cross-links remain available in the
-JSON views without adding unlabeled edges to the canvas. Supporting and
-mechanical sibling forests start in deterministic expandable groups so the
-first pass stays focused on core and important runtime work.
+writes one File Review Tree per changed file to `analysis.json`; it does not
+render the review page. The page nests each file's Review Sections beneath its
+Review Stack's Stack Tree and renders those sections as code diffs. Ordered
+Review Branches follow AI-authored review causality. Secondary and skim branches
+start in deterministic expandable Review Groups so the first pass stays focused.
+
+See [`docs/terminology.md`](docs/terminology.md) for the canonical product and
+data-model vocabulary.

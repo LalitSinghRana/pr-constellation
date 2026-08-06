@@ -77,7 +77,7 @@ try {
 
   await store.updateRun("widgets-42", "run-1", {
     status: "running",
-    phase: "generate-mini-trees",
+    phase: "generate-file-trees",
   });
   await store.recordStageEvent("widgets-42", "run-1", {
     type: "stage-start",
@@ -88,15 +88,15 @@ try {
   });
   await store.recordStageEvent("widgets-42", "run-1", {
     type: "stage-start",
-    stageId: "mini-tree",
-    label: "Generate mini-trees",
+    stageId: "file-tree",
+    label: "Generate File Review Trees",
     parentStageId: "analysis",
     attempt: 2,
     at: "2026-07-27T10:00:02.000Z",
   });
   const timingsAfterEnd = await store.recordStageEvent("widgets-42", "run-1", {
     type: "stage-finish",
-    stageId: "mini-tree",
+    stageId: "file-tree",
     parentStageId: "analysis",
     attempt: 2,
     at: "2026-07-27T10:00:03.250Z",
@@ -104,13 +104,13 @@ try {
     metrics: { elapsedMs: 1_234.5, outputTokens: 321 },
   });
 
-  const miniTreeStage = timingsAfterEnd.stages.find(
-    (stage) => stage.stageId === "mini-tree" && stage.attempt === 2,
+  const fileTreeStage = timingsAfterEnd.stages.find(
+    (stage) => stage.stageId === "file-tree" && stage.attempt === 2,
   );
-  assert.equal(miniTreeStage.durationMs, 1_234.5);
-  assert.equal(miniTreeStage.parentStageId, "analysis");
-  assert.equal(miniTreeStage.status, "succeeded");
-  assert.deepEqual(miniTreeStage.metrics, { elapsedMs: 1_234.5, outputTokens: 321 });
+  assert.equal(fileTreeStage.durationMs, 1_234.5);
+  assert.equal(fileTreeStage.parentStageId, "analysis");
+  assert.equal(fileTreeStage.status, "succeeded");
+  assert.deepEqual(fileTreeStage.metrics, { elapsedMs: 1_234.5, outputTokens: 321 });
   assert.equal(
     timingsAfterEnd.stages.find((stage) => stage.stageId === "analysis").durationMs,
     2_250,
@@ -138,7 +138,7 @@ try {
     sourceMode: "frozen",
     sourceRunId: "run-1",
   });
-  await store.createRun({
+  const completedRun = await store.createRun({
     runId: "run-1",
     url: "https://github.com/example/other/pull/7",
     owner: "example",
@@ -147,14 +147,14 @@ try {
     slug: "other-7",
     title: "A completed comparison run",
     status: "succeeded",
-    graphUrl: "/reviews/other-7/run-1/",
   });
+  assert.equal(completedRun.reviewUrl, "/reviews/other-7/run-1/");
 
   const reloadedStore = new RunStore({
     reviewsDir,
     clock: () => new Date("2026-07-27T10:05:00.000Z"),
   });
-  assert.equal((await reloadedStore.readRun("widgets-42", "run-1")).phase, "generate-mini-trees");
+  assert.equal((await reloadedStore.readRun("widgets-42", "run-1")).phase, "generate-file-trees");
 
   const dashboard = await reloadedStore.scanDashboard();
   assert.equal(dashboard.schemaVersion, DASHBOARD_SCHEMA_VERSION);

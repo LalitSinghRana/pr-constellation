@@ -55,7 +55,7 @@ export async function runCli(args) {
     console.log(`Review generated: ${result.htmlPath}`);
     console.log(`Stable review generated: ${result.stableHtmlPath}`);
     if (result.analysisPath) {
-      console.log(`Graph analysis used: ${result.analysisPath}`);
+      console.log(`Review analysis used: ${result.analysisPath}`);
     }
     console.log(`Run directory: ${result.runDir}`);
     return;

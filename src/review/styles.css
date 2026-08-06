@@ -2,58 +2,58 @@
 @import "tw-animate-css";
 @import "../theme.css";
 
-@source "./graph-app.jsx";
+@source "./review-tree-app.jsx";
 @source "../components/ui/**/*.{js,jsx}";
 @source "../lib/**/*.{js,jsx}";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --mini-tree-color: var(--primary);
-  --middle-tree-color: var(--primary);
+  --file-tree-color: var(--primary);
+  --stack-tree-color: var(--primary);
 }
 
-.flow-canvas .react-flow__node-filePage {
+.tree-canvas .react-flow__node-fileNode {
   z-index: 2 !important;
   pointer-events: none;
 }
 
-.flow-canvas .react-flow__node-miniDiff {
+.tree-canvas .react-flow__node-reviewSection {
   z-index: 4 !important;
   pointer-events: auto !important;
 }
 
-.flow-canvas .react-flow__node-collapsedGroup {
+.tree-canvas .react-flow__node-reviewGroup {
   z-index: 4 !important;
   pointer-events: auto !important;
 }
 
-.flow-canvas .react-flow__node[aria-current="step"] {
+.tree-canvas .react-flow__node[aria-current="step"] {
   border-radius: var(--radius-md);
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--primary) 62%, transparent);
 }
 
-.flow-canvas .react-flow__edge.mini-tree-edge {
+.tree-canvas .react-flow__edge.file-tree-edge {
   z-index: 4;
 }
 
-.flow-canvas .react-flow__edge.file-flow-edge {
+.tree-canvas .react-flow__edge.stack-tree-edge {
   z-index: 3;
 }
 
-.mini-diff-node *:not(.diff-line-num):not(.diff-line-content-operator) {
+.review-section-node *:not(.diff-line-num):not(.diff-line-content-operator) {
   user-select: text;
   -webkit-user-select: text;
 }
 
-.mini-diff-node:has(.mini-diff-header[data-state="open"]),
-.mini-diff-node:has(.mini-diff-header:focus-visible) {
+.review-section-node:has(.review-section-header[data-state="open"]),
+.review-section-node:has(.review-section-header:focus-visible) {
   border-color: var(--ring);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 30%, transparent);
   outline: none;
 }
 
-.mini-diff-code {
+.review-section-code {
   width: max-content;
   min-width: 100%;
   max-width: none;
@@ -96,7 +96,7 @@
 }
 
 @layer components {
-  .review-minimap {
+  .review-tree-map {
     top: 16px !important;
     right: 18px !important;
     overflow: hidden;
@@ -107,7 +107,7 @@
     backdrop-filter: blur(12px);
   }
 
-  .flow-canvas .react-flow {
+  .tree-canvas .react-flow {
     width: 100%;
     height: 100%;
     background: var(--background);
@@ -128,18 +128,18 @@
     stroke-opacity: 0.64;
   }
 
-  .comment-edge-trigger {
+  .review-branch-trigger {
     cursor: help;
     outline: none;
   }
 
-  .comment-edge-trigger:hover .comment-edge-path,
-  .comment-edge-trigger:focus-visible .comment-edge-path {
+  .review-branch-trigger:hover .review-branch-path,
+  .review-branch-trigger:focus-visible .review-branch-path {
     stroke: var(--primary);
     stroke-opacity: 1;
   }
 
-  .comment-edge-hit-path {
+  .review-branch-hit-path {
     fill: none;
     pointer-events: stroke;
     stroke: transparent;
@@ -147,35 +147,35 @@
     stroke-width: 30;
   }
 
-  .explanation-hover-comment > :first-child {
+  .explanation-hover-body > :first-child {
     margin-top: 0;
   }
 
-  .explanation-hover-comment > :last-child {
+  .explanation-hover-body > :last-child {
     margin-bottom: 0;
   }
 
-  .explanation-hover-comment p {
+  .explanation-hover-body p {
     margin: 8px 0;
   }
 
-  .explanation-hover-comment ul,
-  .explanation-hover-comment ol {
+  .explanation-hover-body ul,
+  .explanation-hover-body ol {
     display: grid;
     gap: 6px;
     margin: 10px 0;
     padding-left: 22px;
   }
 
-  .explanation-hover-comment li {
+  .explanation-hover-body li {
     padding-left: 2px;
   }
 
-  .explanation-hover-comment li::marker {
+  .explanation-hover-body li::marker {
     color: var(--primary);
   }
 
-  .explanation-hover-comment code {
+  .explanation-hover-body code {
     border-radius: 4px;
     background: var(--muted);
     color: var(--foreground);
@@ -203,7 +203,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .flow-canvas .react-flow__node[aria-current="step"] {
+  .tree-canvas .react-flow__node[aria-current="step"] {
     transition: none !important;
   }
 }

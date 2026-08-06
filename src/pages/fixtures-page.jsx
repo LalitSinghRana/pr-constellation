@@ -71,16 +71,16 @@ function FixtureCard({ fixture, onStop, onTrigger, stopping, triggering }) {
             {latestRun.metrics.stackCount != null && (
               <Badge variant="outline">{latestRun.metrics.stackCount} stacks</Badge>
             )}
-            {latestRun.metrics.flowDepth != null && (
-              <Badge variant="outline">flow depth {latestRun.metrics.flowDepth}</Badge>
+            {latestRun.metrics.stackTreeDepth != null && (
+              <Badge variant="outline">stack tree depth {latestRun.metrics.stackTreeDepth}</Badge>
             )}
             {latestRun.metrics.sourceOrderMatch != null && (
               <Badge variant="outline">
                 source-order match {Math.round(latestRun.metrics.sourceOrderMatch * 100)}%
               </Badge>
             )}
-            {latestRun.metrics.badRootCount != null && (
-              <Badge variant="outline">{latestRun.metrics.badRootCount} bad roots</Badge>
+            {latestRun.metrics.invalidStackRootCount != null && (
+              <Badge variant="outline">{latestRun.metrics.invalidStackRootCount} invalid stack roots</Badge>
             )}
           </div>
         )}
@@ -117,10 +117,10 @@ function FixtureCard({ fixture, onStop, onTrigger, stopping, triggering }) {
           <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-dashed pt-3">
             <span className="text-xs text-muted-foreground">Runs:</span>
             {unpinnedRuns.map((run, index) =>
-              run.status === "succeeded" && run.graphUrl ? (
+              run.status === "succeeded" && run.reviewUrl ? (
                 <a
                   className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9"
-                  href={run.graphUrl}
+                  href={run.reviewUrl}
                   key={run.runId}
                   rel="noreferrer"
                   target="_blank"
@@ -141,7 +141,7 @@ function FixtureCard({ fixture, onStop, onTrigger, stopping, triggering }) {
             {pinnedRuns.map((run, index) => (
               <a
                 className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9"
-                href={run.graphUrl}
+                href={run.reviewUrl}
                 key={run.runId}
                 rel="noreferrer"
                 target="_blank"
@@ -209,12 +209,12 @@ export function FixturesPage() {
         </div>
 
         <header className="mt-6">
-          <p className="mb-2 flex items-center gap-2 text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-primary"><span className="size-1.5 rounded-full bg-primary" />Review-stack test fixtures</p>
+          <p className="mb-2 flex items-center gap-2 text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-primary"><span className="size-1.5 rounded-full bg-primary" />Review Stack test fixtures</p>
           <h1 className="font-display text-4xl font-semibold tracking-[-0.045em] sm:text-5xl">
             Control-group PRs
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Four frozen, SHA-pinned PR diffs used to gate the review-stack
+            Four frozen, SHA-pinned PR diffs used to gate the Review Stack
             feature. Each one probes a different failure mode. Run the real
             pipeline against a fixture to see how it splits the PR into
             themed review stacks, then open the result next to what the

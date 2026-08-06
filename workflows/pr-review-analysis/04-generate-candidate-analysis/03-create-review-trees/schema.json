@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PR File Trees",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "intent",
+    "summary",
+    "confidence",
+    "files",
+    "stackTree"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "pr-file-trees/v1"
+    },
+    "intent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "stackTree": {
+      "$ref": "#/$defs/stackTree"
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/file"
+      }
+    }
+  },
+  "$defs": {
+    "reviewPriority": {
+      "type": "string",
+      "enum": [
+        "primary",
+        "secondary",
+        "skim"
+      ]
+    },
+    "changeKind": {
+      "type": "string",
+      "enum": [
+        "runtime",
+        "test",
+        "storybook",
+        "snapshot",
+        "type",
+        "docs",
+        "config",
+        "dependency",
+        "generated",
+        "formatting",
+        "imports"
+      ]
+    },
+    "changedLineRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "description": "Inclusive first changed-line id in this source-ordered range.",
+          "type": "string",
+          "minLength": 1
+        },
+        "end": {
+          "description": "Inclusive last changed-line id in this source-ordered range.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "reviewPriority",
+        "changeKind",
+        "explanation",
+        "fileTree"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewPriority": {
+          "$ref": "#/$defs/reviewPriority"
+        },
+        "changeKind": {
+          "$ref": "#/$defs/changeKind"
+        },
+        "explanation": {
+          "description": "What responsibility changed in this file and why the file matters to the PR.",
+          "type": "string",
+          "minLength": 1
+        },
+        "fileTree": {
+          "$ref": "#/$defs/fileTree"
+        }
+      }
+    },
+    "fileTree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sections",
+        "branches"
+      ],
+      "properties": {
+        "sections": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/reviewSection"
+          }
+        },
+        "branches": {
+          "description": "Ordered parent-child branches defining the file's review tree.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/branch"
+          }
+        }
+      }
+    },
+    "reviewSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "reviewPriority",
+        "changeKind",
+        "explanation",
+        "changedLineRanges"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewPriority": {
+          "$ref": "#/$defs/reviewPriority"
+        },
+        "changeKind": {
+          "$ref": "#/$defs/changeKind"
+        },
+        "explanation": {
+          "description": "What this cohesive code section changes or proves and why it matters.",
+          "type": "string",
+          "minLength": 1
+        },
+        "changedLineRanges": {
+          "description": "Minimal source-ordered inclusive changed-line ranges owned by this section.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/changedLineRange"
+          }
+        }
+      }
+    },
+    "stackTree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branches"
+      ],
+      "properties": {
+        "branches": {
+          "description": "Ordered parent-child branches defining file review order for this Review Stack.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/branch"
+          }
+        }
+      }
+    },
+    "branch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parentId",
+        "childId",
+        "order",
+        "explanation"
+      ],
+      "properties": {
+        "parentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "childId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "explanation": {
+          "description": "Why the child belongs under the parent in review order.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
