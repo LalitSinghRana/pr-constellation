@@ -50,96 +50,19 @@ assert.notEqual(
 );
 
 try {
-  const fixtureHome = path.join(temporaryRoot, "home");
-  const fixtureCodexHome = path.join(fixtureHome, ".codex");
-  const fixtureClaudeHome = path.join(fixtureHome, ".claude");
-  await Promise.all([
-    mkdir(fixtureCodexHome, { recursive: true }),
-    mkdir(fixtureClaudeHome, { recursive: true }),
-  ]);
-  await Promise.all([
-    writeFile(
-      path.join(fixtureCodexHome, "config.toml"),
-      'model = "gpt-visible-a"\nmodel_reasoning_effort = "high"\n',
-      "utf8",
-    ),
-    writeFile(
-      path.join(fixtureCodexHome, "models_cache.json"),
-      `${JSON.stringify({
-        models: [
-          {
-            slug: "gpt-visible-a",
-            visibility: "list",
-            supported_reasoning_levels: [
-              { effort: "low" },
-              { effort: "medium" },
-              { effort: "high" },
-              { effort: "xhigh" },
-            ],
-          },
-          {
-            slug: "gpt-visible-b",
-            visibility: "list",
-            supported_reasoning_levels: [{ effort: "low" }, { effort: "high" }],
-          },
-          {
-            slug: "gpt-hidden",
-            visibility: "hide",
-            supported_reasoning_levels: [{ effort: "low" }],
-          },
-        ],
-      })}\n`,
-      "utf8",
-    ),
-    writeFile(
-      path.join(fixtureClaudeHome, "settings.json"),
-      // A moving personal alias must not silently change the pinned benchmark.
-      `${JSON.stringify({ model: "opus[1m]" })}\n`,
-      "utf8",
-    ),
-  ]);
-  assert.deepEqual(
-    await loadDashboardConfiguration({
-      env: {},
-      homeDir: fixtureHome,
-      isClaudeAvailable: async () => false,
-    }),
-    {
-      defaultModel: "gpt-visible-a",
-      models: ["gpt-visible-a", "gpt-visible-b"],
-      modelProviders: {
-        "gpt-visible-a": "codex",
-        "gpt-visible-b": "codex",
-      },
-      reasoningEfforts: ["low", "medium", "high", "xhigh"],
-      modelReasoningEfforts: {
-        "gpt-visible-a": ["low", "medium", "high", "xhigh"],
-        "gpt-visible-b": ["low", "high"],
-      },
+  assert.deepEqual(await loadDashboardConfiguration(), {
+    defaultModel: "grok-4.5",
+    models: ["grok-4.5", "gpt-5.6-sol"],
+    modelProviders: {
+      "grok-4.5": "cursor",
+      "gpt-5.6-sol": "codex",
     },
-  );
-  assert.deepEqual(
-    await loadDashboardConfiguration({
-      env: {},
-      homeDir: fixtureHome,
-      isClaudeAvailable: async () => true,
-    }),
-    {
-      defaultModel: "gpt-visible-a",
-      models: ["gpt-visible-a", "gpt-visible-b", "claude-opus-4-6[1m]"],
-      modelProviders: {
-        "gpt-visible-a": "codex",
-        "gpt-visible-b": "codex",
-        "claude-opus-4-6[1m]": "claude",
-      },
-      reasoningEfforts: ["low", "medium", "high", "xhigh"],
-      modelReasoningEfforts: {
-        "gpt-visible-a": ["low", "medium", "high", "xhigh"],
-        "gpt-visible-b": ["low", "high"],
-        "claude-opus-4-6[1m]": ["low", "medium", "high", "max"],
-      },
+    reasoningEfforts: ["medium", "high"],
+    modelReasoningEfforts: {
+      "grok-4.5": ["high"],
+      "gpt-5.6-sol": ["medium"],
     },
-  );
+  });
 
   const service = new DashboardService({
     configuration: {

@@ -232,10 +232,7 @@ assert.match(
   sectionTreeSchema.$defs.branch.properties.explanation.description,
   /child belongs under the parent/,
 );
-assert.match(
-  sectionTreeSchema.$defs.branch.properties.explanation.description,
-  /What:\/Why:/,
-);
+assert.match(sectionTreeSchema.$defs.branch.properties.explanation.description, /What:\/Why:/);
 
 assert.deepEqual(
   resolveCodexExecutionConfig({

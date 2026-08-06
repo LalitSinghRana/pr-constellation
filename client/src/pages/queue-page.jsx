@@ -171,7 +171,7 @@ export function QueuePage() {
     }
   }
 
-  async function analyze(item) {
+  async function analyze(item, options = {}) {
     setAnalysisMutation(item.id);
     setAnalysisActionError("");
     setAnalysisNotice("");
@@ -179,11 +179,16 @@ export function QueuePage() {
       const response = await fetch("/api/analyses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(item),
+        body: JSON.stringify({
+          ...item,
+          ...(options.model ? { model: options.model } : {}),
+          ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}),
+        }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
-      setAnalysisNotice(`Queued AI analysis for #${item.number}.`);
+      const modelLabel = options.model ? ` with ${options.model}` : "";
+      setAnalysisNotice(`Queued AI analysis for #${item.number}${modelLabel}.`);
       await refreshAnalyses();
     } catch (caught) {
       setAnalysisActionError(caught.message || "AI analysis could not be queued.");

@@ -10,6 +10,7 @@ import { analysisState } from "@/lib/analysis.js";
 import { cn } from "@/lib/utils.js";
 
 const terminalStatuses = new Set(["succeeded", "failed", "canceled", "interrupted"]);
+const analysisTabs = ["ongoing", "not-started", "successful", "failed", "canceled"];
 
 export function AnalysisPage() {
   useDocumentTitle({ title: "AI Analyzer Queue · PR Review Cockpit" });
@@ -25,7 +26,7 @@ export function AnalysisPage() {
   const [actionError, setActionError] = useState("");
   const [activeTab, setActiveTab] = useQueryState(
     "tab",
-    parseAsStringEnum(["ongoing", "not-started", "successful", "failed"]).withDefault("ongoing"),
+    parseAsStringEnum(analysisTabs).withDefault("ongoing"),
   );
   const error = actionError || dashboardError;
 
@@ -117,6 +118,13 @@ export function AnalysisPage() {
         new Date(right.latestRun.completedAt || right.latestRun.updatedAt) -
         new Date(left.latestRun.completedAt || left.latestRun.updatedAt),
     );
+  const canceled = entries
+    .filter((entry) => entry.state === "canceled")
+    .sort(
+      (left, right) =>
+        new Date(right.latestRun.completedAt || right.latestRun.updatedAt) -
+        new Date(left.latestRun.completedAt || left.latestRun.updatedAt),
+    );
   const notStarted = entries
     .filter((entry) => entry.state === "not-started")
     .sort(
@@ -201,6 +209,7 @@ export function AnalysisPage() {
               ["not-started", "Not started", notStarted.length],
               ["successful", "Successful", completed.length],
               ["failed", "Failed", failed.length],
+              ["canceled", "Canceled", canceled.length],
             ].map(([id, label, count]) => (
               <TabsTrigger className="group" key={id} value={id}>
                 {label}
@@ -214,25 +223,15 @@ export function AnalysisPage() {
           <TabsContent value="ongoing">
             <AnalysisSection
               canceling={canceling}
-              description="Current work"
-              entries={running}
-              mode="running"
+              entries={[...running, ...queued]}
+              mode="ongoing"
               onCancel={cancelRuns}
-              title="In progress"
-            />
-            <AnalysisSection
-              canceling={canceling}
-              description="Smallest first"
-              entries={queued}
-              mode="queued"
-              onCancel={cancelRuns}
-              title="In queue"
+              title="Ongoing"
             />
           </TabsContent>
           <TabsContent value="not-started">
             <AnalysisSection
               canceling={canceling}
-              description="No analysis yet"
               entries={notStarted}
               mode="not-started"
               onCancel={cancelRuns}
@@ -242,7 +241,6 @@ export function AnalysisPage() {
           <TabsContent value="successful">
             <AnalysisSection
               canceling={canceling}
-              description="Successful analyses"
               entries={completed}
               mode="completed"
               onCancel={cancelRuns}
@@ -252,11 +250,19 @@ export function AnalysisPage() {
           <TabsContent value="failed">
             <AnalysisSection
               canceling={canceling}
-              description="Failed, canceled, or interrupted"
               entries={failed}
               mode="failed"
               onCancel={cancelRuns}
               title="Failed"
+            />
+          </TabsContent>
+          <TabsContent value="canceled">
+            <AnalysisSection
+              canceling={canceling}
+              entries={canceled}
+              mode="canceled"
+              onCancel={cancelRuns}
+              title="Canceled"
             />
           </TabsContent>
         </Tabs>
