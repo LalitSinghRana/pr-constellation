@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 export const defaultPort = 4397;
 export const host = "127.0.0.1";
 export const port = parsePort(process.env.PORT);
-export const projectRoot = fileURLToPath(new URL("../", import.meta.url));
+
+const moduleDirectory = fileURLToPath(new URL(".", import.meta.url));
+export const projectRoot = path.join(moduleDirectory, "..");
 export const clientRoot = path.join(projectRoot, "client");
 export const clientDistRoot = path.join(clientRoot, "dist");
 export const reviewsDir = path.join(projectRoot, ".reviews");

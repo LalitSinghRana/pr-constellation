@@ -182,30 +182,33 @@ function httpStatusForError(error) {
   if (Number.isInteger(error?.statusCode)) {
     return error.statusCode;
   }
-  if (error?.code === "ENOENT" || error?.code === "SOURCE_INPUT_MISSING") {
+
+  const notFoundCodes = new Set([
+    "ENOENT",
+    "SOURCE_INPUT_MISSING",
+    "CANCEL_TARGET_NOT_FOUND",
+    "HISTORY_TARGET_NOT_FOUND",
+  ]);
+  if (notFoundCodes.has(error?.code)) {
     return 404;
   }
-  if (error?.code === "CANCEL_TARGET_NOT_FOUND") {
-    return 404;
-  }
-  if (error?.code === "HISTORY_TARGET_NOT_FOUND") {
-    return 404;
-  }
-  if (error?.code === "HISTORY_TARGET_ACTIVE") {
+
+  const conflictCodes = new Set(["HISTORY_TARGET_ACTIVE", "RUN_ALREADY_EXISTS"]);
+  if (conflictCodes.has(error?.code)) {
     return 409;
   }
-  if (error?.code === "RUN_ALREADY_EXISTS") {
-    return 409;
+
+  const badRequestCodes = new Set([
+    "INVALID_STORAGE_ID",
+    "INVALID_MODEL",
+    "INVALID_REASONING_EFFORT",
+    "INVALID_SOURCE_INPUT",
+    "INVALID_SOURCE_RUN",
+  ]);
+  if (badRequestCodes.has(error?.code) || error instanceof TypeError) {
+    return 400;
   }
-  if (
-    error?.code === "INVALID_STORAGE_ID" ||
-    error?.code === "INVALID_MODEL" ||
-    error?.code === "INVALID_REASONING_EFFORT" ||
-    error?.code === "INVALID_SOURCE_INPUT" ||
-    error?.code === "INVALID_SOURCE_RUN" ||
-    error instanceof TypeError ||
-    /Expected a GitHub pull request URL/.test(error?.message || "")
-  ) {
+  if (/Expected a GitHub pull request URL/.test(error?.message || "")) {
     return 400;
   }
   return 500;

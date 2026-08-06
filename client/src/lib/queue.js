@@ -58,20 +58,23 @@ export function signedScore(value) {
 
 export function relativeTime(date) {
   const seconds = Math.round((new Date(date).getTime() - Date.now()) / 1000);
-  const ranges = [
-    ["year", 31_536_000],
-    ["month", 2_592_000],
-    ["week", 604_800],
-    ["day", 86_400],
-    ["hour", 3_600],
-    ["minute", 60],
-  ];
   const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-  for (const [unit, size] of ranges) {
-    if (Math.abs(seconds) >= size) return formatter.format(Math.round(seconds / size), unit);
+  for (const [unit, size] of RELATIVE_TIME_UNITS) {
+    if (Math.abs(seconds) >= size) {
+      return formatter.format(Math.round(seconds / size), unit);
+    }
   }
   return "just now";
 }
+
+const RELATIVE_TIME_UNITS = [
+  ["year", 31_536_000],
+  ["month", 2_592_000],
+  ["week", 604_800],
+  ["day", 86_400],
+  ["hour", 3_600],
+  ["minute", 60],
+];
 
 export function parseList(value) {
   return [
@@ -94,23 +97,36 @@ const updatedDateFormatter = new Intl.DateTimeFormat("en", {
 export function groupByUpdatedDate(items, { preserveOrder = false } = {}) {
   const groups = new Map();
   for (const item of items) {
-    const date = new Date(item.updatedAt);
-    const key = date.toDateString();
-    const group = groups.get(key) ?? {
-      label: Number.isNaN(date.getTime()) ? "Unknown date" : updatedDateFormatter.format(date),
+    const groupKey = updatedDateKey(item.updatedAt);
+    const group = groups.get(groupKey.key) ?? {
+      label: groupKey.label,
       items: [],
     };
     group.items.push(item);
-    groups.set(key, group);
+    groups.set(groupKey.key, group);
   }
   if (!preserveOrder) {
     for (const group of groups.values()) {
-      group.items.sort(
-        (left, right) =>
-          (right.score ?? 0) - (left.score ?? 0) ||
-          new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
-      );
+      group.items.sort(compareQueueItems);
     }
   }
   return [...groups.values()];
+}
+
+function updatedDateKey(updatedAt) {
+  const date = new Date(updatedAt);
+  if (Number.isNaN(date.getTime())) {
+    return { key: "unknown", label: "Unknown date" };
+  }
+  return {
+    key: date.toDateString(),
+    label: updatedDateFormatter.format(date),
+  };
+}
+
+function compareQueueItems(left, right) {
+  return (
+    (right.score ?? 0) - (left.score ?? 0) ||
+    new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+  );
 }

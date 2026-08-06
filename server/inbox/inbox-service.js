@@ -677,31 +677,39 @@ export function trackedPrs(items, prs) {
 }
 
 export function rankItems(items) {
-  return [...items.values()]
-    .map((item) => {
-      const lifecycle = lifecycleForQueueItem(item);
-      item.signals.sort((a, b) => b.weight - a.weight);
-      let reviewRequestScore = 0;
-      const signalScore = item.signals.reduce((total, signal) => {
-        if (signal.kind === "direct-review" || signal.kind === "team-review") {
-          reviewRequestScore = Math.max(reviewRequestScore, signal.weight);
-          return total;
-        }
-        return total + signal.weight;
-      }, 0);
-      return {
-        ...item,
-        lifecycle,
-        lifecycleLabel: lifecycleLabels[lifecycle],
-        lifecycleScore: lifecycleScores[lifecycle],
-        score: lifecycleScores[lifecycle] + signalScore + reviewRequestScore,
-        actionUrl: item.signals.find((signal) => signal.weight > 0)?.href ?? item.url,
-      };
-    })
-    .sort(
-      (a, b) =>
-        b.score - a.score || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-    );
+  return [...items.values()].map(enrichRankedItem).sort(compareRankedItems);
+}
+
+function enrichRankedItem(item) {
+  const lifecycle = lifecycleForQueueItem(item);
+  item.signals.sort((left, right) => right.weight - left.weight);
+  const { reviewRequestScore, signalScore } = scoreSignals(item.signals);
+  return {
+    ...item,
+    lifecycle,
+    lifecycleLabel: lifecycleLabels[lifecycle],
+    lifecycleScore: lifecycleScores[lifecycle],
+    score: lifecycleScores[lifecycle] + signalScore + reviewRequestScore,
+    actionUrl: item.signals.find((signal) => signal.weight > 0)?.href ?? item.url,
+  };
+}
+
+function scoreSignals(signals) {
+  let reviewRequestScore = 0;
+  const signalScore = signals.reduce((total, signal) => {
+    if (signal.kind === "direct-review" || signal.kind === "team-review") {
+      reviewRequestScore = Math.max(reviewRequestScore, signal.weight);
+      return total;
+    }
+    return total + signal.weight;
+  }, 0);
+  return { reviewRequestScore, signalScore };
+}
+
+function compareRankedItems(left, right) {
+  return (
+    right.score - left.score || new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+  );
 }
 
 export function inboxFromQueue(state, username = state.sync?.username ?? "") {
@@ -731,8 +739,38 @@ export function summarizeActivity(activity, username, teammates = []) {
   );
   const latestReview = myReviews.at(-1) ?? null;
   const latestReviewAt = latestReview?.submittedAt ?? null;
-  let newestReply = null;
+  const newestReply = findNewestReviewReply({
+    activity,
+    latestReviewAt,
+    normalizedUser,
+  });
+  const lastCommitAt = activity.commits?.nodes?.at(-1)?.commit?.committedDate ?? null;
+  const newComment = findCommentAfterReview({
+    activity,
+    latestReviewAt,
+    normalizedUser,
+  });
+  const coveringReview = reviews.find(
+    (review) =>
+      teammateSet.has(review.author?.login?.toLowerCase()) &&
+      !["DISMISSED", "PENDING"].includes(review.state),
+  );
+  const postMergeComment = findPostMergeComment(activity, normalizedUser);
 
+  return {
+    latestReviewState: latestReview?.state ?? null,
+    latestReviewAt,
+    newestReply,
+    newComment,
+    postMergeComment,
+    hasNewCommits:
+      Boolean(latestReviewAt && lastCommitAt) && new Date(lastCommitAt) > new Date(latestReviewAt),
+    coveringTeammate: coveringReview?.author?.login ?? "",
+  };
+}
+
+function findNewestReviewReply({ activity, latestReviewAt, normalizedUser }) {
+  let newestReply = null;
   for (const thread of activity.reviewThreads?.nodes ?? []) {
     const comments = thread.comments?.nodes ?? [];
     const latestMine = [...comments]
@@ -749,45 +787,32 @@ export function summarizeActivity(activity, username, teammates = []) {
       newestReply = latest;
     }
   }
+  return newestReply;
+}
 
-  const lastCommitAt = activity.commits?.nodes?.at(-1)?.commit?.committedDate ?? null;
-  const newComment = latestReviewAt
-    ? [...(activity.comments?.nodes ?? [])]
-        .reverse()
-        .find(
-          (comment) =>
-            comment.author?.login?.toLowerCase() !== normalizedUser &&
-            new Date(comment.createdAt) > new Date(latestReviewAt),
-        )
-    : null;
-  const coveringReview = reviews.find(
-    (review) =>
-      teammateSet.has(review.author?.login?.toLowerCase()) &&
-      !["DISMISSED", "PENDING"].includes(review.state),
-  );
-  const postMergeComment = activity.mergedAt
-    ? ([
-        ...(activity.comments?.nodes ?? []),
-        ...(activity.reviewThreads?.nodes ?? []).flatMap((thread) => thread.comments?.nodes ?? []),
-      ]
-        .filter(
-          (comment) =>
-            comment.author?.login?.toLowerCase() !== normalizedUser &&
-            new Date(comment.createdAt) > new Date(activity.mergedAt),
-        )
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] ?? null)
-    : null;
+function findCommentAfterReview({ activity, latestReviewAt, normalizedUser }) {
+  if (!latestReviewAt) return null;
+  return [...(activity.comments?.nodes ?? [])]
+    .reverse()
+    .find(
+      (comment) =>
+        comment.author?.login?.toLowerCase() !== normalizedUser &&
+        new Date(comment.createdAt) > new Date(latestReviewAt),
+    );
+}
 
-  return {
-    latestReviewState: latestReview?.state ?? null,
-    latestReviewAt,
-    newestReply,
-    newComment,
-    postMergeComment,
-    hasNewCommits:
-      Boolean(latestReviewAt && lastCommitAt) && new Date(lastCommitAt) > new Date(latestReviewAt),
-    coveringTeammate: coveringReview?.author?.login ?? "",
-  };
+function findPostMergeComment(activity, normalizedUser) {
+  if (!activity.mergedAt) return null;
+  return [
+    ...(activity.comments?.nodes ?? []),
+    ...(activity.reviewThreads?.nodes ?? []).flatMap((thread) => thread.comments?.nodes ?? []),
+  ]
+    .filter(
+      (comment) =>
+        comment.author?.login?.toLowerCase() !== normalizedUser &&
+        new Date(comment.createdAt) > new Date(activity.mergedAt),
+    )
+    .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt))[0] ?? null;
 }
 
 async function mapLimited(values, limit, callback) {
@@ -1528,12 +1553,15 @@ function changedLineCount(value) {
 }
 
 export function sortPullRequestsBySize(values) {
-  return [...values].sort(
-    (left, right) =>
-      changedLineCount(left) - changedLineCount(right) ||
-      (left.changedFiles ?? Number.MAX_SAFE_INTEGER) -
-        (right.changedFiles ?? Number.MAX_SAFE_INTEGER) ||
-      left.url.localeCompare(right.url),
+  return [...values].sort(comparePullRequestsBySize);
+}
+
+function comparePullRequestsBySize(left, right) {
+  return (
+    changedLineCount(left) - changedLineCount(right) ||
+    (left.changedFiles ?? Number.MAX_SAFE_INTEGER) -
+      (right.changedFiles ?? Number.MAX_SAFE_INTEGER) ||
+    left.url.localeCompare(right.url)
   );
 }
 
