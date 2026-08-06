@@ -104,6 +104,12 @@ assert.deepEqual(
   treeData.files[0].sourceCodeChunks[0].lines.map((line) => line.content),
   ["const value = 1;", "const value = 2;"],
 );
+assert.ok(
+  treeData.files[0].sourceCodeChunks[0].lines
+    .flatMap((line) => line.syntaxTokens)
+    .some((token) => token.style?.includes("--shiki-light")),
+  "the server-side highlighter should provide styled syntax tokens",
+);
 assert.ok(!("relations" in treeData.files[0].sectionTree));
 
 const [treeAppSource, webStyles] = await Promise.all([
