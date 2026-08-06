@@ -14,7 +14,8 @@ pnpm dev
 ## Run semantics
 
 - New PRs are queued smallest-first from changed lines and file count.
-- One analysis runs at a time.
+- Up to two different PRs run at once; analyses for the same PR remain serial.
+- Model-backed stages share a process-wide limit of three concurrent subprocesses.
 - File Tree and Section Tree generation and repair use the provider's highest configured effort
   (`xhigh` for Codex and `max` for Claude).
 - Deterministic validation is the active gate; the semantic judge remains
@@ -31,10 +32,11 @@ pnpm dev
 
 ## Persistence
 
-Run state stays under the gitignored `.reviews/` directory. Each run stores its
-metadata, timings, diff, analysis, and generated HTML. The stable
-`.reviews/<review-slug>/index.html` points to the latest successful result.
+Mutable run metadata, timings, and queued work are stored in
+`.reviews/.run-store.sqlite`. Immutable diff, analysis, and generated HTML files stay in each run
+directory. The stable `.reviews/<review-slug>/index.html` points to the latest successful result.
+Legacy `run.json` and `timings.json` files are imported once and preserved.
 
 Inbox state is stored separately at
-`~/.config/pr-review-cockpit/queue.json`. GitHub's read flag does not change
-local read or Done state.
+`~/.config/pr-review-cockpit/cockpit.sqlite3`. GitHub's read flag does not change local read or Done
+state.

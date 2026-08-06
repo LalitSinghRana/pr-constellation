@@ -49,6 +49,7 @@ const JUDGE_SCHEMA_PATH = path.join(WORKFLOW_DIR, "06-judge-candidate", "schema.
 const MAX_ANALYSIS_ATTEMPTS = 3;
 const DEFAULT_ANALYSIS_REASONING_EFFORT = "xhigh";
 const JUDGE_REASONING_EFFORT = "high";
+const MODEL_EXECUTION_CONCURRENCY = 3;
 const REVIEW_TREES_SHARD_CONCURRENCY = 3;
 // ponytail: flat file-count cap per shard; an oversized stack can still
 // overflow the model's context window in one call. Replace with a line/token
@@ -56,10 +57,12 @@ const REVIEW_TREES_SHARD_CONCURRENCY = 3;
 const MAX_FILES_PER_REVIEW_TREES_SHARD = 15;
 // Retained for offline benchmarking; deterministic validation is the active gate.
 const SEMANTIC_JUDGE_ENABLED = false;
+const limitModelExecution = createTaskLimiter(MODEL_EXECUTION_CONCURRENCY);
 
 export {
   buildCodexExecArgs,
   computeFileTreeMetrics,
+  createTaskLimiter,
   materializeLineOwnership,
   parseCodexJsonUsage,
   resolveCodexExecutionConfig,
@@ -88,15 +91,24 @@ export async function runCodexReviewAnalysis({
     reasoningEffort: JUDGE_REASONING_EFFORT,
   });
   const usage = emptyUsage();
+  const limitModelTask = createTaskLimiter(REVIEW_TREES_SHARD_CONCURRENCY);
   // Assigned inside the "Analysis" stage's run() below; metricsForResult reads it once
   // run() has resolved, so it's always populated by the time that happens.
   let inventory;
   const executeCodexWithUsage = async (options) => {
+    const executionSignal =
+      signal && options.signal
+        ? AbortSignal.any([signal, options.signal])
+        : options.signal || signal;
+
     try {
-      throwIfAborted(signal);
-      const result = await executeCodex({ ...options, signal });
+      throwIfAborted(executionSignal);
+      const result = await limitModelExecution(
+        () => executeCodex({ ...options, signal: executionSignal }),
+        executionSignal,
+      );
       addUsage(usage, normalizeUsage(result?.usage));
-      throwIfAborted(signal);
+      throwIfAborted(executionSignal);
       return result;
     } catch (error) {
       addUsage(usage, normalizeUsage(error?.usage));
@@ -204,6 +216,7 @@ export async function runCodexReviewAnalysis({
                 inventory,
                 judgeExecutionConfig,
                 judgePrompt,
+                limitModelTask,
                 metadataText,
                 reviewTreesPrompt,
                 previousCandidate,
@@ -212,6 +225,7 @@ export async function runCodexReviewAnalysis({
                 resolvedRunDir,
                 reviewStacks: reviewStacksDocument.reviewStacks,
                 sharedPrompt,
+                signal,
                 structuredDiffText,
                 usage,
               }),
@@ -289,6 +303,7 @@ async function runAnalysisAttempt({
   inventory,
   judgeExecutionConfig,
   judgePrompt,
+  limitModelTask,
   metadataText,
   reviewTreesPrompt,
   previousCandidate,
@@ -297,6 +312,7 @@ async function runAnalysisAttempt({
   resolvedRunDir,
   reviewStacks,
   sharedPrompt,
+  signal,
   structuredDiffText,
   usage,
 }) {
@@ -362,18 +378,22 @@ async function runAnalysisAttempt({
 
         promptPath = artifacts.reviewTreesPromptPath;
         candidateRawOutputPath = artifacts.reviewTreesRawPath;
+        const shards = buildGenerationShards(reviewStacks, MAX_FILES_PER_REVIEW_TREES_SHARD);
         const generated =
-          reviewStacks.length > 1
+          shards.length > 1
             ? await runShardedReviewTrees({
                 artifacts,
                 cwd: resolvedRunDir,
                 executionConfig,
                 executeCodex,
                 inventory,
+                limitModelTask,
                 metadataText,
                 reviewTreesPrompt,
                 previousFailure,
+                shards,
                 sharedPrompt,
+                signal,
                 reviewStacks,
               })
             : await runJsonStage({
@@ -451,30 +471,28 @@ async function runShardedReviewTrees({
   executionConfig,
   executeCodex,
   inventory,
+  limitModelTask,
   metadataText,
   reviewTreesPrompt,
   previousFailure,
+  shards,
   sharedPrompt,
+  signal,
   reviewStacks,
 }) {
   const outputBase = artifacts.reviewTreesRawPath.replace(/\.json$/, "");
   const promptBase = artifacts.reviewTreesPromptPath.replace(/\.md$/, "");
-  const shards = buildGenerationShards(reviewStacks, MAX_FILES_PER_REVIEW_TREES_SHARD);
-  const results = new Array(shards.length);
-  let nextIndex = 0;
-
-  const runWorker = async () => {
-    while (nextIndex < shards.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      const shard = shards[index];
+  const results = await runCancelableFanout({
+    limitTask: limitModelTask,
+    signal,
+    tasks: shards.map((shard) => async (taskSignal) => {
       const otherStacks = reviewStacks.filter((stack) => stack.id !== shard.stack.id);
       const hunkIdsByFileId = new Map(shard.fileIds.map((fileId) => [fileId, null]));
       const structuredDiffText = `${JSON.stringify(
         buildStructuredDiff(inventory, { hunkIdsByFileId }),
       )}\n`;
 
-      results[index] = await runJsonStage({
+      return runJsonStage({
         cwd,
         executionConfig,
         executeCodex,
@@ -490,13 +508,10 @@ async function runShardedReviewTrees({
         }),
         promptPath: `${promptBase}.${shard.id}.md`,
         schemaPath: REVIEW_TREES_SCHEMA_PATH,
+        signal: taskSignal,
       });
-    }
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(REVIEW_TREES_SHARD_CONCURRENCY, shards.length) }, runWorker),
-  );
+    }),
+  });
 
   const shardIndicesByStackId = new Map();
   shards.forEach((shard, index) => {
@@ -506,32 +521,41 @@ async function runShardedReviewTrees({
   });
 
   const fileTrees = new Map();
-  await Promise.all(
-    [...shardIndicesByStackId].map(async ([stackId, indices]) => {
-      if (indices.length === 1 && results[indices[0]]?.fileTree) {
-        fileTrees.set(stackId, results[indices[0]].fileTree);
-        return;
-      }
+  const fileTreeTasks = [];
+  for (const [stackId, indices] of shardIndicesByStackId) {
+    if (indices.length === 1 && results[indices[0]]?.fileTree) {
+      fileTrees.set(stackId, results[indices[0]].fileTree);
+      continue;
+    }
 
-      const stack = reviewStacks.find((candidate) => candidate.id === stackId);
-      const stackFileIds = new Set(stack.fileIds);
-      const files = results
-        .flatMap((result) => result.files || [])
-        .filter((file) => stackFileIds.has(file.id));
-      fileTrees.set(
-        stackId,
-        await runJsonStage({
-          cwd,
-          executionConfig,
-          executeCodex,
-          outputPath: `${outputBase}.file-tree.${stackId}.json`,
-          prompt: buildFileTreePrompt({ files, metadataText, previousFailure, stack }),
-          promptPath: `${promptBase}.file-tree.${stackId}.md`,
-          schemaPath: FILE_TREE_SCHEMA_PATH,
-        }),
-      );
-    }),
-  );
+    const stack = reviewStacks.find((candidate) => candidate.id === stackId);
+    const stackFileIds = new Set(stack.fileIds);
+    const files = results
+      .flatMap((result) => result.files || [])
+      .filter((file) => stackFileIds.has(file.id));
+    fileTreeTasks.push(async (taskSignal) => [
+      stackId,
+      await runJsonStage({
+        cwd,
+        executionConfig,
+        executeCodex,
+        outputPath: `${outputBase}.file-tree.${stackId}.json`,
+        prompt: buildFileTreePrompt({ files, metadataText, previousFailure, stack }),
+        promptPath: `${promptBase}.file-tree.${stackId}.md`,
+        schemaPath: FILE_TREE_SCHEMA_PATH,
+        signal: taskSignal,
+      }),
+    ]);
+  }
+
+  const generatedFileTrees = await runCancelableFanout({
+    limitTask: limitModelTask,
+    signal,
+    tasks: fileTreeTasks,
+  });
+  for (const [stackId, fileTree] of generatedFileTrees) {
+    fileTrees.set(stackId, fileTree);
+  }
 
   const { fileTree: _discardedShardTree, ...firstResult } = results[0];
   const merged = {
@@ -567,6 +591,78 @@ function buildGenerationShards(stacks, maxFilesPerShard) {
       stack,
     }));
   });
+}
+
+function createTaskLimiter(maxConcurrency) {
+  let activeCount = 0;
+  const waiting = [];
+
+  return async (task, signal) => {
+    throwIfAborted(signal);
+    if (activeCount < maxConcurrency) {
+      activeCount += 1;
+    } else {
+      await new Promise((resolve, reject) => {
+        const waiter = { resolve, signal };
+        const onAbort = () => {
+          const index = waiting.indexOf(waiter);
+          if (index >= 0) waiting.splice(index, 1);
+          try {
+            throwIfAborted(signal);
+          } catch (error) {
+            reject(error);
+          }
+        };
+        waiter.onAbort = onAbort;
+        waiting.push(waiter);
+        signal?.addEventListener("abort", onAbort, { once: true });
+      });
+    }
+
+    try {
+      throwIfAborted(signal);
+      return await task();
+    } finally {
+      const startNext = waiting.shift();
+      if (startNext) {
+        startNext.signal?.removeEventListener("abort", startNext.onAbort);
+        startNext.resolve();
+      } else {
+        activeCount -= 1;
+      }
+    }
+  };
+}
+
+async function runCancelableFanout({ limitTask, signal, tasks }) {
+  throwIfAborted(signal);
+  const siblingController = new AbortController();
+  const taskSignal = signal
+    ? AbortSignal.any([signal, siblingController.signal])
+    : siblingController.signal;
+  let firstError;
+
+  const settlements = await Promise.allSettled(
+    tasks.map((task) =>
+      limitTask(async () => {
+        try {
+          return await task(taskSignal);
+        } catch (error) {
+          if (!firstError) {
+            firstError = error;
+            siblingController.abort(error);
+          }
+          throw error;
+        }
+      }, taskSignal),
+    ),
+  );
+
+  throwIfAborted(signal);
+  if (firstError) {
+    throw firstError;
+  }
+  return settlements.map((settlement) => settlement.value);
 }
 
 function assembleReviewAnalysis({ generated, reviewStacks }) {
@@ -934,6 +1030,7 @@ async function runJsonStage({
   prompt,
   promptPath,
   schemaPath,
+  signal,
 }) {
   await writeFile(promptPath, prompt, "utf8");
   await executeCodex({
@@ -942,6 +1039,7 @@ async function runJsonStage({
     outputPath,
     prompt,
     schemaPath,
+    signal,
   });
 
   return parseJsonObject(await readFile(outputPath, "utf8"));

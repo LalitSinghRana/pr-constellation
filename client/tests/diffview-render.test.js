@@ -9,7 +9,10 @@ import { buildChunkDiffData } from "../src/review/diff-view-model.js";
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true });
 global.window = dom.window;
 global.document = dom.window.document;
-global.navigator = dom.window.navigator;
+Object.defineProperty(globalThis, "navigator", {
+  configurable: true,
+  value: dom.window.navigator,
+});
 global.HTMLElement = dom.window.HTMLElement;
 global.Element = dom.window.Element;
 global.getComputedStyle = dom.window.getComputedStyle;

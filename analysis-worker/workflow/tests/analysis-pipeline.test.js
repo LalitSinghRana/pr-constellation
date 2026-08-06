@@ -6,6 +6,7 @@ import { fetchPullRequest, ghText, parseGitHubPrUrl } from "../02-fetch-pr/githu
 import { createDiffInventory } from "../03-build-diff-inventory/diff-inventory.js";
 import {
   buildCodexExecArgs,
+  createTaskLimiter,
   materializeLineOwnership,
   parseCodexJsonUsage,
   resolveCodexExecutionConfig,
@@ -13,6 +14,33 @@ import {
   runCodexReviewAnalysis,
   validateReviewAnalysis,
 } from "../07-run-retry-loop/codex-agent.js";
+
+const limitOneTask = createTaskLimiter(1);
+let releaseLimitedTask;
+const activeLimitedTask = limitOneTask(
+  () =>
+    new Promise((resolve) => {
+      releaseLimitedTask = resolve;
+    }),
+);
+const waitingTaskController = new AbortController();
+let waitingTaskStarted = false;
+const waitingLimitedTask = limitOneTask(async () => {
+  waitingTaskStarted = true;
+}, waitingTaskController.signal);
+waitingTaskController.abort(new Error("Cancel before a model slot is available."));
+await assert.rejects(
+  Promise.race([
+    waitingLimitedTask,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Canceled limiter acquisition did not settle.")), 100),
+    ),
+  ]),
+  (error) => error?.name === "AbortError" && error?.code === "ABORT_ERR",
+);
+assert.equal(waitingTaskStarted, false);
+releaseLimitedTask();
+await activeLimitedTask;
 
 const parsedPr = parseGitHubPrUrl(
   "https://github.com/PicnicSupermarket/picnic-store-config/pull/4812",
@@ -980,9 +1008,9 @@ try {
   await rm(failedRunDir, { force: true, recursive: true });
 }
 
-// Stack A exceeds the per-call file cap, so this proves that sharded Section Tree
-// results are joined into one complete File Tree.
-const shardedDiff = Array.from({ length: 17 }, (_, index) => {
+// A single Review Stack exceeds the per-call file cap, so this proves that it is
+// sharded and joined into one complete File Tree.
+const shardedDiff = Array.from({ length: 16 }, (_, index) => {
   const name = `file-${String(index + 1).padStart(2, "0")}`;
   return `diff --git a/src/${name}.js b/src/${name}.js
 index 0000000..1111111 100644
@@ -997,23 +1025,16 @@ const shardedRunDir = await mkdtemp(path.join(tmpdir(), "prc-analysis-sharded-")
 
 try {
   const inventory = createDiffInventory(shardedDiff);
-  const stackAFiles = inventory.files.slice(0, 16);
-  const stackBFiles = inventory.files.slice(16);
+  const stackAFiles = inventory.files;
   const stackA = {
     id: "stack-a",
     title: "Stack A",
     explanation: "The oversized change.",
     fileIds: stackAFiles.map((file) => file.id),
   };
-  const stackB = {
-    id: "stack-b",
-    title: "Stack B",
-    explanation: "The independent change.",
-    fileIds: stackBFiles.map((file) => file.id),
-  };
   const shardedReviewStacks = {
     schemaVersion: "pr-review-stacks/v1",
-    reviewStacks: [stackA, stackB],
+    reviewStacks: [stackA],
   };
   const fullStackATree = {
     branches: stackA.fileIds.slice(1).map((fileId, order) => ({
@@ -1034,7 +1055,7 @@ try {
   const buildShardCandidate = (files) => ({
     schemaVersion: "pr-review-trees/v1",
     intent: "Review the sharded change.",
-    summary: "Several related files and one independent file change.",
+    summary: "Several related files change.",
     confidence: 1,
     fileTree: {
       branches: files.slice(1).map((file, order) => ({
@@ -1094,9 +1115,6 @@ try {
     if (prompt.includes(`"${stackA.title}" review stack`)) {
       calls.push(`review-trees-a-${inputFiles.length}`);
       await writeFile(outputPath, `${JSON.stringify(buildShardCandidate(inputFiles))}\n`, "utf8");
-    } else if (prompt.includes(`"${stackB.title}" review stack`)) {
-      calls.push("review-trees-b-1");
-      await writeFile(outputPath, `${JSON.stringify(buildShardCandidate(inputFiles))}\n`, "utf8");
     } else {
       assert.fail("Review tree shard prompt did not name its Review Stack.");
     }
@@ -1120,7 +1138,6 @@ try {
     "review-stacks-1",
     "review-trees-a-1",
     "review-trees-a-15",
-    "review-trees-b-1",
   ]);
   assert.deepEqual(
     result.analysis.files.map((file) => file.id).sort(),
@@ -1130,9 +1147,6 @@ try {
     result.analysis.reviewStacks.find((stack) => stack.id === stackA.id)?.fileTree,
     fullStackATree,
   );
-  assert.deepEqual(result.analysis.reviewStacks.find((stack) => stack.id === stackB.id)?.fileTree, {
-    branches: [],
-  });
   validateReviewAnalysis(result.analysis, { inventory });
   const shardedAnalysisMetrics = findFinishEvent(shardedEvents, "analysis").metrics;
   assert.equal(shardedAnalysisMetrics.invalidFileTreeRootCount, 0);
@@ -1140,6 +1154,123 @@ try {
   assert.equal(shardedAnalysisMetrics.sourceOrderMatch, 1);
 } finally {
   await rm(shardedRunDir, { force: true, recursive: true });
+}
+
+const failingShardDiff = Array.from({ length: 4 }, (_, index) => {
+  const name = `failure-${index + 1}`;
+  return `diff --git a/src/${name}.js b/src/${name}.js
+index 0000000..1111111 100644
+--- a/src/${name}.js
++++ b/src/${name}.js
+@@ -1 +1 @@
+-const value = 1;
++const value = 2;
+`;
+}).join("");
+const failingShardRunDir = await mkdtemp(path.join(tmpdir(), "prc-analysis-shard-failure-"));
+
+try {
+  const inventory = createDiffInventory(failingShardDiff);
+  const reviewStacks = {
+    schemaVersion: "pr-review-stacks/v1",
+    reviewStacks: inventory.files.map((file, index) => ({
+      id: `stack-${index + 1}`,
+      title: `Stack ${index + 1}`,
+      explanation: `Independent stack ${index + 1}.`,
+      fileIds: [file.id],
+    })),
+  };
+  const attemptStates = new Map();
+  let maximumActiveCalls = 0;
+
+  await writeRunInputs({
+    inventory,
+    metadata: { number: 5, title: "Fail one review-tree shard" },
+    runDir: failingShardRunDir,
+  });
+
+  await assert.rejects(
+    runCodexReviewAnalysis({
+      executeCodex: async ({ outputPath, prompt, schemaPath, signal }) => {
+        if (schemaPath.includes("02-create-review-stacks")) {
+          await writeFile(outputPath, `${JSON.stringify(reviewStacks)}\n`, "utf8");
+          return { usage: {} };
+        }
+
+        const attempt = outputPath.includes(".attempt-3.")
+          ? 3
+          : outputPath.includes(".attempt-2.")
+            ? 2
+            : 1;
+        let state = attemptStates.get(attempt);
+        if (!state) {
+          let releaseStarted;
+          state = {
+            aborted: 0,
+            active: 0,
+            settled: 0,
+            started: 0,
+            startedThree: new Promise((resolve) => {
+              releaseStarted = resolve;
+            }),
+            releaseStarted,
+          };
+          attemptStates.set(attempt, state);
+        }
+
+        state.active += 1;
+        state.started += 1;
+        maximumActiveCalls = Math.max(maximumActiveCalls, state.active);
+        if (state.started === 3) {
+          state.releaseStarted();
+        }
+
+        try {
+          await state.startedThree;
+          if (prompt.includes('"Stack 1" review stack')) {
+            throw new Error(`Shard attempt ${attempt} failed.`);
+          }
+
+          await new Promise((_, reject) => {
+            const onAbort = () => {
+              state.aborted += 1;
+              const error = new Error("Sibling shard was aborted.");
+              error.name = "AbortError";
+              error.code = "ABORT_ERR";
+              reject(error);
+            };
+            signal.addEventListener("abort", onAbort, { once: true });
+            if (signal.aborted) {
+              onAbort();
+            }
+          });
+        } finally {
+          state.active -= 1;
+          state.settled += 1;
+        }
+      },
+      runDir: failingShardRunDir,
+    }),
+    /failed after 3 complete attempts/,
+  );
+
+  assert.equal(maximumActiveCalls, 3);
+  assert.deepEqual(
+    [...attemptStates.values()].map(({ aborted, active, settled, started }) => ({
+      aborted,
+      active,
+      settled,
+      started,
+    })),
+    Array.from({ length: 3 }, () => ({
+      aborted: 2,
+      active: 0,
+      settled: 3,
+      started: 3,
+    })),
+  );
+} finally {
+  await rm(failingShardRunDir, { force: true, recursive: true });
 }
 
 function assertStageTimeline(events, expected) {

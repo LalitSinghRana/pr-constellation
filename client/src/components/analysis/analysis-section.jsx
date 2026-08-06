@@ -215,9 +215,10 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
             {changedFiles} {changedFiles === 1 ? "file" : "files"}
           </span>
         )}
-        {entry.runs.length > 0 && (
+        {(entry.pr.runCount ?? entry.runs.length) > 0 && (
           <span>
-            {entry.runs.length} {entry.runs.length === 1 ? "run" : "runs"}
+            {entry.pr.runCount ?? entry.runs.length}{" "}
+            {(entry.pr.runCount ?? entry.runs.length) === 1 ? "run" : "runs"}
           </span>
         )}
       </span>

@@ -30,7 +30,7 @@ export function AnalysisPage() {
   const error = actionError || dashboardError;
 
   useEffect(() => {
-    fetch("/api/inbox")
+    fetch("/api/inbox?view=active")
       .then((response) => response.json())
       .then((inbox) => setQueueItems(inbox.items ?? []))
       .catch(() => {});
@@ -132,7 +132,7 @@ export function AnalysisPage() {
         for (const { entry, run } of targets) {
           const response = await fetch(
             `/api/runs/${encodeURIComponent(entry.pr.slug)}/${encodeURIComponent(run.runId)}/cancel`,
-            { method: "POST" },
+            { method: "POST", headers: { "Content-Type": "application/json" } },
           );
           if (!response.ok && response.status !== 404) {
             const body = await response.json().catch(() => ({}));

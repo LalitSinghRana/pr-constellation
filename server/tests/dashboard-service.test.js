@@ -5,13 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import { publishStableReview } from "../../analysis-worker/review-run.js";
 import { parseGitHubPrUrl } from "../../analysis-worker/workflow/02-fetch-pr/github.js";
-import { createDashboardApiMiddleware } from "../dashboard-api.js";
+import { createDashboardApiMiddleware } from "../analysis/dashboard-api.js";
 import {
   createInputFingerprint,
   DashboardService,
   loadDashboardConfiguration,
-} from "../dashboard-service.js";
-import { RunStore } from "../run-store.js";
+} from "../analysis/dashboard-service.js";
+import { RunStore } from "../analysis/run-store.js";
 
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "pr-dashboard-service-"));
 const reviewsDir = path.join(temporaryRoot, ".reviews");
@@ -268,7 +268,7 @@ try {
   releaseFirstExecution();
   await service.waitForIdle();
 
-  assert.equal(maximumActiveExecutions, 1);
+  assert.ok(maximumActiveExecutions <= 2);
   assert.equal(executions.length, 2);
   assert.equal(executions[0].sourceRunDir, null);
   assert.equal(executions[1].sourceRunDir, null);
@@ -288,8 +288,8 @@ try {
     totalTokens: 120,
   });
   assert.deepEqual(storedFirst.metrics.tokens, storedFirst.metrics.usage);
-  assert.equal(storedSecond.gitCommit, "def456");
-  assert.equal(storedSecond.metrics.codeFingerprint, "def456");
+  assert.equal(storedSecond.gitCommit, "abc123");
+  assert.equal(storedSecond.metrics.codeFingerprint, "abc123-dirty-fixture");
   assert.match(storedFirst.metrics.inputFingerprint, /^[a-f0-9]{64}$/);
 
   const frozen = await service.enqueue({
@@ -320,7 +320,7 @@ try {
 
   const dashboard = await service.snapshot();
   assert.equal(dashboard.prs.length, 2);
-  assert.equal(dashboard.pullRequests, dashboard.prs);
+  assert.equal("pullRequests" in dashboard, false);
   assert.equal(dashboard.queue.activeRunId, null);
   assert.deepEqual(dashboard.queue.queuedRunIds, []);
   const alpha = dashboard.prs.find((pr) => pr.slug === first.slug);
@@ -505,7 +505,7 @@ try {
   await assert.rejects(() => service.deleteBatchHistory({ batchId: claudeBatch.batchId }), {
     code: "HISTORY_TARGET_NOT_FOUND",
   });
-  assert.equal(maximumActiveExecutions, 1);
+  assert.ok(maximumActiveExecutions <= 2);
 
   const failingService = new DashboardService({
     configuration: {
@@ -541,9 +541,10 @@ try {
     totalTokens: 95,
   });
   assert.deepEqual(storedFailed.metrics.tokens, storedFailed.metrics.usage);
-  failingService.close();
+  await failingService.close();
 
-  service.close();
+  await service.close();
+  await checkConcurrentScheduling();
   await checkCancellation();
   await checkCancellationCommitRace();
   await checkSuccessPublicationWinsCancellation();
@@ -553,6 +554,97 @@ try {
 }
 
 console.log("dashboard service checks passed");
+
+async function checkConcurrentScheduling() {
+  const starts = [];
+  let activeExecutions = 0;
+  let maximumActiveExecutions = 0;
+  let reportThirdStart;
+  let reportTwoStarts;
+  const thirdStart = new Promise((resolve) => {
+    reportThirdStart = resolve;
+  });
+  const twoStarts = new Promise((resolve) => {
+    reportTwoStarts = resolve;
+  });
+  const service = new DashboardService({
+    configuration: {
+      defaultModel: "gpt-fixture",
+      models: ["gpt-fixture"],
+      reasoningEfforts: ["low"],
+    },
+    getCodeVersion: async () => ({
+      commit: "concurrency-fixture",
+      dirty: false,
+      fingerprint: "concurrency-fixture",
+    }),
+    projectRoot: temporaryRoot,
+    reviewsDir: path.join(temporaryRoot, ".concurrent-reviews"),
+    runExecutor: createCancelableExecutor({
+      onStarted: (context) => {
+        activeExecutions += 1;
+        maximumActiveExecutions = Math.max(maximumActiveExecutions, activeExecutions);
+        starts.push(context);
+        context.signal.addEventListener(
+          "abort",
+          () => {
+            activeExecutions -= 1;
+          },
+          { once: true },
+        );
+        if (starts.length === 2) reportTwoStarts();
+        if (starts.length === 3) reportThirdStart();
+      },
+    }),
+  });
+  await service.initialize();
+
+  const samePrUrl = "https://github.com/example/concurrent-a/pull/1";
+  const first = await service.enqueue({ prUrl: samePrUrl, refresh: true });
+  const second = await service.enqueue({ prUrl: samePrUrl, refresh: true });
+  const distinct = await service.enqueue({
+    prUrl: "https://github.com/example/concurrent-b/pull/2",
+    refresh: true,
+  });
+  const waiting = await service.enqueue({
+    prUrl: "https://github.com/example/concurrent-c/pull/3",
+    refresh: true,
+  });
+  await twoStarts;
+
+  assert.deepEqual(
+    starts.map((context) => context.prUrl),
+    [samePrUrl, distinct.url],
+  );
+  const activeSnapshot = await service.snapshot();
+  assert.deepEqual(
+    new Set(activeSnapshot.queue.activeRunIds),
+    new Set([first.runId, distinct.runId]),
+  );
+  assert.deepEqual(activeSnapshot.queue.queuedRunIds, [second.runId, waiting.runId]);
+  assert.equal(maximumActiveExecutions, 2);
+
+  const cancellation = await service.cancelRun({ slug: first.slug, runId: first.runId });
+  assert.deepEqual(cancellation.canceledRunIds, [first.runId]);
+  assert.equal(starts[1].signal.aborted, false);
+  await thirdStart;
+  assert.equal(starts[2].prUrl, samePrUrl);
+  assert.equal(maximumActiveExecutions, 2);
+
+  await service.close();
+  assert.equal(starts[1].signal.aborted, true);
+  assert.equal(starts[2].signal.aborted, true);
+  assert.equal(starts.length, 3);
+  const reopenedStore = new RunStore({ reviewsDir: service.reviewsDir });
+  try {
+    assert.equal((await reopenedStore.readRun(first.slug, first.runId)).status, "canceled");
+    assert.equal((await reopenedStore.readRun(second.slug, second.runId)).status, "canceled");
+    assert.equal((await reopenedStore.readRun(distinct.slug, distinct.runId)).status, "canceled");
+    assert.equal((await reopenedStore.readRun(waiting.slug, waiting.runId)).status, "queued");
+  } finally {
+    reopenedStore.close();
+  }
+}
 
 async function checkCancellation() {
   const configuration = {
@@ -671,7 +763,7 @@ async function checkCancellation() {
     delegatedRuns.map((run) => run.status),
     Array(4).fill("canceled"),
   );
-  batchService.close();
+  await batchService.close();
 
   let reportLegacyStarted;
   const legacyStarted = new Promise((resolve) => {
@@ -715,7 +807,7 @@ async function checkCancellation() {
       }),
     { code: "CANCEL_TARGET_NOT_FOUND" },
   );
-  legacyService.close();
+  await legacyService.close();
 
   let reportCloseStarted;
   const closeStarted = new Promise((resolve) => {
@@ -739,11 +831,15 @@ async function checkCancellation() {
     refresh: true,
   });
   const closingExecution = await closeStarted;
-  closeService.close();
+  await closeService.close();
   assert.equal(closingExecution.signal.aborted, true);
-  await closeService.waitForIdle();
-  const storedClosingRun = await closeService.store.readRun(closingRun.slug, closingRun.runId);
-  assert.equal(storedClosingRun.status, "canceled");
+  const reopenedStore = new RunStore({ reviewsDir: closeService.reviewsDir });
+  try {
+    const storedClosingRun = await reopenedStore.readRun(closingRun.slug, closingRun.runId);
+    assert.equal(storedClosingRun.status, "canceled");
+  } finally {
+    reopenedStore.close();
+  }
 }
 
 async function checkCancellationCommitRace() {
@@ -896,7 +992,7 @@ async function checkCancellationCommitRace() {
   await restartedService.initialize();
   const afterRestart = await restartedService.store.readTimings(run.slug, run.runId);
   assert.ok(afterRestart.stages.every((stage) => stage.endedAt));
-  restartedService.close();
+  await restartedService.close();
 
   await service.waitForIdle();
   const finallyCanceled = await backingStore.readRun(run.slug, run.runId);
@@ -909,7 +1005,7 @@ async function checkCancellationCommitRace() {
   );
   assert.ok(finalTimings.stages.every((stage) => stage.endedAt));
   assert.equal(await readFile(stableHtmlPath, "utf8"), previousStableHtml);
-  service.close();
+  await service.close();
 }
 
 async function checkSuccessPublicationWinsCancellation() {
@@ -1024,7 +1120,7 @@ async function checkSuccessPublicationWinsCancellation() {
     "completed",
   );
   assert.equal(await readFile(stableHtmlPath, "utf8"), promotedHtml);
-  service.close();
+  await service.close();
 
   const failedPublicationHtml = "<p>failed publication review</p>";
   const failedPublicationService = new DashboardService({
@@ -1103,7 +1199,7 @@ async function checkSuccessPublicationWinsCancellation() {
     ),
     failedPublicationHtml,
   );
-  failedPublicationService.close();
+  await failedPublicationService.close();
 }
 
 async function checkApiMiddleware() {
@@ -1356,7 +1452,7 @@ function createCancelableExecutor({ onStarted }) {
       stageId: "fixture.cancelable",
       type: "stage-start",
     });
-    onStarted({ reasoningEffort, signal });
+    onStarted({ prUrl, reasoningEffort, signal });
 
     try {
       await new Promise((_resolve, reject) => {

@@ -1,0 +1,71 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+# Local Conductor overrides for this Mac. Shared team defaults belong in
+# .conductor/settings.toml only when explicitly committing them for the team.
+
+[[preview_urls]]
+name = "Review queue"
+url = "http://127.0.0.1:$CONDUCTOR_PORT/"
+
+[[preview_urls]]
+name = "Analysis"
+url = "http://127.0.0.1:$CONDUCTOR_PORT/analysis"
+
+[scripts]
+# Concurrent workspaces are safe when each uses CONDUCTOR_PORT. Inbox SQLite under
+# ~/.config/pr-review-cockpit/ is intentionally shared per user; analysis artifacts
+# stay workspace-local under .reviews/.
+run_mode = "concurrent"
+setup = """
+#!/usr/bin/env bash
+set -euo pipefail
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+# shellcheck disable=SC1091
+[[ -s "$NVM_DIR/nvm.sh" ]] && . "$NVM_DIR/nvm.sh"
+nvm use
+pnpm install --registry=https://registry.npmjs.org/
+"""
+# Do not delete ~/.config/pr-review-cockpit — that state is shared across workspaces.
+archive = """
+#!/usr/bin/env bash
+set -euo pipefail
+echo "Archive $CONDUCTOR_WORKSPACE_NAME: no outside resources to remove."
+"""
+
+[scripts.run.dev]
+command = """
+#!/usr/bin/env bash
+set -euo pipefail
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+# shellcheck disable=SC1091
+[[ -s "$NVM_DIR/nvm.sh" ]] && . "$NVM_DIR/nvm.sh"
+nvm use
+export PORT="$CONDUCTOR_PORT"
+exec pnpm dev
+"""
+default = true
+icon = "play"
+
+[scripts.run.check]
+command = """
+#!/usr/bin/env bash
+set -euo pipefail
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+# shellcheck disable=SC1091
+[[ -s "$NVM_DIR/nvm.sh" ]] && . "$NVM_DIR/nvm.sh"
+nvm use
+exec pnpm check
+"""
+icon = "test-tube"
+
+[scripts.run.sync]
+command = """
+#!/usr/bin/env bash
+set -euo pipefail
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+# shellcheck disable=SC1091
+[[ -s "$NVM_DIR/nvm.sh" ]] && . "$NVM_DIR/nvm.sh"
+nvm use
+exec pnpm sync
+"""
+icon = "refresh-cw"
