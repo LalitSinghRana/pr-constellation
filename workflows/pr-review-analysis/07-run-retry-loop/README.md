@@ -7,7 +7,7 @@ optional executor, model, reasoning effort, event callback, run directory, and
 The runner:
 
 1. creates and validates `review-stacks.json`
-2. generates File Trees and Stack Trees, sharding large Review Stacks when
+2. generates File Trees and Section Trees, sharding large Review Stacks when
    necessary
 3. derives section and file `changedLineIds`
 4. assembles `pr-review-analysis/v1`
@@ -16,7 +16,7 @@ The runner:
 7. persists `analysis.json` and execution artifacts
 
 Events use stable stage IDs such as `analysis.review-stacks`,
-`analysis.attempt-1.generate-file-trees`, and
+`analysis.attempt-1.generate-review-trees`, and
 `analysis.attempt-1.evaluation.validate-candidate`.
 
 Cancellation terminates the active process tree and prevents later stages from

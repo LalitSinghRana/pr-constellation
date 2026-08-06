@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "PR File Trees",
+  "title": "PR Review Trees",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -9,12 +9,12 @@
     "summary",
     "confidence",
     "files",
-    "stackTree"
+    "fileTree"
   ],
   "properties": {
     "schemaVersion": {
       "type": "string",
-      "const": "pr-file-trees/v1"
+      "const": "pr-review-trees/v1"
     },
     "intent": {
       "type": "string",
@@ -29,8 +29,8 @@
       "minimum": 0,
       "maximum": 1
     },
-    "stackTree": {
-      "$ref": "#/$defs/stackTree"
+    "fileTree": {
+      "$ref": "#/$defs/fileTree"
     },
     "files": {
       "type": "array",
@@ -94,7 +94,7 @@
         "reviewPriority",
         "changeKind",
         "explanation",
-        "fileTree"
+        "sectionTree"
       ],
       "properties": {
         "id": {
@@ -116,12 +116,12 @@
           "type": "string",
           "minLength": 1
         },
-        "fileTree": {
-          "$ref": "#/$defs/fileTree"
+        "sectionTree": {
+          "$ref": "#/$defs/sectionTree"
         }
       }
     },
-    "fileTree": {
+    "sectionTree": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -137,7 +137,7 @@
           }
         },
         "branches": {
-          "description": "Ordered parent-child branches defining the file's review tree.",
+          "description": "Ordered parent-child branches defining the file's Section Tree.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/branch"
@@ -186,7 +186,7 @@
         }
       }
     },
-    "stackTree": {
+    "fileTree": {
       "type": "object",
       "additionalProperties": false,
       "required": [

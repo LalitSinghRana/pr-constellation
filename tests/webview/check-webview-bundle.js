@@ -6,14 +6,14 @@ const html = await renderDiffHtml({
   analysis: {
     schemaVersion: "pr-review-analysis/v1",
     intent: "Check review tree rendering",
-    summary: "A minimal File Review Tree verifies the embedded review bundle.",
+    summary: "A minimal Section Tree verifies the embedded review bundle.",
     confidence: 1,
     reviewStacks: [{
       id: "stack-1",
       title: "Runtime change",
       explanation: "Review the runtime change as one stack.",
       fileIds: ["file-1"],
-      stackTree: { branches: [] },
+      fileTree: { branches: [] },
     }],
     files: [{
       id: "file-1",
@@ -22,7 +22,7 @@ const html = await renderDiffHtml({
       changeKind: "runtime",
       explanation: "This file owns the runtime behavior under review.",
       changedLineIds: ["file-1:hunk-1:line-1", "file-1:hunk-1:line-2"],
-      fileTree: {
+      sectionTree: {
         sections: [
           {
             id: "replace-old-value",
@@ -77,12 +77,12 @@ for (const marker of [
   "review-tree",
   "review-section-gap-divider",
   "file-node-label",
-  "file-tree-edge",
+  "section-tree-edge",
   "Review section: What / Why",
   "Review branch: What / Why",
   "review-group",
+  "--section-tree-color",
   "--file-tree-color",
-  "--stack-tree-color",
   "PrReviewTree",
 ]) {
   assert.ok(html.includes(marker), `Missing review bundle marker: ${marker}`);
@@ -90,16 +90,16 @@ for (const marker of [
 
 const treeData = extractJsonScript(html, "pr-analysis-data");
 assert.equal(treeData.schemaVersion, "pr-review-analysis/v1");
-assert.equal(treeData.reviewStacks[0].stackTree.branches.length, 0);
-assert.equal(treeData.files[0].fileTree.branches[0].order, 0);
-assert.match(treeData.files[0].fileTree.branches[0].explanation, /supplies/);
-assert.equal(treeData.files[0].fileTree.sections[0].codeChunks.length, 1);
+assert.equal(treeData.reviewStacks[0].fileTree.branches.length, 0);
+assert.equal(treeData.files[0].sectionTree.branches[0].order, 0);
+assert.match(treeData.files[0].sectionTree.branches[0].explanation, /supplies/);
+assert.equal(treeData.files[0].sectionTree.sections[0].codeChunks.length, 1);
 assert.equal(treeData.files[0].sourceCodeChunks.length, 1);
 assert.deepEqual(
   treeData.files[0].sourceCodeChunks[0].lines.map((line) => line.content),
   ["const value = 1;", "const value = 2;"],
 );
-assert.ok(!("relations" in treeData.files[0].fileTree));
+assert.ok(!("relations" in treeData.files[0].sectionTree));
 
 const [treeAppSource, webStyles] = await Promise.all([
   readFile(new URL("../../src/review/review-tree-app.jsx", import.meta.url), "utf8"),
@@ -108,7 +108,7 @@ const [treeAppSource, webStyles] = await Promise.all([
 assert.match(treeAppSource, /nodesDraggable=\{false\}/);
 assert.match(treeAppSource, /reviewBranch: React\.memo\(ReviewBranch\)/);
 assert.match(treeAppSource, /filter\(\(\{ type \}\) => type === "reviewSection"\)/);
-assert.match(treeAppSource, /foldFileTree\(file, \{ expandedGroupIds \}\)/);
+assert.match(treeAppSource, /foldSectionTree\(file, \{ expandedGroupIds \}\)/);
 assert.match(treeAppSource, /value="source"/);
 assert.match(treeAppSource, /ariaLabel="Review tree map"/);
 assert.match(webStyles, /\.react-flow__node-reviewSection\s*\{[^}]*pointer-events:\s*auto\s*!important;/s);

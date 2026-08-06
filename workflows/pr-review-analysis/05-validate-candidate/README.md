@@ -8,6 +8,6 @@
   document.
 
 The final validator enforces exact file and changed-line ownership, approved
-classifications, non-empty explanations, one rooted File Tree per file, one
-rooted Stack Tree per Review Stack, contiguous sibling order, and a sensible
-Stack Tree root.
+classifications, non-empty explanations, one rooted Section Tree per file, one
+rooted File Tree per Review Stack, contiguous sibling order, and a sensible
+File Tree root.

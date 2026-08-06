@@ -19,7 +19,7 @@ Next improvements
 - Configure Review Stack references in the UI.
 
 ### AI layer
-- ~Build the Stack Tree.~
+- ~Build the File Tree.~
 - should we skip generated files from analyse pipeline? Like snapshots.
 - Hide noise
 

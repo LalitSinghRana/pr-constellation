@@ -70,7 +70,7 @@ http://127.0.0.1:4397/analysis
 
 The inbox persists tracked PRs independently from GitHub's read state. The
 analysis page shows not-started, queued, running, completed, and failed work;
-File Review Tree generation and repair use the provider's highest configured effort
+File Tree and Section Tree generation and repair use the provider's highest configured effort
 (`xhigh` for Codex, `max` for Claude).
 
 The latest generated run for each PR is available at a stable URL:
@@ -98,9 +98,9 @@ Run `pnpm sync` for a manual refresh. Queue state is stored in
 gitignored `.reviews/` directory.
 
 The `analyze` command is headless. It invokes `codex exec` in read-only mode and
-writes one File Review Tree per changed file to `analysis.json`; it does not
+writes one Section Tree per changed file to `analysis.json`; it does not
 render the review page. The page nests each file's Review Sections beneath its
-Review Stack's Stack Tree and renders those sections as code diffs. Ordered
+Review Stack's File Tree and renders those sections as code diffs. Ordered
 Review Branches follow AI-authored review causality. Secondary and skim branches
 start in deterministic expandable Review Groups so the first pass stays focused.
 

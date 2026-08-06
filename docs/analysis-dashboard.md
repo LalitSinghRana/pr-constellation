@@ -15,7 +15,7 @@ pnpm web
 
 - New PRs are queued smallest-first from changed lines and file count.
 - One analysis runs at a time.
-- File Review Tree generation and repair use the provider's highest configured effort
+- File Tree and Section Tree generation and repair use the provider's highest configured effort
   (`xhigh` for Codex and `max` for Claude).
 - Deterministic validation is the active gate; the semantic judge remains
   available for offline benchmarking but is disabled in the active pipeline.

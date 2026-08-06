@@ -205,7 +205,7 @@ assert.equal(
   "canceled",
 );
 
-const fileTreeSchema = JSON.parse(
+const sectionTreeSchema = JSON.parse(
   await readFile(
     new URL(
       "../04-generate-candidate-analysis/03-create-review-trees/schema.json",
@@ -220,16 +220,16 @@ const judgeContract = await readFile(
 );
 
 assert.match(
-  fileTreeSchema.$defs.reviewSection.properties.explanation.description,
+  sectionTreeSchema.$defs.reviewSection.properties.explanation.description,
   /What this cohesive code section changes or proves and why/,
 );
-assert.ok(fileTreeSchema.$defs.reviewSection.properties.changedLineRanges);
+assert.ok(sectionTreeSchema.$defs.reviewSection.properties.changedLineRanges);
 assert.equal(
-  fileTreeSchema.$defs.reviewSection.properties.changedLineIds,
+  sectionTreeSchema.$defs.reviewSection.properties.changedLineIds,
   undefined,
 );
 assert.match(
-  fileTreeSchema.$defs.branch.properties.explanation.description,
+  sectionTreeSchema.$defs.branch.properties.explanation.description,
   /child belongs under the parent/,
 );
 
@@ -417,11 +417,11 @@ setInterval(() => {}, 1000);
 }
 
 function assembleCandidate(candidate, reviewStacks) {
-  const { stackTree, ...analysis } = candidate;
+  const { fileTree, ...analysis } = candidate;
   return {
     ...analysis,
     schemaVersion: "pr-review-analysis/v1",
-    reviewStacks: reviewStacks.map((stack) => ({ ...stack, stackTree })),
+    reviewStacks: reviewStacks.map((stack) => ({ ...stack, fileTree })),
   };
 }
 
@@ -450,18 +450,18 @@ index 0000000..1111111 100644
 const multiHunkFile = multiHunkInventory.files[0];
 const [firstHunk, secondHunk] = multiHunkFile.hunks;
 const multiHunkCandidate = {
-  schemaVersion: "pr-file-trees/v1",
+  schemaVersion: "pr-review-trees/v1",
   intent: "Update both related constants.",
   summary: "The constants change together.",
   confidence: 1,
-  stackTree: { branches: [] },
+  fileTree: { branches: [] },
   files: [{
     id: multiHunkFile.id,
     path: multiHunkFile.path,
     reviewPriority: "primary",
     changeKind: "runtime",
     explanation: "Both constants form one runtime contract.",
-    fileTree: {
+    sectionTree: {
       sections: [{
         id: "update-constants",
         title: "Update related constants",
@@ -495,7 +495,7 @@ validateReviewAnalysis(materializedMultiHunk, {
   inventory: multiHunkInventory,
 });
 assert.deepEqual(
-  materializedMultiHunk.files[0].fileTree.sections[0].changedLineIds,
+  materializedMultiHunk.files[0].sectionTree.sections[0].changedLineIds,
   multiHunkFile.changedLineIds,
 );
 assert.deepEqual(
@@ -507,10 +507,10 @@ assert.throws(
     ...multiHunkCandidate,
     files: [{
       ...multiHunkCandidate.files[0],
-      fileTree: {
-        ...multiHunkCandidate.files[0].fileTree,
+      sectionTree: {
+        ...multiHunkCandidate.files[0].sectionTree,
         sections: [{
-          ...multiHunkCandidate.files[0].fileTree.sections[0],
+          ...multiHunkCandidate.files[0].sectionTree.sections[0],
           changedLineRanges: [{
             start: firstHunk.changedLineIds[0],
             end: secondHunk.changedLineIds.at(-1),
@@ -542,7 +542,7 @@ try {
   const events = [];
   const executionOptions = [];
   const judgePrompts = [];
-  const fileTreePrompts = [];
+  const sectionTreePrompts = [];
   const repairPrompts = [];
   const reviewStacksPrompts = [];
   let judgeAttempt = 0;
@@ -606,7 +606,7 @@ try {
           confidence: 1,
           summary: passes
             ? "Candidate is ready."
-            : "Repair the incomplete file file tree.",
+            : "Repair the incomplete Section Tree.",
           findings: passes
             ? []
             : [{
@@ -630,13 +630,13 @@ try {
 
     assert.match(schemaPath, /03-create-review-trees/);
 
-    if (prompt.includes("# Targeted File Tree Repair")) {
+    if (prompt.includes("# Targeted Section Tree Repair")) {
       calls.push("repair-1");
       repairPrompts.push(prompt);
       await writeFile(outputPath, `${JSON.stringify(validCandidate)}\n`, "utf8");
     } else {
-      calls.push("file-trees-1");
-      fileTreePrompts.push(prompt);
+      calls.push("review-trees-1");
+      sectionTreePrompts.push(prompt);
       await writeFile(outputPath, `${JSON.stringify(incompleteCandidate)}\n`, "utf8");
     }
 
@@ -660,7 +660,7 @@ try {
     runDir,
   });
 
-  assert.deepEqual(calls, ["review-stacks-1", "file-trees-1", "repair-1"]);
+  assert.deepEqual(calls, ["review-stacks-1", "review-trees-1", "repair-1"]);
   assert.deepEqual(
     executionOptions,
     [
@@ -674,8 +674,8 @@ try {
     "stage-start:analysis.review-stacks",
     "stage-finish:analysis.review-stacks:completed",
     "stage-start:analysis.attempt-1",
-    "stage-start:analysis.attempt-1.generate-file-trees",
-    "stage-finish:analysis.attempt-1.generate-file-trees:completed",
+    "stage-start:analysis.attempt-1.generate-review-trees",
+    "stage-finish:analysis.attempt-1.generate-review-trees:completed",
     "stage-start:analysis.attempt-1.evaluation",
     "stage-start:analysis.attempt-1.evaluation.validate-candidate",
     "stage-finish:analysis.attempt-1.evaluation.validate-candidate:failed",
@@ -684,8 +684,8 @@ try {
     "stage-finish:analysis.attempt-1.evaluation:failed",
     "stage-finish:analysis.attempt-1:failed",
     "stage-start:analysis.attempt-2",
-    "stage-start:analysis.attempt-2.repair-file-trees",
-    "stage-finish:analysis.attempt-2.repair-file-trees:completed",
+    "stage-start:analysis.attempt-2.repair-section-trees",
+    "stage-finish:analysis.attempt-2.repair-section-trees:completed",
     "stage-start:analysis.attempt-2.evaluation",
     "stage-start:analysis.attempt-2.evaluation.validate-candidate",
     "stage-finish:analysis.attempt-2.evaluation.validate-candidate:completed",
@@ -701,7 +701,7 @@ try {
   assert.equal(findFinishEvent(events, "analysis.attempt-1").metrics.willRetry, true);
   assert.equal(findFinishEvent(events, "analysis.attempt-2").metrics.willRetry, false);
   assert.equal(
-    findFinishEvent(events, "analysis.attempt-1.generate-file-trees").parentStageId,
+    findFinishEvent(events, "analysis.attempt-1.generate-review-trees").parentStageId,
     "analysis.attempt-1",
   );
   assert.equal(
@@ -717,7 +717,7 @@ try {
       events,
       "analysis.attempt-1.evaluation.validate-candidate",
     ).error,
-    /file file-1 fileTree changedLineIds must exactly match covered diff ids/,
+    /file file-1 sectionTree changedLineIds must exactly match covered diff ids/,
   );
   assert.equal(judgePrompts.length, 0);
   assert.equal(
@@ -746,35 +746,35 @@ try {
     affectedDiff.files.map((file) => file.id),
     [inventoryFile.id],
   );
-  assert.match(fileTreePrompts[0], /<structured_diff_json>/);
-  assert.doesNotMatch(fileTreePrompts[0], /<diff_line_map_json>|<diff_patch>/);
+  assert.match(sectionTreePrompts[0], /<structured_diff_json>/);
+  assert.doesNotMatch(sectionTreePrompts[0], /<diff_line_map_json>|<diff_patch>/);
   assert.equal(
     extractJsonTag(
-      fileTreePrompts[0],
+      sectionTreePrompts[0],
       "structured_diff_json",
     ).schemaVersion,
     "pr-structured-diff/v1",
   );
-  assert.match(fileTreePrompts[0], /## Explanations: What and Why/);
+  assert.match(sectionTreePrompts[0], /## Explanations: What and Why/);
   assert.match(
-    fileTreePrompts[0],
+    sectionTreePrompts[0],
     /attached code already tells the reviewer \*\*how\*\*/,
   );
-  assert.match(fileTreePrompts[0], /Use Markdown bullets for multiple distinct reasons/);
+  assert.match(sectionTreePrompts[0], /Use Markdown bullets for multiple distinct reasons/);
   assert.match(
-    fileTreePrompts[0],
+    sectionTreePrompts[0],
     /Never omit useful context merely to reach a\s+length target/,
   );
   assert.match(
-    fileTreePrompts[0],
+    sectionTreePrompts[0],
     /never treat\s+formatting alone as a quality failure/i,
   );
-  assert.match(fileTreePrompts[0], /## Cohesive Review Units/);
+  assert.match(sectionTreePrompts[0], /## Cohesive Review Units/);
   assert.match(
-    fileTreePrompts[0],
+    sectionTreePrompts[0],
     /Partition each file into cohesive review units before assigning/,
   );
-  assert.match(fileTreePrompts[0], /Do not emit numeric section depths/);
+  assert.match(sectionTreePrompts[0], /Do not emit numeric section depths/);
   assert.match(judgeContract, /## Section cohesion/);
   assert.match(judgeContract, /## Explanations/);
   assert.match(
@@ -804,7 +804,7 @@ try {
   });
   assert.equal(findFinishEvent(events, "analysis").metrics.totalTokens, 330);
   assert.deepEqual(
-    JSON.parse(await readFile(path.join(runDir, "file-trees.raw.json"), "utf8")),
+    JSON.parse(await readFile(path.join(runDir, "review-trees.raw.json"), "utf8")),
     incompleteCandidate,
   );
   assert.deepEqual(
@@ -852,12 +852,12 @@ try {
         executeCalls += 1;
         assert.equal(signal, controller.signal);
         queueMicrotask(() => controller.abort(
-          new Error("Canceled during file tree generation."),
+          new Error("Canceled during section tree generation."),
         ));
 
         return new Promise((resolve, reject) => {
           signal.addEventListener("abort", () => {
-            const error = new Error("Canceled during file tree generation.");
+            const error = new Error("Canceled during section tree generation.");
             error.name = "AbortError";
             error.code = "ABORT_ERR";
             error.usage = {
@@ -948,11 +948,11 @@ try {
     }
 
     if (schemaPath.includes("03-create-review-trees")) {
-      if (prompt.includes("# Targeted File Tree Repair")) {
+      if (prompt.includes("# Targeted Section Tree Repair")) {
         repairAttempt += 1;
         calls.push(`repair-${repairAttempt}`);
       } else {
-        calls.push("file-trees-1");
+        calls.push("review-trees-1");
       }
       await writeFile(outputPath, `${JSON.stringify(incompleteCandidate)}\n`, "utf8");
       return {
@@ -1004,14 +1004,14 @@ try {
     }),
     (error) => {
       terminalError = error;
-      return /PR file tree analysis failed after 3 complete attempts/.test(
+      return /PR review tree analysis failed after 3 complete attempts/.test(
         error.message,
       );
     },
   );
   assert.deepEqual(calls, [
     "review-stacks-1",
-    "file-trees-1",
+    "review-trees-1",
     "repair-1",
     "repair-2",
   ]);
@@ -1062,8 +1062,8 @@ try {
   await rm(failedRunDir, { force: true, recursive: true });
 }
 
-// Stack A exceeds the per-call file cap, so this proves that sharded File Tree
-// results are joined into one complete Stack Tree.
+// Stack A exceeds the per-call file cap, so this proves that sharded Section Tree
+// results are joined into one complete File Tree.
 const shardedDiff = Array.from({ length: 17 }, (_, index) => {
   const name = `file-${String(index + 1).padStart(2, "0")}`;
   return `diff --git a/src/${name}.js b/src/${name}.js
@@ -1099,16 +1099,16 @@ try {
 
   await writeRunInputs({
     inventory,
-    metadata: { number: 4, title: "Sharded file-trees" },
+    metadata: { number: 4, title: "Sharded review trees" },
     runDir: shardedRunDir,
   });
 
   const buildShardCandidate = (files) => ({
-    schemaVersion: "pr-file-trees/v1",
+    schemaVersion: "pr-review-trees/v1",
     intent: "Review the sharded change.",
     summary: "Several related files and one independent file change.",
     confidence: 1,
-    stackTree: {
+    fileTree: {
       branches: files.slice(1).map((file, order) => ({
         parentId: files[0].id,
         childId: file.id,
@@ -1122,7 +1122,7 @@ try {
       reviewPriority: "primary",
       changeKind: "runtime",
       explanation: "This file owns its constant update.",
-      fileTree: {
+      sectionTree: {
         sections: [{
           id: "change-constant",
           title: "Change the constant",
@@ -1143,8 +1143,8 @@ try {
       return { usage: {} };
     }
 
-    if (schemaPath.endsWith("stack-tree.schema.json")) {
-      calls.push("stack-tree-a");
+    if (schemaPath.endsWith("file-tree.schema.json")) {
+      calls.push("file-tree-a");
       assert.deepEqual(
         extractJsonTag(prompt, "files_json").map((file) => file.id),
         stackA.fileIds,
@@ -1160,13 +1160,13 @@ try {
     ));
 
     if (prompt.includes(`"${stackA.title}" review stack`)) {
-      calls.push(`file-trees-a-${inputFiles.length}`);
+      calls.push(`review-trees-a-${inputFiles.length}`);
       await writeFile(outputPath, `${JSON.stringify(buildShardCandidate(inputFiles))}\n`, "utf8");
     } else if (prompt.includes(`"${stackB.title}" review stack`)) {
-      calls.push("file-trees-b-1");
+      calls.push("review-trees-b-1");
       await writeFile(outputPath, `${JSON.stringify(buildShardCandidate(inputFiles))}\n`, "utf8");
     } else {
-      assert.fail("File tree shard prompt did not name its review stack.");
+      assert.fail("Review tree shard prompt did not name its Review Stack.");
     }
 
     return { usage: {} };
@@ -1184,28 +1184,28 @@ try {
   });
 
   assert.deepEqual(calls.sort(), [
-    "file-trees-a-1",
-    "file-trees-a-15",
-    "file-trees-b-1",
+    "file-tree-a",
     "review-stacks-1",
-    "stack-tree-a",
+    "review-trees-a-1",
+    "review-trees-a-15",
+    "review-trees-b-1",
   ]);
   assert.deepEqual(
     result.analysis.files.map((file) => file.id).sort(),
     inventory.files.map((file) => file.id).sort(),
   );
   assert.deepEqual(
-    result.analysis.reviewStacks.find((stack) => stack.id === stackA.id)?.stackTree,
+    result.analysis.reviewStacks.find((stack) => stack.id === stackA.id)?.fileTree,
     fullStackATree,
   );
   assert.deepEqual(
-    result.analysis.reviewStacks.find((stack) => stack.id === stackB.id)?.stackTree,
+    result.analysis.reviewStacks.find((stack) => stack.id === stackB.id)?.fileTree,
     { branches: [] },
   );
   validateReviewAnalysis(result.analysis, { inventory });
   const shardedAnalysisMetrics = findFinishEvent(shardedEvents, "analysis").metrics;
-  assert.equal(shardedAnalysisMetrics.invalidStackRootCount, 0);
-  assert.equal(shardedAnalysisMetrics.stackTreeDepth, 1);
+  assert.equal(shardedAnalysisMetrics.invalidFileTreeRootCount, 0);
+  assert.equal(shardedAnalysisMetrics.fileTreeDepth, 1);
   assert.equal(shardedAnalysisMetrics.sourceOrderMatch, 1);
 } finally {
   await rm(shardedRunDir, { force: true, recursive: true });
@@ -1324,11 +1324,11 @@ function buildCandidate({ coveredLineIds, fileId, filePath }) {
   }
 
   return {
-    schemaVersion: "pr-file-trees/v1",
+    schemaVersion: "pr-review-trees/v1",
     intent: "Review the example change",
     summary: "Update and validate the example value.",
     confidence: 1,
-    stackTree: { branches: [] },
+    fileTree: { branches: [] },
     files: [
       {
         id: fileId,
@@ -1336,7 +1336,7 @@ function buildCandidate({ coveredLineIds, fileId, filePath }) {
         reviewPriority: "primary",
         changeKind: "runtime",
         explanation: "This file owns the value update and its validation.",
-        fileTree: {
+        sectionTree: {
           sections,
           branches,
         },

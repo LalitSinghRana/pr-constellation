@@ -77,7 +77,7 @@ try {
 
   await store.updateRun("widgets-42", "run-1", {
     status: "running",
-    phase: "generate-file-trees",
+    phase: "generate-review-trees",
   });
   await store.recordStageEvent("widgets-42", "run-1", {
     type: "stage-start",
@@ -89,7 +89,7 @@ try {
   await store.recordStageEvent("widgets-42", "run-1", {
     type: "stage-start",
     stageId: "file-tree",
-    label: "Generate File Review Trees",
+    label: "Generate Review Trees",
     parentStageId: "analysis",
     attempt: 2,
     at: "2026-07-27T10:00:02.000Z",
@@ -104,13 +104,13 @@ try {
     metrics: { elapsedMs: 1_234.5, outputTokens: 321 },
   });
 
-  const fileTreeStage = timingsAfterEnd.stages.find(
+  const sectionTreeStage = timingsAfterEnd.stages.find(
     (stage) => stage.stageId === "file-tree" && stage.attempt === 2,
   );
-  assert.equal(fileTreeStage.durationMs, 1_234.5);
-  assert.equal(fileTreeStage.parentStageId, "analysis");
-  assert.equal(fileTreeStage.status, "succeeded");
-  assert.deepEqual(fileTreeStage.metrics, { elapsedMs: 1_234.5, outputTokens: 321 });
+  assert.equal(sectionTreeStage.durationMs, 1_234.5);
+  assert.equal(sectionTreeStage.parentStageId, "analysis");
+  assert.equal(sectionTreeStage.status, "succeeded");
+  assert.deepEqual(sectionTreeStage.metrics, { elapsedMs: 1_234.5, outputTokens: 321 });
   assert.equal(
     timingsAfterEnd.stages.find((stage) => stage.stageId === "analysis").durationMs,
     2_250,
@@ -154,7 +154,7 @@ try {
     reviewsDir,
     clock: () => new Date("2026-07-27T10:05:00.000Z"),
   });
-  assert.equal((await reloadedStore.readRun("widgets-42", "run-1")).phase, "generate-file-trees");
+  assert.equal((await reloadedStore.readRun("widgets-42", "run-1")).phase, "generate-review-trees");
 
   const dashboard = await reloadedStore.scanDashboard();
   assert.equal(dashboard.schemaVersion, DASHBOARD_SCHEMA_VERSION);

@@ -6,7 +6,7 @@ import {
   USE_DETACHED_PROCESS_GROUP,
 } from "../child-process-termination.js";
 
-const FILE_TREES_SCHEMA_PATH = fileURLToPath(new URL(
+const REVIEW_TREES_SCHEMA_PATH = fileURLToPath(new URL(
   "../04-generate-candidate-analysis/03-create-review-trees/schema.json",
   import.meta.url,
 ));
@@ -115,7 +115,7 @@ export async function runClaudeExec({
   prompt,
   outputPath,
   reasoningEffort,
-  schemaPath = FILE_TREES_SCHEMA_PATH,
+  schemaPath = REVIEW_TREES_SCHEMA_PATH,
   signal,
   timeoutMs = configuredTimeoutMs(),
 }) {

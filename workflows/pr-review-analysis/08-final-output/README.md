@@ -5,8 +5,8 @@ Final run files:
 - `analysis.json`
 - `review-stacks.json`
 - `judge.json`
-- `file-trees-prompt.md`
-- `file-trees.raw.json`
+- `review-trees-prompt.md`
+- `review-trees.raw.json`
 - `analysis.raw.json`
 - `analysis.candidate.json`
 - `judge.raw.json`
@@ -14,5 +14,5 @@ Final run files:
 The renderer reads `analysis.json` and presents its review hierarchy:
 
 ```txt
-Review Stack -> Stack Tree file -> File Tree review section -> code diff
+Review Stack -> File Tree -> File -> Section Tree -> Review Section -> code diff
 ```

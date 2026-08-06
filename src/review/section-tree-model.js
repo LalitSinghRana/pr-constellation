@@ -1,25 +1,25 @@
-// Pure file review tree normalization and folding for generated review pages.
+// Pure Section Tree normalization and folding for generated review pages.
 const ALWAYS_VISIBLE_RUNTIME_PRIORITY = "primary";
 
-export function normalizeFileTree(file) {
-  const fileTree = file?.fileTree || {};
+export function normalizeSectionTree(file) {
+  const sectionTree = file?.sectionTree || {};
   return {
-    branches: fileTree.branches || [],
-    sections: fileTree.sections || [],
+    branches: sectionTree.branches || [],
+    sections: sectionTree.sections || [],
   };
 }
 
-export function foldFileTree(file, { expandedGroupIds = [] } = {}) {
-  const fileTree = normalizeFileTree(file);
+export function foldSectionTree(file, { expandedGroupIds = [] } = {}) {
+  const sectionTree = normalizeSectionTree(file);
   const expandedIds = expandedGroupIds instanceof Set
     ? expandedGroupIds
     : new Set(expandedGroupIds);
-  const sectionById = new Map(fileTree.sections.map((section) => [section.id, section]));
-  const sectionOrderById = new Map(fileTree.sections.map((section, order) => [section.id, order]));
-  const childrenById = new Map(fileTree.sections.map((section) => [section.id, []]));
+  const sectionById = new Map(sectionTree.sections.map((section) => [section.id, section]));
+  const sectionOrderById = new Map(sectionTree.sections.map((section, order) => [section.id, order]));
+  const childrenById = new Map(sectionTree.sections.map((section) => [section.id, []]));
   const incomingIds = new Set();
 
-  for (const branch of fileTree.branches) {
+  for (const branch of sectionTree.branches) {
     if (
       branch.parentId === branch.childId
       || !sectionById.has(branch.parentId)
@@ -45,7 +45,7 @@ export function foldFileTree(file, { expandedGroupIds = [] } = {}) {
     });
   }
 
-  const roots = fileTree.sections
+  const roots = sectionTree.sections
     .filter((section) => !incomingIds.has(section.id))
     .sort((left, right) => {
       return (sectionOrderById.get(left.id) || 0) - (sectionOrderById.get(right.id) || 0);

@@ -13,16 +13,19 @@ bullet lists are allowed inside `explanation` strings.
 
 ## Output model
 
-The candidate contains one file-local tree for every changed file:
+The candidate contains one File Tree for the Review Stack and one file-local
+Section Tree for every changed file:
 
 ```txt
+fileTree
+  branches[] = ordered parent-child branches between files
 files[]
-  fileTree
+  sectionTree
     sections[] = cohesive review sections with changedLineRanges[]
     branches[] = ordered parent-child branches
 ```
 
-Each `files[]` entry owns exactly one File Tree. File Trees never contain
+Each `files[]` entry owns exactly one Section Tree. Section Trees never contain
 cross-file sections or branches.
 
 ## Diff inventory contract
@@ -75,7 +78,7 @@ Every file and Review Section must include:
   imports, formatting, generated output, dependency churn, or routine
   snapshots.
 
-Priority is always `primary > secondary > skim`. The File Tree root is the
+Priority is always `primary > secondary > skim`. The Section Tree root is the
 section whose id never appears as a branch `childId`; priority neither selects
 the root nor changes because a section is the root.
 

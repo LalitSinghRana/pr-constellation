@@ -9,8 +9,8 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  --section-tree-color: var(--primary);
   --file-tree-color: var(--primary);
-  --stack-tree-color: var(--primary);
 }
 
 .tree-canvas .react-flow__node-fileNode {
@@ -33,11 +33,11 @@
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--primary) 62%, transparent);
 }
 
-.tree-canvas .react-flow__edge.file-tree-edge {
+.tree-canvas .react-flow__edge.section-tree-edge {
   z-index: 4;
 }
 
-.tree-canvas .react-flow__edge.stack-tree-edge {
+.tree-canvas .react-flow__edge.file-tree-edge {
   z-index: 3;
 }
 

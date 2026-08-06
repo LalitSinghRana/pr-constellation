@@ -8,7 +8,7 @@ import {
   USE_DETACHED_PROCESS_GROUP,
 } from "../child-process-termination.js";
 import {
-  isAcceptableStackTreeRoot,
+  isAcceptableFileTreeRoot,
   validateReviewAnalysis,
   validateReviewStacks,
 } from "../05-validate-candidate/validate-analysis.js";
@@ -20,20 +20,20 @@ const SHARED_PROMPT_PATH = path.join(
   "01-shared-contract",
   "prompt.md",
 );
-const FILE_TREES_PROMPT_PATH = path.join(
+const REVIEW_TREES_PROMPT_PATH = path.join(
   CANDIDATE_WORKFLOW_DIR,
   "03-create-review-trees",
   "prompt.md",
 );
-const FILE_TREES_SCHEMA_PATH = path.join(
+const REVIEW_TREES_SCHEMA_PATH = path.join(
   CANDIDATE_WORKFLOW_DIR,
   "03-create-review-trees",
   "schema.json",
 );
-const STACK_TREE_SCHEMA_PATH = path.join(
+const FILE_TREE_SCHEMA_PATH = path.join(
   CANDIDATE_WORKFLOW_DIR,
   "03-create-review-trees",
-  "stack-tree.schema.json",
+  "file-tree.schema.json",
 );
 const REVIEW_STACKS_PROMPT_PATH = path.join(
   CANDIDATE_WORKFLOW_DIR,
@@ -51,16 +51,16 @@ const MAX_ANALYSIS_ATTEMPTS = 3;
 const CODEX_EXEC_TIMEOUT_MS = Number(process.env.PRC_CODEX_TIMEOUT_MS || 900000);
 const DEFAULT_ANALYSIS_REASONING_EFFORT = "xhigh";
 const JUDGE_REASONING_EFFORT = "high";
-const FILE_TREES_SHARD_CONCURRENCY = 3;
+const REVIEW_TREES_SHARD_CONCURRENCY = 3;
 // ponytail: flat file-count cap per shard; an oversized stack can still
 // overflow the model's context window in one call. Replace with a line/token
 // budget if a smaller-but-still-oversized stack overflows.
-const MAX_FILES_PER_FILE_TREES_SHARD = 15;
+const MAX_FILES_PER_REVIEW_TREES_SHARD = 15;
 // Retained for offline benchmarking; deterministic validation is the active gate.
 const SEMANTIC_JUDGE_ENABLED = false;
 
 export {
-  computeStackTreeMetrics,
+  computeFileTreeMetrics,
   materializeLineOwnership,
   validateReviewAnalysis,
 };
@@ -113,14 +113,14 @@ export async function runCodexReviewAnalysis({
       metricsForResult: (result) => ({
         ...executionMetrics(executionConfig),
         ...usageMetrics(usage),
-        ...computeStackTreeMetrics({ analysis: result.analysis, inventory }),
+        ...computeFileTreeMetrics({ analysis: result.analysis, inventory }),
       }),
       run: async () => {
       await mkdir(resolvedRunDir, { recursive: true });
 
-      const [sharedPrompt, fileTreesPrompt, judgePrompt, reviewStacksPrompt] = await Promise.all([
+      const [sharedPrompt, reviewTreesPrompt, judgePrompt, reviewStacksPrompt] = await Promise.all([
         readFile(SHARED_PROMPT_PATH, "utf8"),
-        readFile(FILE_TREES_PROMPT_PATH, "utf8"),
+        readFile(REVIEW_TREES_PROMPT_PATH, "utf8"),
         readFile(JUDGE_PROMPT_PATH, "utf8"),
         readFile(REVIEW_STACKS_PROMPT_PATH, "utf8"),
       ]);
@@ -209,7 +209,7 @@ export async function runCodexReviewAnalysis({
             judgeExecutionConfig,
             judgePrompt,
             metadataText,
-            fileTreesPrompt,
+            reviewTreesPrompt,
             previousCandidate,
             previousEvaluation,
             previousFailure: failures.at(-1),
@@ -245,7 +245,7 @@ export async function runCodexReviewAnalysis({
 
         if (attempt === MAX_ANALYSIS_ATTEMPTS) {
           throw new Error(
-            `PR file tree analysis failed after ${MAX_ANALYSIS_ATTEMPTS} complete attempts:\n\n${failures.join("\n\n")}`,
+            `PR review tree analysis failed after ${MAX_ANALYSIS_ATTEMPTS} complete attempts:\n\n${failures.join("\n\n")}`,
           );
         }
       }
@@ -295,7 +295,7 @@ async function runAnalysisAttempt({
   judgeExecutionConfig,
   judgePrompt,
   metadataText,
-  fileTreesPrompt,
+  reviewTreesPrompt,
   previousCandidate,
   previousEvaluation,
   previousFailure,
@@ -321,8 +321,8 @@ async function runAnalysisAttempt({
       ? "targeted-repair"
       : "full-regeneration";
   const generationStageId = strategy === "targeted-repair"
-    ? `${attemptStageId}.repair-file-trees`
-    : `${attemptStageId}.generate-file-trees`;
+    ? `${attemptStageId}.repair-section-trees`
+    : `${attemptStageId}.generate-review-trees`;
   let attemptJudge;
   let candidate;
   let candidateRawOutputPath;
@@ -335,7 +335,7 @@ async function runAnalysisAttempt({
       attempt,
       emitEvent,
       label: strategy === "targeted-repair"
-        ? "Repair affected File Trees"
+        ? "Repair affected Section Trees"
         : "Generate review trees",
       metricsForError: () => ({
         affectedFileCount: repairScope?.fileIds.length || 0,
@@ -367,17 +367,17 @@ async function runAnalysisAttempt({
           });
         }
 
-        promptPath = artifacts.fileTreesPromptPath;
-        candidateRawOutputPath = artifacts.fileTreesRawPath;
+        promptPath = artifacts.reviewTreesPromptPath;
+        candidateRawOutputPath = artifacts.reviewTreesRawPath;
         const generated = reviewStacks.length > 1
-          ? await runShardedFileTrees({
+          ? await runShardedReviewTrees({
               artifacts,
               cwd: resolvedRunDir,
               executionConfig,
               executeCodex,
               inventory,
               metadataText,
-              fileTreesPrompt,
+              reviewTreesPrompt,
               previousFailure,
               sharedPrompt,
               reviewStacks,
@@ -386,16 +386,16 @@ async function runAnalysisAttempt({
               cwd: resolvedRunDir,
               executionConfig,
               executeCodex,
-              outputPath: artifacts.fileTreesRawPath,
-              prompt: buildFileTreesPrompt({
+              outputPath: artifacts.reviewTreesRawPath,
+              prompt: buildReviewTreesPrompt({
                 metadataText,
-                fileTreesPrompt,
+                reviewTreesPrompt,
                 previousFailure,
                 sharedPrompt,
                 structuredDiffText,
               }),
-              promptPath: artifacts.fileTreesPromptPath,
-              schemaPath: FILE_TREES_SCHEMA_PATH,
+              promptPath: artifacts.reviewTreesPromptPath,
+              schemaPath: REVIEW_TREES_SCHEMA_PATH,
             }).then((result) => assembleReviewAnalysis({
               generated: result,
               reviewStacks,
@@ -457,21 +457,21 @@ async function runAnalysisAttempt({
   };
 }
 
-async function runShardedFileTrees({
+async function runShardedReviewTrees({
   artifacts,
   cwd,
   executionConfig,
   executeCodex,
   inventory,
   metadataText,
-  fileTreesPrompt,
+  reviewTreesPrompt,
   previousFailure,
   sharedPrompt,
   reviewStacks,
 }) {
-  const outputBase = artifacts.fileTreesRawPath.replace(/\.json$/, "");
-  const promptBase = artifacts.fileTreesPromptPath.replace(/\.md$/, "");
-  const shards = buildGenerationShards(reviewStacks, MAX_FILES_PER_FILE_TREES_SHARD);
+  const outputBase = artifacts.reviewTreesRawPath.replace(/\.json$/, "");
+  const promptBase = artifacts.reviewTreesPromptPath.replace(/\.md$/, "");
+  const shards = buildGenerationShards(reviewStacks, MAX_FILES_PER_REVIEW_TREES_SHARD);
   const results = new Array(shards.length);
   let nextIndex = 0;
 
@@ -493,7 +493,7 @@ async function runShardedFileTrees({
         outputPath: `${outputBase}.${shard.id}.json`,
         prompt: buildStackShardPrompt({
           metadataText,
-          fileTreesPrompt,
+          reviewTreesPrompt,
           otherStacks,
           previousFailure,
           sharedPrompt,
@@ -501,13 +501,13 @@ async function runShardedFileTrees({
           structuredDiffText,
         }),
         promptPath: `${promptBase}.${shard.id}.md`,
-        schemaPath: FILE_TREES_SCHEMA_PATH,
+        schemaPath: REVIEW_TREES_SCHEMA_PATH,
       });
     }
   };
 
   await Promise.all(
-    Array.from({ length: Math.min(FILE_TREES_SHARD_CONCURRENCY, shards.length) }, runWorker),
+    Array.from({ length: Math.min(REVIEW_TREES_SHARD_CONCURRENCY, shards.length) }, runWorker),
   );
 
   const shardIndicesByStackId = new Map();
@@ -517,10 +517,10 @@ async function runShardedFileTrees({
     shardIndicesByStackId.set(shard.stack.id, indices);
   });
 
-  const stackTrees = new Map();
+  const fileTrees = new Map();
   await Promise.all([...shardIndicesByStackId].map(async ([stackId, indices]) => {
-    if (indices.length === 1 && results[indices[0]]?.stackTree) {
-      stackTrees.set(stackId, results[indices[0]].stackTree);
+    if (indices.length === 1 && results[indices[0]]?.fileTree) {
+      fileTrees.set(stackId, results[indices[0]].fileTree);
       return;
     }
 
@@ -529,32 +529,32 @@ async function runShardedFileTrees({
     const files = results
       .flatMap((result) => result.files || [])
       .filter((file) => stackFileIds.has(file.id));
-    stackTrees.set(stackId, await runJsonStage({
+    fileTrees.set(stackId, await runJsonStage({
       cwd,
       executionConfig,
       executeCodex,
-      outputPath: `${outputBase}.stack-tree.${stackId}.json`,
-      prompt: buildStackTreePrompt({ files, metadataText, previousFailure, stack }),
-      promptPath: `${promptBase}.stack-tree.${stackId}.md`,
-      schemaPath: STACK_TREE_SCHEMA_PATH,
+      outputPath: `${outputBase}.file-tree.${stackId}.json`,
+      prompt: buildFileTreePrompt({ files, metadataText, previousFailure, stack }),
+      promptPath: `${promptBase}.file-tree.${stackId}.md`,
+      schemaPath: FILE_TREE_SCHEMA_PATH,
     }));
   }));
 
-  const { stackTree: _discardedShardTree, ...firstResult } = results[0];
+  const { fileTree: _discardedShardTree, ...firstResult } = results[0];
   const merged = {
     ...firstResult,
     schemaVersion: "pr-review-analysis/v1",
     reviewStacks: reviewStacks.map((stack) => ({
       ...stack,
-      stackTree: stackTrees.get(stack.id),
+      fileTree: fileTrees.get(stack.id),
     })),
     files: results.flatMap((result) => result.files || []),
   };
 
   await Promise.all([
-    writeFile(artifacts.fileTreesRawPath, `${JSON.stringify(merged, null, 2)}\n`, "utf8"),
+    writeFile(artifacts.reviewTreesRawPath, `${JSON.stringify(merged, null, 2)}\n`, "utf8"),
     writeFile(
-      artifacts.fileTreesPromptPath,
+      artifacts.reviewTreesPromptPath,
       `Sharded across ${shards.length} calls over ${reviewStacks.length} review stacks: ${shards
         .map((shard) => `${shard.id} (${promptBase}.${shard.id}.md)`)
         .join(", ")}\n`,
@@ -577,13 +577,13 @@ function buildGenerationShards(stacks, maxFilesPerShard) {
 }
 
 function assembleReviewAnalysis({ generated, reviewStacks }) {
-  const { stackTree, ...analysisFields } = generated;
+  const { fileTree, ...analysisFields } = generated;
   return {
     ...analysisFields,
     schemaVersion: "pr-review-analysis/v1",
     reviewStacks: reviewStacks.map((stack) => ({
       ...stack,
-      stackTree,
+      fileTree,
     })),
   };
 }
@@ -598,16 +598,16 @@ function chunkArray(items, size) {
 
 function buildStackShardPrompt({
   metadataText,
-  fileTreesPrompt,
+  reviewTreesPrompt,
   otherStacks,
   previousFailure,
   sharedPrompt,
   stack,
   structuredDiffText,
 }) {
-  const basePrompt = buildFileTreesPrompt({
+  const basePrompt = buildReviewTreesPrompt({
     metadataText,
-    fileTreesPrompt,
+    reviewTreesPrompt,
     previousFailure,
     sharedPrompt,
     structuredDiffText,
@@ -632,19 +632,19 @@ reference only, so you know what you are not responsible for: ${
   const inlineInputHeading = "## Inline Input";
   const insertAt = basePrompt.indexOf(inlineInputHeading);
   if (insertAt < 0) {
-    throw new Error("File tree prompt is missing its Inline Input heading.");
+    throw new Error("Review trees prompt is missing its Inline Input heading.");
   }
   return `${basePrompt.slice(0, insertAt)}${scopeInstruction}${basePrompt.slice(insertAt)}`;
 }
 
-function buildStackTreePrompt({ files, metadataText, previousFailure, stack }) {
+function buildFileTreePrompt({ files, metadataText, previousFailure, stack }) {
   const fileSummaries = files.map((file) => ({
     id: file.id,
     path: file.path,
     reviewPriority: file.reviewPriority,
     changeKind: file.changeKind,
     explanation: file.explanation,
-    sections: (file.fileTree?.sections || []).map((section) => ({
+    sections: (file.sectionTree?.sections || []).map((section) => ({
       title: section.title,
       reviewPriority: section.reviewPriority,
       changeKind: section.changeKind,
@@ -652,10 +652,10 @@ function buildStackTreePrompt({ files, metadataText, previousFailure, stack }) {
     })),
   }));
 
-  return `# Review Stack Tree
+  return `# File Tree
 
 Decide the file-to-file review order for the complete "${stack.title}" review
-stack. The file-trees were generated in smaller shards, so this call must join
+stack. The Section Trees were generated in smaller shards, so this call must join
 all ${stack.fileIds.length} files into one rooted review-causality tree.
 
 - The parent is the reason to review first; the child was caused, enabled,
@@ -669,7 +669,7 @@ all ${stack.fileIds.length} files into one rooted review-causality tree.
   secondary roles when those priorities differ.
 - Use contiguous \`order\` values starting at 0 for each parent's children.
 - Return only JSON matching the supplied schema.
-${previousFailure ? `\nThe previous attempt failed validation. Correct any relevant Stack Tree issue:\n\n${previousFailure}\n` : ""}
+${previousFailure ? `\nThe previous attempt failed validation. Correct any relevant File Tree issue:\n\n${previousFailure}\n` : ""}
 ## Pull request
 
 <metadata_json>
@@ -682,7 +682,7 @@ ${metadataText}
 ${JSON.stringify(stack)}
 </review_stack_json>
 
-## Files and generated File Tree summaries
+## Files and generated Section Tree summaries
 
 <files_json>
 ${JSON.stringify(fileSummaries)}
@@ -843,8 +843,8 @@ function buildAttemptArtifacts({ attempt, runDir }) {
   return {
     analysisRawPath: attemptArtifactPath(runDir, "analysis.raw", attempt, "json"),
     judgeRawPath: attemptArtifactPath(runDir, "judge.raw", attempt, "json"),
-    fileTreesPromptPath: attemptArtifactPath(runDir, "file-trees-prompt", attempt, "md"),
-    fileTreesRawPath: attemptArtifactPath(runDir, "file-trees.raw", attempt, "json"),
+    reviewTreesPromptPath: attemptArtifactPath(runDir, "review-trees-prompt", attempt, "md"),
+    reviewTreesRawPath: attemptArtifactPath(runDir, "review-trees.raw", attempt, "json"),
     repairPromptPath: attemptArtifactPath(runDir, "repair-prompt", attempt, "md"),
     repairRawPath: attemptArtifactPath(runDir, "repair.raw", attempt, "json"),
   };
@@ -983,7 +983,7 @@ async function runTargetedRepair({
       repairScope,
     }),
     promptPath,
-    schemaPath: FILE_TREES_SCHEMA_PATH,
+    schemaPath: REVIEW_TREES_SCHEMA_PATH,
   }), { inventory });
 
   validateRepairPayload({
@@ -1013,19 +1013,19 @@ function buildTargetedRepairPrompt({
   const candidateText = `${JSON.stringify(compactLineOwnership(candidate))}\n`;
   const feedbackText = `${JSON.stringify(buildCombinedFeedback(evaluation))}\n`;
 
-  return `# Targeted File Tree Repair
+  return `# Targeted Section Tree Repair
 
-Repair only the File Trees named in \`affected_file_ids\`. Return JSON that
-matches the PR file tree schema, but include exactly those complete replacement
+Repair only the Section Trees named in \`affected_file_ids\`. Return JSON that
+matches the PR section tree schema, but include exactly those complete replacement
 file entries in the top-level \`files\` array. Copy the current candidate's
 \`intent\`, \`summary\`, and \`confidence\` values; the runner preserves the
-current top-level values, Stack Trees, and every unaffected file. Include an
-empty \`stackTree.branches\` array to satisfy the repair transport schema; the
+current top-level values, File Trees, and every unaffected file. Include an
+empty \`fileTree.branches\` array to satisfy the repair transport schema; the
 runner discards that placeholder.
 
 Use the combined deterministic-validation and semantic-judge feedback
 together. Fix every reported issue for an affected file without changing its
-inventory file id or path. Every replacement File Tree must cover all of
+inventory file id or path. Every replacement Section Tree must cover all of
 that file's changed lines exactly once. Return only the repair JSON.
 
 ## Affected file ids
@@ -1113,7 +1113,7 @@ function resolveRepairScope({ candidate, evaluation, inventory }) {
   }
 
   for (const candidateFile of candidate?.files || []) {
-    for (const section of candidateFile?.fileTree?.sections || []) {
+    for (const section of candidateFile?.sectionTree?.sections || []) {
       if (!isNonEmptyString(section?.id)) {
         continue;
       }
@@ -1299,10 +1299,10 @@ function validateRepairPayload({
   );
 
   if (
-    repairPayload?.schemaVersion !== "pr-file-trees/v1"
+    repairPayload?.schemaVersion !== "pr-review-trees/v1"
     || !Array.isArray(repairPayload?.files)
   ) {
-    errors.push("targeted repair must use pr-file-trees/v1 with a files array.");
+    errors.push("targeted repair must use pr-review-trees/v1 with a files array.");
   }
 
   for (const replacement of repairPayload?.files || []) {
@@ -1463,7 +1463,7 @@ function materializeLineOwnership(analysis, { inventory }) {
         );
       }
 
-      const sections = (file.fileTree?.sections || []).map((section) => ({
+      const sections = (file.sectionTree?.sections || []).map((section) => ({
         ...section,
         changedLineIds: expandChangedLineRanges({
           file: inventoryFile,
@@ -1480,8 +1480,8 @@ function materializeLineOwnership(analysis, { inventory }) {
         changedLineIds: (inventoryFile.changedLineIds || []).filter(
           (lineId) => coveredIds.has(lineId),
         ),
-        fileTree: {
-          ...file.fileTree,
+        sectionTree: {
+          ...file.sectionTree,
           sections,
         },
       };
@@ -1563,9 +1563,9 @@ function compactLineOwnership(analysis) {
     ...analysis,
     files: (analysis?.files || []).map(({ changedLineIds, ...file }) => ({
       ...file,
-      fileTree: {
-        ...file.fileTree,
-        sections: (file.fileTree?.sections || []).map(
+      sectionTree: {
+        ...file.sectionTree,
+        sections: (file.sectionTree?.sections || []).map(
           ({ changedLineIds: sectionLineIds, ...section }) => section,
         ),
       },
@@ -1601,23 +1601,23 @@ Decide the review stack split as your final answer.
 `;
 }
 
-function buildFileTreesPrompt({
+function buildReviewTreesPrompt({
   metadataText,
-  fileTreesPrompt,
+  reviewTreesPrompt,
   previousFailure,
   sharedPrompt,
   structuredDiffText,
 }) {
   return `${sharedPrompt.trim()}
 
-${fileTreesPrompt.trim()}
+${reviewTreesPrompt.trim()}
 ${buildRetryGuidance(previousFailure)}
 ${buildSourceInput({
     metadataText,
     structuredDiffText,
   })}
 
-Generate every changed file's one complete file tree as your final answer.
+Generate the complete File Tree and every changed file's Section Tree as your final answer.
 `;
 }
 
@@ -1633,7 +1633,7 @@ rejected for these combined reasons:
 
 ${previousFailure}
 
-Regenerate the complete file tree analysis from scratch and fix every reported
+Regenerate the complete review tree analysis from scratch and fix every reported
 issue while following the authoritative shared contract above.
 `
     : "";
@@ -1704,7 +1704,7 @@ ${validationReport}
 ${candidateText}
 </analysis_candidate_json>
 
-Judge the candidate file tree analysis as your final answer.
+Judge the candidate review tree analysis as your final answer.
 `;
 }
 
@@ -1760,7 +1760,7 @@ export function buildCodexExecArgs({
   model,
   outputPath,
   reasoningEffort,
-  schemaPath = FILE_TREES_SCHEMA_PATH,
+  schemaPath = REVIEW_TREES_SCHEMA_PATH,
 }) {
   return [
     "exec",
@@ -1813,7 +1813,7 @@ export async function runCodexExec({
   prompt,
   outputPath,
   reasoningEffort,
-  schemaPath = FILE_TREES_SCHEMA_PATH,
+  schemaPath = REVIEW_TREES_SCHEMA_PATH,
   signal,
 }) {
   throwIfAborted(signal);
@@ -2054,7 +2054,7 @@ function buildValidationReport(validationFailure) {
     return `FAIL\n${validationFailure}`;
   }
 
-  return "PASS\nStep 05 deterministic file tree validation accepted the candidate.";
+  return "PASS\nStep 05 deterministic review tree validation accepted the candidate.";
 }
 
 function formatAttemptFailure({ attempt, failures }) {
@@ -2100,20 +2100,20 @@ function executionMetrics(executionConfig) {
   return reportedExecutionConfig(executionConfig);
 }
 
-function computeStackTreeMetrics({ analysis, inventory }) {
+function computeFileTreeMetrics({ analysis, inventory }) {
   const reviewStacks = analysis?.reviewStacks || [];
   const fileById = new Map((analysis?.files || []).map((file) => [file.id, file]));
   const inventoryOrderById = new Map(
     (inventory?.files || []).map((file, index) => [file.id, index]),
   );
 
-  let stackTreeDepth = 0;
+  let fileTreeDepth = 0;
   let stacksWithTree = 0;
   let sourceOrderMatches = 0;
-  let invalidStackRootCount = 0;
+  let invalidFileTreeRootCount = 0;
 
   for (const stack of reviewStacks) {
-    const branches = stack.stackTree?.branches;
+    const branches = stack.fileTree?.branches;
     if (!Array.isArray(branches)) {
       continue;
     }
@@ -2129,12 +2129,12 @@ function computeStackTreeMetrics({ analysis, inventory }) {
     }
     const rootId = (stack.fileIds || []).find((fileId) => !hasIncoming.has(fileId));
 
-    stackTreeDepth = Math.max(
-      stackTreeDepth,
-      measureStackTreeDepth(rootId, childBranchesByParentId),
+    fileTreeDepth = Math.max(
+      fileTreeDepth,
+      measureFileTreeDepth(rootId, childBranchesByParentId),
     );
 
-    const treeOrderIds = stackTreeDfsOrder(rootId, childBranchesByParentId);
+    const treeOrderIds = fileTreeDfsOrder(rootId, childBranchesByParentId);
     const sourceOrderIds = (stack.fileIds || [])
       .slice()
       .sort((left, right) => (inventoryOrderById.get(left) ?? 0) - (inventoryOrderById.get(right) ?? 0));
@@ -2148,20 +2148,20 @@ function computeStackTreeMetrics({ analysis, inventory }) {
     if (rootId) {
       const rootFile = fileById.get(rootId);
       const stackFiles = (stack.fileIds || []).map((fileId) => fileById.get(fileId)).filter(Boolean);
-      if (rootFile && !isAcceptableStackTreeRoot(rootFile, stackFiles)) {
-        invalidStackRootCount += 1;
+      if (rootFile && !isAcceptableFileTreeRoot(rootFile, stackFiles)) {
+        invalidFileTreeRootCount += 1;
       }
     }
   }
 
   return {
-    invalidStackRootCount,
-    stackTreeDepth,
+    invalidFileTreeRootCount,
+    fileTreeDepth,
     sourceOrderMatch: stacksWithTree > 0 ? sourceOrderMatches / stacksWithTree : null,
   };
 }
 
-function measureStackTreeDepth(rootId, childBranchesByParentId) {
+function measureFileTreeDepth(rootId, childBranchesByParentId) {
   if (!rootId) {
     return 0;
   }
@@ -2177,7 +2177,7 @@ function measureStackTreeDepth(rootId, childBranchesByParentId) {
   return maxDepth;
 }
 
-function stackTreeDfsOrder(rootId, childBranchesByParentId) {
+function fileTreeDfsOrder(rootId, childBranchesByParentId) {
   if (!rootId) {
     return [];
   }

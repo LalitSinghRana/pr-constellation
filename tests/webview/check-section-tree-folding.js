@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { foldFileTree } from "../../src/review/file-tree-model.js";
+import { foldSectionTree } from "../../src/review/section-tree-model.js";
 
 const file = {
   id: "file-1",
-  fileTree: {
+  sectionTree: {
     sections: [
       section("root", "primary", "runtime", 8),
       section("press", "primary", "runtime", 10),
@@ -24,7 +24,7 @@ const file = {
   },
 };
 
-const collapsed = foldFileTree(file);
+const collapsed = foldSectionTree(file);
 assert.deepEqual(
   collapsed.sections.map((item) => item.id),
   [
@@ -63,7 +63,7 @@ assert.doesNotMatch(
   /folded until/,
 );
 const secondaryGroupId = "file-1:ui-fold-root-secondary-runtime";
-const expandedSecondary = foldFileTree(file, {
+const expandedSecondary = foldSectionTree(file, {
   expandedGroupIds: new Set([secondaryGroupId]),
 });
 assert.ok(expandedSecondary.sections.some((item) => item.id === "loading"));
@@ -77,7 +77,7 @@ assert.ok(
   }),
 );
 
-const expandedAllVisibleGroups = foldFileTree(file, {
+const expandedAllVisibleGroups = foldSectionTree(file, {
   expandedGroupIds: new Set([
     secondaryGroupId,
     "file-1:ui-fold-root-skim",
@@ -89,7 +89,7 @@ assert.ok(expandedAllVisibleGroups.sections.some((item) => item.id === "visual-i
 
 const orderedFile = {
   id: "ordered-file",
-  fileTree: {
+  sectionTree: {
     sections: [
       section("root", "primary", "runtime", 1),
       section("next-sibling", "primary", "runtime", 1),
@@ -105,7 +105,7 @@ const orderedFile = {
     ],
   },
 };
-const orderedCollapsed = foldFileTree(orderedFile);
+const orderedCollapsed = foldSectionTree(orderedFile);
 const orderedGroupId = "ordered-file:ui-fold-root-skim";
 const orderedCollapsedIds = orderedCollapsed.sections.map((item) => item.id);
 
@@ -133,7 +133,7 @@ assert.deepEqual(
   ],
 );
 
-const orderedExpanded = foldFileTree(orderedFile, {
+const orderedExpanded = foldSectionTree(orderedFile, {
   expandedGroupIds: new Set([orderedGroupId]),
 });
 assert.deepEqual(
