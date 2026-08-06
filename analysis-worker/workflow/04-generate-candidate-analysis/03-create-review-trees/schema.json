@@ -91,7 +91,7 @@
           "$ref": "#/$defs/changeKind"
         },
         "explanation": {
-          "description": "What responsibility changed in this file and why the file matters to the PR.",
+          "description": "Plain Markdown describing what responsibility changed in this file and why it matters to the PR. Do not use What:/Why: labels or review directives; optional final Reviewer attention: section only when needed.",
           "type": "string",
           "minLength": 1
         },
@@ -148,7 +148,7 @@
           "$ref": "#/$defs/changeKind"
         },
         "explanation": {
-          "description": "What this cohesive code section changes or proves and why it matters.",
+          "description": "Plain Markdown describing what this cohesive code section changes or proves and why it matters. Do not use What:/Why: labels or review directives; optional final Reviewer attention: section only when needed.",
           "type": "string",
           "minLength": 1
         },
@@ -194,7 +194,7 @@
           "minimum": 0
         },
         "explanation": {
-          "description": "Why the child belongs under the parent in review order.",
+          "description": "Plain Markdown describing why the child belongs under the parent in review order. Do not use What:/Why: labels or review directives; optional final Reviewer attention: section only when needed.",
           "type": "string",
           "minLength": 1
         }

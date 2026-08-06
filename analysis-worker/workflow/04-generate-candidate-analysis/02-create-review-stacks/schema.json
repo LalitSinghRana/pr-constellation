@@ -32,6 +32,7 @@
           "minLength": 1
         },
         "explanation": {
+          "description": "Plain Markdown describing why these files form one coherent review unit. Do not use What:/Why: labels or review directives; optional final Reviewer attention: section only when needed.",
           "type": "string",
           "minLength": 1
         },

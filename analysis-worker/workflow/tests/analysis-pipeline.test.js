@@ -220,13 +220,21 @@ const judgeContract = await readFile(
 
 assert.match(
   sectionTreeSchema.$defs.reviewSection.properties.explanation.description,
-  /What this cohesive code section changes or proves and why/,
+  /Plain Markdown describing what this cohesive code section changes or proves/,
+);
+assert.match(
+  sectionTreeSchema.$defs.reviewSection.properties.explanation.description,
+  /Reviewer attention:/,
 );
 assert.ok(sectionTreeSchema.$defs.reviewSection.properties.changedLineRanges);
 assert.equal(sectionTreeSchema.$defs.reviewSection.properties.changedLineIds, undefined);
 assert.match(
   sectionTreeSchema.$defs.branch.properties.explanation.description,
   /child belongs under the parent/,
+);
+assert.match(
+  sectionTreeSchema.$defs.branch.properties.explanation.description,
+  /What:\/Why:/,
 );
 
 assert.deepEqual(
@@ -727,8 +735,11 @@ try {
     extractJsonTag(sectionTreePrompts[0], "structured_diff_json").schemaVersion,
     "pr-structured-diff/v1",
   );
-  assert.match(sectionTreePrompts[0], /## Explanations: What and Why/);
-  assert.match(sectionTreePrompts[0], /attached code already tells the reviewer \*\*how\*\*/);
+  assert.match(sectionTreePrompts[0], /## Explanations\n/);
+  assert.match(sectionTreePrompts[0], /attached code already shows \*\*how\*\*/);
+  assert.match(sectionTreePrompts[0], /Do \*\*not\*\*:/);
+  assert.match(sectionTreePrompts[0], /What:` \/ `Why:`/);
+  assert.match(sectionTreePrompts[0], /Reviewer attention:/);
   assert.match(sectionTreePrompts[0], /Use Markdown bullets for multiple distinct reasons/);
   assert.match(
     sectionTreePrompts[0],
@@ -744,9 +755,11 @@ try {
   assert.match(judgeContract, /## Section cohesion/);
   assert.match(judgeContract, /## Explanations/);
   assert.match(judgeContract, /attached code answers how the implementation works/);
+  assert.match(judgeContract, /Reviewer attention:/);
+  assert.match(judgeContract, /What:` \/ `Why:` labeled output/);
   assert.match(
     judgeContract,
-    /length and\s+Markdown formatting alone never determine the verdict/i,
+    /length and\s+Markdown formatting alone never\s+determine the verdict/i,
   );
   assert.match(judgeContract, /imperfect but useful enough to help a reviewer/);
   assert.match(judgeContract, /one contiguous render or JSX phase/);

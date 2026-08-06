@@ -84,8 +84,7 @@ for (const marker of [
   "review-section-gap-divider",
   "file-node-label",
   "section-tree-edge",
-  "Review section: What / Why",
-  "Review branch: What / Why",
+  "explanation-hover-card",
   "review-group",
   "--section-tree-color",
   "--file-tree-color",
@@ -118,9 +117,17 @@ assert.match(treeAppSource, /foldSectionTree\(file, \{ expandedGroupIds \}\)/);
 assert.match(treeAppSource, /value="source"/);
 assert.match(treeAppSource, /ariaLabel="Review tree map"/);
 assert.match(treeAppSource, /pointerEvents: "auto"/);
-assert.match(webStyles, /\.explanation-hover-body ul/);
+assert.match(treeAppSource, /text-base leading-relaxed/);
+assert.match(treeAppSource, /bg-diff-add\/15/);
+assert.match(treeAppSource, /text-pr-open/);
+assert.doesNotMatch(treeAppSource, /What \/ Why/);
+assert.doesNotMatch(treeAppSource, /formatExplanationForHover/);
+assert.doesNotMatch(treeAppSource, /state-badge/);
+assert.doesNotMatch(treeAppSource, /text-\[15px\]/);
 assert.match(webStyles, /\.review-branch-hit-path/);
 assert.match(webStyles, /\.review-tree-map/);
+assert.doesNotMatch(webStyles, /\.change-pill\.is-add/);
+assert.doesNotMatch(webStyles, /\.review-mark\.is-open/);
 
 function extractJsonScript(documentHtml, id) {
   const match = documentHtml.match(

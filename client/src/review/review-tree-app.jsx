@@ -235,14 +235,22 @@ function ReviewHeader({ review }) {
     <header className="review-header sticky top-0 z-20 border-b border-border bg-[color-mix(in_oklab,var(--card)_92%,var(--background))] px-5 py-3 shadow-xs backdrop-blur-[20px] max-[980px]:px-3 max-[980px]:py-2.5">
       <div className="review-header-main grid grid-cols-[minmax(0,1fr)_auto] items-center justify-between gap-3.5 max-[980px]:grid-cols-1 max-[980px]:gap-2">
         <div className="review-title-row flex min-w-0 flex-auto items-center gap-2.5 max-[980px]:flex-wrap max-[980px]:gap-2">
-          <div className="review-eyebrow flex flex-none items-center gap-[7px] text-xs font-bold tracking-[0.08em] text-primary uppercase">
-            <span className="review-mark inline-flex size-[30px] items-center justify-center rounded-md border border-[color-mix(in_oklab,var(--primary)_32%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_10%,var(--card))] text-primary shadow-xs">
+          <div
+            className={cn(
+              "review-eyebrow flex flex-none items-center gap-[7px] text-xs font-bold tracking-[0.08em] text-primary uppercase",
+            )}
+          >
+            <span
+              className={cn(
+                "review-mark inline-flex size-7 items-center justify-center rounded-md border shadow-xs",
+                pullRequestStateClass(review),
+              )}
+              title={pullRequestStateLabel(review)}
+            >
               <GitPullRequest aria-hidden="true" size={16} />
+              <span className="sr-only">{pullRequestStateLabel(review)}</span>
             </span>
             <span>{`PR #${review.number || "unknown"}`}</span>
-            <Badge className="state-badge" variant="secondary">
-              {review.state || "unknown"}
-            </Badge>
           </div>
           <h1 className="review-title m-0 min-w-[120px] flex-auto truncate font-display text-xl leading-[1.2] font-bold tracking-normal text-foreground max-[980px]:order-2 max-[980px]:basis-full max-[980px]:text-lg [&_a]:no-underline [&_a:hover]:text-primary">
             <a href={review.url}>{review.title || "Untitled pull request"}</a>
@@ -276,10 +284,16 @@ function ReviewHeader({ review }) {
             <UserRound aria-hidden="true" size={14} />
             <span className="author-name min-w-0 truncate">{review.authorLogin || "unknown"}</span>
           </Badge>
-          <Badge className="change-pill is-add min-w-0 font-mono" variant="outline">
+          <Badge
+            className="change-pill min-w-0 border-transparent bg-diff-add/15 font-mono text-diff-add"
+            variant="outline"
+          >
             +{review.additions ?? 0}
           </Badge>
-          <Badge className="change-pill is-del min-w-0 font-mono" variant="outline">
+          <Badge
+            className="change-pill min-w-0 border-transparent bg-diff-del/15 font-mono text-diff-del"
+            variant="outline"
+          >
             -{review.deletions ?? 0}
           </Badge>
         </div>
@@ -848,12 +862,7 @@ function FileNode({ data }) {
         type="source"
       />
       <div className="file-node-header absolute top-[11px] right-3.5 left-3.5 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3.5">
-        <ExplanationHoverCard
-          explanation={fileExplanation}
-          contextLabel="File: What / Why"
-          side="bottom"
-          title={filePath}
-        >
+        <ExplanationHoverCard explanation={fileExplanation} side="bottom">
           <Badge
             className="file-node-label max-w-full min-w-0 justify-self-start gap-2 overflow-hidden px-2.5 py-2 font-mono text-[13px] leading-none font-bold tracking-normal whitespace-nowrap text-primary select-none [&>span]:min-w-0 [&>span]:truncate data-[has-explanation=true]:pointer-events-auto data-[has-explanation=true]:cursor-help"
             data-has-explanation={Boolean(fileExplanation)}
@@ -893,11 +902,7 @@ function ReviewGroupNode({ data }) {
   const rootPreview = group.rootTitles.slice(0, 3).join(", ");
 
   return (
-    <ExplanationHoverCard
-      explanation={data.reviewSection.explanation}
-      contextLabel="Review group: What / Why"
-      title={data.reviewSection.title}
-    >
+    <ExplanationHoverCard explanation={data.reviewSection.explanation}>
       <Collapsible
         asChild
         onOpenChange={(expanded) => {
@@ -987,11 +992,7 @@ function ReviewSectionNode({ data }) {
       {showHandles ? (
         <Handle className="node-handle" position={Position.Top} type="target" />
       ) : null}
-      <ExplanationHoverCard
-        explanation={sectionExplanation}
-        contextLabel="Review section: What / Why"
-        title={data.reviewSection.title}
-      >
+      <ExplanationHoverCard explanation={sectionExplanation}>
         <header
           className={cn(
             "review-section-header flex h-[42px] w-full min-w-0 items-center overflow-hidden border-b border-border bg-muted px-3 text-xs leading-none text-card-foreground outline-none data-[slot=hover-card-trigger]:cursor-help focus-visible:shadow-[inset_0_0_0_3px_color-mix(in_oklab,var(--ring)_30%,transparent)]",
@@ -1053,12 +1054,7 @@ function ReviewBranch({
   const targetTitle = data?.targetTitle || "Child";
 
   return (
-    <ExplanationHoverCard
-      explanation={explanation}
-      contextLabel="Review branch: What / Why"
-      side="top"
-      title={`${sourceTitle} → ${targetTitle}`}
-    >
+    <ExplanationHoverCard explanation={explanation} side="top">
       <a
         aria-label={`${sourceTitle} to ${targetTitle}. ${plainTextExplanation(explanation)}`}
         className="review-branch-trigger"
@@ -1080,7 +1076,7 @@ function ReviewBranch({
   );
 }
 
-function ExplanationHoverCard({ children, explanation, contextLabel, side = "top", title }) {
+function ExplanationHoverCard({ children, explanation, side = "top" }) {
   const text = String(explanation || "").trim();
   if (!text) {
     return children;
@@ -1091,17 +1087,11 @@ function ExplanationHoverCard({ children, explanation, contextLabel, side = "top
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
       <HoverCardContent
         align="start"
-        className="explanation-hover-card nodrag nopan nowheel max-h-[min(640px,calc(100vh_-_32px))] w-[min(520px,calc(100vw_-_32px))] overflow-x-hidden overflow-y-auto border-[color-mix(in_oklab,var(--primary)_34%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_5%,var(--popover))] shadow-sm"
+        className="explanation-hover-card nodrag nopan nowheel max-h-[min(640px,calc(100vh_-_32px))] w-[min(520px,calc(100vw_-_32px))] overflow-x-hidden overflow-y-auto border-border bg-popover text-popover-foreground shadow-md"
         side={side}
         sideOffset={10}
       >
-        <div className="explanation-hover-label text-[11px] leading-[1.2] font-extrabold tracking-normal text-primary uppercase">
-          {contextLabel}
-        </div>
-        <div className="explanation-hover-title mt-1.5 text-sm leading-[1.35] font-extrabold tracking-normal text-foreground [overflow-wrap:anywhere]">
-          {title}
-        </div>
-        <div className="explanation-hover-body mt-2.5 text-[13px] leading-[1.55] text-muted-foreground [overflow-wrap:anywhere]">
+        <div className="explanation-hover-body text-base leading-relaxed font-medium text-foreground [overflow-wrap:anywhere] [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&_code]:rounded-sm [&_code]:bg-muted [&_code]:px-1 [&_code]:py-px [&_code]:font-mono [&_code]:text-[0.92em] [&_code]:text-foreground [&_li]:pl-0.5 [&_li]:marker:text-muted-foreground [&_ol]:my-3 [&_ol]:grid [&_ol]:gap-2 [&_ol]:pl-5 [&_p]:my-2.5 [&_ul]:my-3 [&_ul]:grid [&_ul]:gap-2 [&_ul]:pl-5">
           <ReactMarkdown>{text}</ReactMarkdown>
         </div>
       </HoverCardContent>
@@ -1114,6 +1104,28 @@ function plainTextExplanation(explanation) {
     .replace(/^\s*[-*+]\s+/gm, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function pullRequestStateClass(review) {
+  const state = String(review?.state || "").toUpperCase();
+  if (state === "MERGED") {
+    return "border-pr-merged/40 bg-pr-merged/15 text-pr-merged";
+  }
+  if (state === "CLOSED") {
+    return "border-pr-closed/40 bg-pr-closed/15 text-pr-closed";
+  }
+  if (state === "DRAFT" || review?.isDraft) {
+    return "border-pr-draft/40 bg-pr-draft/15 text-pr-draft";
+  }
+  return "border-pr-open/40 bg-pr-open/15 text-pr-open";
+}
+
+function pullRequestStateLabel(review) {
+  const state = String(review?.state || "").toUpperCase();
+  if (state === "MERGED") return "Merged pull request";
+  if (state === "CLOSED") return "Closed pull request";
+  if (state === "DRAFT" || review?.isDraft) return "Draft pull request";
+  return "Open pull request";
 }
 
 function UnchangedLinesGap({ nextChunk, prevChunk }) {
@@ -1453,7 +1465,7 @@ function buildSourceOrderSectionTree(file) {
         reviewPriority: file.reviewPriority,
         changeKind: file.changeKind,
         explanation:
-          "This view keeps every changed hunk together in source order for reviewers who prefer top-to-bottom file context. It intentionally presents source order rather than the Section Tree.",
+          "Every changed hunk stays together in source order for top-to-bottom file context, instead of the Section Tree grouping.",
         changedLineIds: file.changedLineIds || [],
         codeChunks: file.sourceCodeChunks || [],
         sourceOrderView: true,
