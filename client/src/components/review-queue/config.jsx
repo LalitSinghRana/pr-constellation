@@ -8,15 +8,7 @@ import {
   GitPullRequest,
 } from "lucide-react";
 
-export const LIFECYCLE_ORDER = [
-  "reviewed",
-  "new",
-  "approved",
-  "merged",
-  "draft",
-  "mine",
-  "other",
-];
+export const LIFECYCLE_ORDER = ["reviewed", "new", "approved", "merged", "draft", "mine", "other"];
 
 export const LIFECYCLE_META = {
   reviewed: { label: "Reviewed", score: 10, icon: Eye },

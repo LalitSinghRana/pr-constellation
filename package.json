@@ -8,7 +8,7 @@
   },
   "scripts": {
     "ab": "npm exec --yes --registry=https://registry.npmjs.org/ agent-browser@latest",
-    "check": "biome lint . --diagnostic-level=error && pnpm test && vite build client",
+    "check": "biome check . && pnpm test && vite build client",
     "dev": "node server/server.mjs",
     "format": "biome format --write .",
     "test": "node --test --test-concurrency=1",

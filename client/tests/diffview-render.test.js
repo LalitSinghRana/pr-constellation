@@ -43,11 +43,16 @@ const { DiffView, DiffModeEnum } = await import("@git-diff-view/react");
 // since review-tree-app.jsx is a browser JSX entry point (imports library CSS) and isn't importable
 // from a plain Node test.
 function tokensToAstNodes(tokens) {
-  return (tokens || []).map((token) => (
+  return (tokens || []).map((token) =>
     token.style
-      ? { children: [{ type: "text", value: token.content }], properties: { style: token.style }, tagName: "span", type: "element" }
-      : { type: "text", value: token.content }
-  ));
+      ? {
+          children: [{ type: "text", value: token.content }],
+          properties: { style: token.style },
+          tagName: "span",
+          type: "element",
+        }
+      : { type: "text", value: token.content },
+  );
 }
 
 function buildLineAstNodes(lines) {
@@ -72,7 +77,12 @@ function processPreHighlightedAst(ast) {
           if (!syntaxObj[lineNumber]) {
             node.startIndex = 0;
             node.endIndex = valueLength - 1;
-            syntaxObj[lineNumber] = { lineNumber, nodeList: [{ node, wrapper }], value: node.value, valueLength };
+            syntaxObj[lineNumber] = {
+              lineNumber,
+              nodeList: [{ node, wrapper }],
+              value: node.value,
+              valueLength,
+            };
           } else {
             node.startIndex = syntaxObj[lineNumber].valueLength;
             node.endIndex = node.startIndex + valueLength - 1;
@@ -90,11 +100,22 @@ function processPreHighlightedAst(ast) {
           const segmentValue = isLastSegment ? segment : `${segment}\n`;
           const segmentLineNumber = segmentIndex === 0 ? lineNumber : ++lineNumber;
           const segmentValueLength = segmentValue.length;
-          const segmentNode = { endIndex: Infinity, lineNumber: segmentLineNumber, startIndex: Infinity, type: "text", value: segmentValue };
+          const segmentNode = {
+            endIndex: Infinity,
+            lineNumber: segmentLineNumber,
+            startIndex: Infinity,
+            type: "text",
+            value: segmentValue,
+          };
           if (!syntaxObj[segmentLineNumber]) {
             segmentNode.startIndex = 0;
             segmentNode.endIndex = segmentValueLength - 1;
-            syntaxObj[segmentLineNumber] = { lineNumber: segmentLineNumber, nodeList: [{ node: segmentNode, wrapper }], value: segmentValue, valueLength: segmentValueLength };
+            syntaxObj[segmentLineNumber] = {
+              lineNumber: segmentLineNumber,
+              nodeList: [{ node: segmentNode, wrapper }],
+              value: segmentValue,
+              valueLength: segmentValueLength,
+            };
           } else {
             segmentNode.startIndex = syntaxObj[segmentLineNumber].valueLength;
             segmentNode.endIndex = segmentNode.startIndex + segmentValueLength - 1;
@@ -117,7 +138,7 @@ function processPreHighlightedAst(ast) {
   return { syntaxFileLineNumber: lineNumber, syntaxFileObject: syntaxObj };
 }
 
-function createPreHighlightedHighlighter({ newAst, newFileContent, oldAst, oldFileContent }) {
+function createPreHighlightedHighlighter({ newAst, newFileContent, oldAst }) {
   return {
     getAST: (raw) => (raw === newFileContent ? newAst : oldAst),
     hasRegisteredCurrentLang: () => true,
@@ -219,8 +240,20 @@ function DiffChunkView({ chunk }) {
 const chunk = {
   file: "config.js",
   lines: [
-    { content: "    width: 24,", oldLine: 82, newLine: null, syntaxTokens: [{ content: "    width: 24," }], type: "del" },
-    { content: "    width: 36,", oldLine: null, newLine: 69, syntaxTokens: [{ content: "    width: 36," }], type: "add" },
+    {
+      content: "    width: 24,",
+      oldLine: 82,
+      newLine: null,
+      syntaxTokens: [{ content: "    width: 24," }],
+      type: "del",
+    },
+    {
+      content: "    width: 36,",
+      oldLine: null,
+      newLine: 69,
+      syntaxTokens: [{ content: "    width: 36," }],
+      type: "add",
+    },
   ],
 };
 
@@ -236,11 +269,21 @@ await act(async () => {
 });
 
 const html = container.innerHTML;
-const oldGutterNumbers = [...container.querySelectorAll("[data-line-old-num]")].map((el) => el.textContent);
-const newGutterNumbers = [...container.querySelectorAll("[data-line-new-num]")].map((el) => el.textContent);
-root.unmount();
+const oldGutterNumbers = [...container.querySelectorAll("[data-line-old-num]")].map(
+  (el) => el.textContent,
+);
+const newGutterNumbers = [...container.querySelectorAll("[data-line-new-num]")].map(
+  (el) => el.textContent,
+);
+await act(async () => {
+  root.unmount();
+});
 
-assert.match(html, /24/, "the deleted line's content should render, not collapse into an empty diff");
+assert.match(
+  html,
+  /24/,
+  "the deleted line's content should render, not collapse into an empty diff",
+);
 assert.match(html, /36/, "the added line's content should render, not collapse into an empty diff");
 assert.match(
   html,

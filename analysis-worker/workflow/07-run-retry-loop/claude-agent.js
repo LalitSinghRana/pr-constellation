@@ -6,10 +6,9 @@ import {
   USE_DETACHED_PROCESS_GROUP,
 } from "../child-process-termination.js";
 
-const REVIEW_TREES_SCHEMA_PATH = fileURLToPath(new URL(
-  "../04-generate-candidate-analysis/03-create-review-trees/schema.json",
-  import.meta.url,
-));
+const REVIEW_TREES_SCHEMA_PATH = fileURLToPath(
+  new URL("../04-generate-candidate-analysis/03-create-review-trees/schema.json", import.meta.url),
+);
 const DEFAULT_CLAUDE_EXEC_TIMEOUT_MS = 900_000;
 const UNSUPPORTED_CLAUDE_SCHEMA_KEYWORDS = new Set([
   "exclusiveMaximum",
@@ -26,15 +25,8 @@ const UNSUPPORTED_CLAUDE_SCHEMA_KEYWORDS = new Set([
   "uniqueItems",
 ]);
 
-export function buildClaudeExecArgs({
-  model,
-  reasoningEffort,
-  schema,
-}) {
-  if (
-    schema == null
-    || (typeof schema === "string" && !schema.trim())
-  ) {
+export function buildClaudeExecArgs({ model, reasoningEffort, schema }) {
+  if (schema == null || (typeof schema === "string" && !schema.trim())) {
     throw new TypeError("schema must contain a JSON Schema.");
   }
   let parsedSchema;
@@ -89,9 +81,7 @@ export function sanitizeClaudeSchema(value) {
 
 export function parseClaudeStreamJson(stdout) {
   const events = parseStreamEvents(stdout);
-  const resultEvent = events
-    .filter((event) => event?.type === "result")
-    .at(-1) || null;
+  const resultEvent = events.filter((event) => event?.type === "result").at(-1) || null;
 
   return {
     events,
@@ -103,9 +93,7 @@ export function parseClaudeStreamJson(stdout) {
 
 export function parseClaudeJsonUsage(stdout) {
   const events = parseStreamEvents(stdout);
-  const resultEvent = events
-    .filter((event) => event?.type === "result")
-    .at(-1) || null;
+  const resultEvent = events.filter((event) => event?.type === "result").at(-1) || null;
   return usageFromEvents(events, resultEvent);
 }
 
@@ -122,9 +110,9 @@ export async function runClaudeExec({
   throwIfAborted(signal);
   assertTimeout(timeoutMs);
 
-  const schema = JSON.stringify(sanitizeClaudeSchema(
-    JSON.parse(await readFile(schemaPath, "utf8")),
-  ));
+  const schema = JSON.stringify(
+    sanitizeClaudeSchema(JSON.parse(await readFile(schemaPath, "utf8"))),
+  );
   throwIfAborted(signal);
 
   const args = buildClaudeExecArgs({
@@ -194,10 +182,7 @@ export async function runClaudeExec({
         rejectOnce(createClaudeAbortError(signal?.reason, stdout));
         return;
       }
-      rejectOnce(createClaudeExecError(
-        `Failed to start claude: ${error.message}`,
-        stdout,
-      ));
+      rejectOnce(createClaudeExecError(`Failed to start claude: ${error.message}`, stdout));
     });
 
     child.on("close", async (code) => {
@@ -213,18 +198,17 @@ export async function runClaudeExec({
         return;
       }
       if (timedOut) {
-        rejectOnce(createClaudeExecError(
-          `claude --print timed out after ${timeoutMs}ms.`,
-          stdout,
-        ));
+        rejectOnce(createClaudeExecError(`claude --print timed out after ${timeoutMs}ms.`, stdout));
         return;
       }
       if (code !== 0) {
         const details = summarizeClaudeFailure({ stderr, stdout });
-        rejectOnce(createClaudeExecError(
-          `claude --print failed with exit code ${code}${details ? `:\n${details}` : ""}`,
-          stdout,
-        ));
+        rejectOnce(
+          createClaudeExecError(
+            `claude --print failed with exit code ${code}${details ? `:\n${details}` : ""}`,
+            stdout,
+          ),
+        );
         return;
       }
 
@@ -233,9 +217,7 @@ export async function runClaudeExec({
         parsed = parseClaudeStreamJson(stdout);
         assertSuccessfulResult(parsed.resultEvent);
         if (!isJsonObject(parsed.structuredOutput)) {
-          throw new Error(
-            "Claude did not return a structured JSON object.",
-          );
+          throw new Error("Claude did not return a structured JSON object.");
         }
         throwIfAborted(signal);
         await writeFile(
@@ -312,9 +294,7 @@ function parseStructuredOutput(resultEvent) {
     return null;
   }
 
-  const value =
-    resultEvent.structured_output
-    ?? resultEvent.structuredOutput;
+  const value = resultEvent.structured_output ?? resultEvent.structuredOutput;
   if (value !== undefined) {
     return parsePossibleJson(value);
   }
@@ -337,14 +317,12 @@ function assertSuccessfulResult(resultEvent) {
     throw new Error("Claude stream ended without a result event.");
   }
   if (
-    resultEvent.is_error === true
-    || resultEvent.subtype === "error"
-    || resultEvent.subtype === "error_during_execution"
+    resultEvent.is_error === true ||
+    resultEvent.subtype === "error" ||
+    resultEvent.subtype === "error_during_execution"
   ) {
     const detail = readClaudeErrorMessage(resultEvent);
-    throw new Error(
-      `Claude returned an unsuccessful result${detail ? `: ${detail}` : "."}`,
-    );
+    throw new Error(`Claude returned an unsuccessful result${detail ? `: ${detail}` : "."}`);
   }
 }
 
@@ -357,15 +335,16 @@ function usageFromEvents(events, resultEvent) {
   let anonymousIndex = 0;
   for (const event of events) {
     if (
-      event?.type !== "assistant"
-      || !event.message?.usage
-      || typeof event.message.usage !== "object"
+      event?.type !== "assistant" ||
+      !event.message?.usage ||
+      typeof event.message.usage !== "object"
     ) {
       continue;
     }
-    const key = typeof event.message.id === "string" && event.message.id
-      ? event.message.id
-      : `anonymous-${anonymousIndex++}`;
+    const key =
+      typeof event.message.id === "string" && event.message.id
+        ? event.message.id
+        : `anonymous-${anonymousIndex++}`;
     assistantUsage.set(key, normalizeClaudeUsage(event.message.usage));
   }
 
@@ -377,23 +356,15 @@ function usageFromEvents(events, resultEvent) {
 }
 
 function normalizeClaudeUsage(value) {
-  const uncachedInputTokens = nonNegativeNumber(
-    value?.input_tokens ?? value?.inputTokens,
-  );
+  const uncachedInputTokens = nonNegativeNumber(value?.input_tokens ?? value?.inputTokens);
   const cacheCreationInputTokens = nonNegativeNumber(
-    value?.cache_creation_input_tokens
-    ?? value?.cacheCreationInputTokens,
+    value?.cache_creation_input_tokens ?? value?.cacheCreationInputTokens,
   );
   const cachedInputTokens = nonNegativeNumber(
-    value?.cache_read_input_tokens
-    ?? value?.cached_input_tokens
-    ?? value?.cachedInputTokens,
+    value?.cache_read_input_tokens ?? value?.cached_input_tokens ?? value?.cachedInputTokens,
   );
-  const outputTokens = nonNegativeNumber(
-    value?.output_tokens ?? value?.outputTokens,
-  );
-  const inputTokens =
-    uncachedInputTokens + cacheCreationInputTokens + cachedInputTokens;
+  const outputTokens = nonNegativeNumber(value?.output_tokens ?? value?.outputTokens);
+  const inputTokens = uncachedInputTokens + cacheCreationInputTokens + cachedInputTokens;
 
   return {
     inputTokens,
@@ -426,22 +397,13 @@ function nonNegativeNumber(value) {
 
 function summarizeClaudeFailure({ stderr, stdout }) {
   const events = parseStreamEvents(stdout);
-  const resultEvent = events
-    .filter((event) => event?.type === "result")
-    .at(-1);
+  const resultEvent = events.filter((event) => event?.type === "result").at(-1);
   const resultMessage = readClaudeErrorMessage(resultEvent);
-  return [
-    resultMessage,
-    String(stderr || "").trim(),
-  ].filter(Boolean).join("\n").slice(-4000);
+  return [resultMessage, String(stderr || "").trim()].filter(Boolean).join("\n").slice(-4000);
 }
 
 function readClaudeErrorMessage(event) {
-  for (const value of [
-    event?.error?.message,
-    event?.message,
-    event?.result,
-  ]) {
+  for (const value of [event?.error?.message, event?.message, event?.result]) {
     if (typeof value === "string" && value.trim()) {
       return value.trim();
     }
@@ -468,13 +430,9 @@ function throwIfAborted(signal) {
 }
 
 function createAbortError(reason) {
-  const message = reason instanceof Error && reason.message
-    ? reason.message
-    : "The operation was aborted.";
-  const error = new Error(
-    message,
-    reason === undefined ? undefined : { cause: reason },
-  );
+  const message =
+    reason instanceof Error && reason.message ? reason.message : "The operation was aborted.";
+  const error = new Error(message, reason === undefined ? undefined : { cause: reason });
   error.name = "AbortError";
   error.code = "ABORT_ERR";
   return error;
@@ -485,9 +443,5 @@ function isAbortError(error) {
 }
 
 function isJsonObject(value) {
-  return Boolean(
-    value
-    && typeof value === "object"
-    && !Array.isArray(value),
-  );
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

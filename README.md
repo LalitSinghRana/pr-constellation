@@ -20,8 +20,8 @@ These directories are ownership boundaries inside one Node and pnpm project,
 not independently packaged workspaces.
 
 One root `biome.json` supplies linting and formatting for all three areas. Run
-`pnpm check` for lint, tests, and a production client build; run `pnpm format`
-to apply the formatter.
+`pnpm check` for formatting, lint, tests, and a production client build; run
+`pnpm format` to apply the formatter.
 
 ## Dirty v0
 

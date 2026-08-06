@@ -4,22 +4,18 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import {
-  createChildProcessTerminator,
-  USE_DETACHED_PROCESS_GROUP,
-} from "../child-process-termination.js";
-import {
   isAcceptableFileTreeRoot,
   validateReviewAnalysis,
   validateReviewStacks,
 } from "../05-validate-candidate/validate-analysis.js";
+import {
+  createChildProcessTerminator,
+  USE_DETACHED_PROCESS_GROUP,
+} from "../child-process-termination.js";
 
 const WORKFLOW_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CANDIDATE_WORKFLOW_DIR = path.join(WORKFLOW_DIR, "04-generate-candidate-analysis");
-const SHARED_PROMPT_PATH = path.join(
-  CANDIDATE_WORKFLOW_DIR,
-  "01-shared-contract",
-  "prompt.md",
-);
+const SHARED_PROMPT_PATH = path.join(CANDIDATE_WORKFLOW_DIR, "01-shared-contract", "prompt.md");
 const REVIEW_TREES_PROMPT_PATH = path.join(
   CANDIDATE_WORKFLOW_DIR,
   "03-create-review-trees",
@@ -59,11 +55,7 @@ const MAX_FILES_PER_REVIEW_TREES_SHARD = 15;
 // Retained for offline benchmarking; deterministic validation is the active gate.
 const SEMANTIC_JUDGE_ENABLED = false;
 
-export {
-  computeFileTreeMetrics,
-  materializeLineOwnership,
-  validateReviewAnalysis,
-};
+export { computeFileTreeMetrics, materializeLineOwnership, validateReviewAnalysis };
 
 export async function runCodexReviewAnalysis({
   executeCodex = runCodexExec,
@@ -116,164 +108,157 @@ export async function runCodexReviewAnalysis({
         ...computeFileTreeMetrics({ analysis: result.analysis, inventory }),
       }),
       run: async () => {
-      await mkdir(resolvedRunDir, { recursive: true });
+        await mkdir(resolvedRunDir, { recursive: true });
 
-      const [sharedPrompt, reviewTreesPrompt, judgePrompt, reviewStacksPrompt] = await Promise.all([
-        readFile(SHARED_PROMPT_PATH, "utf8"),
-        readFile(REVIEW_TREES_PROMPT_PATH, "utf8"),
-        readFile(JUDGE_PROMPT_PATH, "utf8"),
-        readFile(REVIEW_STACKS_PROMPT_PATH, "utf8"),
-      ]);
-      throwIfAborted(signal);
-      inventory = await readJson(path.join(resolvedRunDir, "diff-inventory.json"));
-      const metadataText = await readFile(
-        path.join(resolvedRunDir, "metadata.json"),
-        "utf8",
-      );
-      const structuredDiffText = `${JSON.stringify(buildStructuredDiff(inventory))}\n`;
-      const reviewStacksDocument = await runInstrumentedStage({
-        emitEvent,
-        label: "Review Stacks",
-        metricsForResult: (document) => ({
-          stackCount: document.reviewStacks.length,
-        }),
-        parentStageId: "analysis",
-        run: async () => {
-          const reviewStacksPromptPath = path.join(resolvedRunDir, "review-stacks-prompt.md");
-          const reviewStacksRawPath = path.join(resolvedRunDir, "review-stacks.raw.json");
-          const document = await runJsonStage({
-            cwd: resolvedRunDir,
-            executionConfig,
-            executeCodex: executeCodexWithUsage,
-            outputPath: reviewStacksRawPath,
-            prompt: buildReviewStacksPrompt({
-              inventory,
-              metadataText,
-              reviewStacksPrompt,
-            }),
-            promptPath: reviewStacksPromptPath,
-            schemaPath: REVIEW_STACKS_SCHEMA_PATH,
-          });
-          validateReviewStacks(document, { inventory });
-          await writeFile(
-            path.join(resolvedRunDir, "review-stacks.json"),
-            `${JSON.stringify(document, null, 2)}\n`,
-            "utf8",
-          );
-          return document;
-        },
-        stageId: "analysis.review-stacks",
-      });
-      const analysisPath = path.join(resolvedRunDir, "analysis.json");
-      const candidatePath = path.join(resolvedRunDir, "analysis.candidate.json");
-      const judgePath = path.join(resolvedRunDir, "judge.json");
-      const failures = [];
-      let previousCandidate;
-      let previousEvaluation;
-      let analysis;
-      let judge;
-      let finalCandidateRawOutputPath;
-      let finalJudgeRawOutputPath;
-      let finalPromptPath;
-      let rawOutputPath;
-
-      for (let attempt = 1; attempt <= MAX_ANALYSIS_ATTEMPTS; attempt += 1) {
+        const [sharedPrompt, reviewTreesPrompt, judgePrompt, reviewStacksPrompt] =
+          await Promise.all([
+            readFile(SHARED_PROMPT_PATH, "utf8"),
+            readFile(REVIEW_TREES_PROMPT_PATH, "utf8"),
+            readFile(JUDGE_PROMPT_PATH, "utf8"),
+            readFile(REVIEW_STACKS_PROMPT_PATH, "utf8"),
+          ]);
         throwIfAborted(signal);
-        const attemptUsageBefore = copyUsage(usage);
-        const attemptResult = await runInstrumentedStage({
-          attempt,
+        inventory = await readJson(path.join(resolvedRunDir, "diff-inventory.json"));
+        const metadataText = await readFile(path.join(resolvedRunDir, "metadata.json"), "utf8");
+        const structuredDiffText = `${JSON.stringify(buildStructuredDiff(inventory))}\n`;
+        const reviewStacksDocument = await runInstrumentedStage({
           emitEvent,
-          errorForResult: ({ attemptFailures }) => attemptFailures.join("\n"),
-          label: `Analysis attempt ${attempt}`,
-          metricsForResult: ({
-            attemptFailures,
-            evaluation,
-            repairScope,
-            strategy,
-          }) => ({
-            affectedFileCount: repairScope?.fileIds.length || 0,
-            judgeVerdict: evaluation?.judge?.verdict || null,
-            strategy,
-            validationPassed: evaluation?.validationFailure === null,
-            willRetry: attemptFailures.length > 0 && attempt < MAX_ANALYSIS_ATTEMPTS,
-            ...usageMetrics(subtractUsage(usage, attemptUsageBefore)),
+          label: "Review Stacks",
+          metricsForResult: (document) => ({
+            stackCount: document.reviewStacks.length,
           }),
           parentStageId: "analysis",
-          run: async () => runAnalysisAttempt({
+          run: async () => {
+            const reviewStacksPromptPath = path.join(resolvedRunDir, "review-stacks-prompt.md");
+            const reviewStacksRawPath = path.join(resolvedRunDir, "review-stacks.raw.json");
+            const document = await runJsonStage({
+              cwd: resolvedRunDir,
+              executionConfig,
+              executeCodex: executeCodexWithUsage,
+              outputPath: reviewStacksRawPath,
+              prompt: buildReviewStacksPrompt({
+                inventory,
+                metadataText,
+                reviewStacksPrompt,
+              }),
+              promptPath: reviewStacksPromptPath,
+              schemaPath: REVIEW_STACKS_SCHEMA_PATH,
+            });
+            validateReviewStacks(document, { inventory });
+            await writeFile(
+              path.join(resolvedRunDir, "review-stacks.json"),
+              `${JSON.stringify(document, null, 2)}\n`,
+              "utf8",
+            );
+            return document;
+          },
+          stageId: "analysis.review-stacks",
+        });
+        const analysisPath = path.join(resolvedRunDir, "analysis.json");
+        const candidatePath = path.join(resolvedRunDir, "analysis.candidate.json");
+        const judgePath = path.join(resolvedRunDir, "judge.json");
+        const failures = [];
+        let previousCandidate;
+        let previousEvaluation;
+        let analysis;
+        let judge;
+        let finalCandidateRawOutputPath;
+        let finalJudgeRawOutputPath;
+        let finalPromptPath;
+        let rawOutputPath;
+
+        for (let attempt = 1; attempt <= MAX_ANALYSIS_ATTEMPTS; attempt += 1) {
+          throwIfAborted(signal);
+          const attemptUsageBefore = copyUsage(usage);
+          const attemptResult = await runInstrumentedStage({
             attempt,
-            candidatePath,
             emitEvent,
-            executionConfig,
-            executeCodex: executeCodexWithUsage,
-            inventory,
-            judgeExecutionConfig,
-            judgePrompt,
-            metadataText,
-            reviewTreesPrompt,
-            previousCandidate,
-            previousEvaluation,
-            previousFailure: failures.at(-1),
-            resolvedRunDir,
-            reviewStacks: reviewStacksDocument.reviewStacks,
-            sharedPrompt,
-            structuredDiffText,
-            usage,
-          }),
-          stageId: `analysis.attempt-${attempt}`,
-          statusForResult: ({ attemptFailures }) => (
-            attemptFailures.length === 0 ? "completed" : "failed"
-          ),
-        });
+            errorForResult: ({ attemptFailures }) => attemptFailures.join("\n"),
+            label: `Analysis attempt ${attempt}`,
+            metricsForResult: ({ attemptFailures, evaluation, repairScope, strategy }) => ({
+              affectedFileCount: repairScope?.fileIds.length || 0,
+              judgeVerdict: evaluation?.judge?.verdict || null,
+              strategy,
+              validationPassed: evaluation?.validationFailure === null,
+              willRetry: attemptFailures.length > 0 && attempt < MAX_ANALYSIS_ATTEMPTS,
+              ...usageMetrics(subtractUsage(usage, attemptUsageBefore)),
+            }),
+            parentStageId: "analysis",
+            run: async () =>
+              runAnalysisAttempt({
+                attempt,
+                candidatePath,
+                emitEvent,
+                executionConfig,
+                executeCodex: executeCodexWithUsage,
+                inventory,
+                judgeExecutionConfig,
+                judgePrompt,
+                metadataText,
+                reviewTreesPrompt,
+                previousCandidate,
+                previousEvaluation,
+                previousFailure: failures.at(-1),
+                resolvedRunDir,
+                reviewStacks: reviewStacksDocument.reviewStacks,
+                sharedPrompt,
+                structuredDiffText,
+                usage,
+              }),
+            stageId: `analysis.attempt-${attempt}`,
+            statusForResult: ({ attemptFailures }) =>
+              attemptFailures.length === 0 ? "completed" : "failed",
+          });
 
-        if (attemptResult.attemptFailures.length === 0) {
-          analysis = attemptResult.candidate;
-          judge = attemptResult.attemptJudge;
-          finalJudgeRawOutputPath = attemptResult.artifacts.judgeRawPath;
-          finalPromptPath = attemptResult.promptPath;
-          rawOutputPath = attemptResult.artifacts.analysisRawPath;
-          finalCandidateRawOutputPath = attemptResult.candidateRawOutputPath;
-          break;
+          if (attemptResult.attemptFailures.length === 0) {
+            analysis = attemptResult.candidate;
+            judge = attemptResult.attemptJudge;
+            finalJudgeRawOutputPath = attemptResult.artifacts.judgeRawPath;
+            finalPromptPath = attemptResult.promptPath;
+            rawOutputPath = attemptResult.artifacts.analysisRawPath;
+            finalCandidateRawOutputPath = attemptResult.candidateRawOutputPath;
+            break;
+          }
+
+          const attemptFailure = formatAttemptFailure({
+            attempt,
+            failures: attemptResult.attemptFailures,
+          });
+          failures.push(attemptFailure);
+          previousCandidate = attemptResult.candidate || previousCandidate;
+          previousEvaluation = attemptResult.evaluation || previousEvaluation;
+
+          if (attempt === MAX_ANALYSIS_ATTEMPTS) {
+            throw new Error(
+              `PR review tree analysis failed after ${MAX_ANALYSIS_ATTEMPTS} complete attempts:\n\n${failures.join("\n\n")}`,
+            );
+          }
         }
 
-        const attemptFailure = formatAttemptFailure({
-          attempt,
-          failures: attemptResult.attemptFailures,
+        throwIfAborted(signal);
+        await runInstrumentedStage({
+          emitEvent,
+          label: "Persist final analysis artifacts",
+          parentStageId: "analysis",
+          run: async () => {
+            await writeFile(analysisPath, `${JSON.stringify(analysis, null, 2)}\n`, "utf8");
+            await writeFile(judgePath, `${JSON.stringify(judge, null, 2)}\n`, "utf8");
+          },
+          stageId: "analysis.persist-artifacts",
         });
-        failures.push(attemptFailure);
-        previousCandidate = attemptResult.candidate || previousCandidate;
-        previousEvaluation = attemptResult.evaluation || previousEvaluation;
 
-        if (attempt === MAX_ANALYSIS_ATTEMPTS) {
-          throw new Error(
-            `PR review tree analysis failed after ${MAX_ANALYSIS_ATTEMPTS} complete attempts:\n\n${failures.join("\n\n")}`,
-          );
-        }
-      }
-
-      throwIfAborted(signal);
-      await runInstrumentedStage({
-        emitEvent,
-        label: "Persist final analysis artifacts",
-        parentStageId: "analysis",
-        run: async () => {
-          await writeFile(analysisPath, `${JSON.stringify(analysis, null, 2)}\n`, "utf8");
-          await writeFile(judgePath, `${JSON.stringify(judge, null, 2)}\n`, "utf8");
-        },
-        stageId: "analysis.persist-artifacts",
-      });
-
-      return {
-        analysis,
-        analysisPath,
-        candidateRawOutputPath: finalCandidateRawOutputPath,
-        execution: reportedExecutionConfig(executionConfig),
-        judge,
-        judgePath,
-        judgeRawOutputPath: finalJudgeRawOutputPath,
-        promptPath: finalPromptPath,
-        rawOutputPath,
-        usage: copyUsage(usage),
-      };
+        return {
+          analysis,
+          analysisPath,
+          candidateRawOutputPath: finalCandidateRawOutputPath,
+          execution: reportedExecutionConfig(executionConfig),
+          judge,
+          judgePath,
+          judgeRawOutputPath: finalJudgeRawOutputPath,
+          promptPath: finalPromptPath,
+          rawOutputPath,
+          usage: copyUsage(usage),
+        };
       },
       stageId: "analysis",
     });
@@ -308,21 +293,20 @@ async function runAnalysisAttempt({
   const artifacts = buildAttemptArtifacts({ attempt, runDir: resolvedRunDir });
   const attemptFailures = [];
   const attemptStageId = `analysis.attempt-${attempt}`;
-  const repairScope = attempt > 1 && previousCandidate && previousEvaluation
-    ? resolveRepairScope({
-        candidate: previousCandidate,
-        evaluation: previousEvaluation,
-        inventory,
-      })
-    : null;
-  const strategy = attempt === 1
-    ? "full-generation"
-    : repairScope
-      ? "targeted-repair"
-      : "full-regeneration";
-  const generationStageId = strategy === "targeted-repair"
-    ? `${attemptStageId}.repair-section-trees`
-    : `${attemptStageId}.generate-review-trees`;
+  const repairScope =
+    attempt > 1 && previousCandidate && previousEvaluation
+      ? resolveRepairScope({
+          candidate: previousCandidate,
+          evaluation: previousEvaluation,
+          inventory,
+        })
+      : null;
+  const strategy =
+    attempt === 1 ? "full-generation" : repairScope ? "targeted-repair" : "full-regeneration";
+  const generationStageId =
+    strategy === "targeted-repair"
+      ? `${attemptStageId}.repair-section-trees`
+      : `${attemptStageId}.generate-review-trees`;
   let attemptJudge;
   let candidate;
   let candidateRawOutputPath;
@@ -334,9 +318,8 @@ async function runAnalysisAttempt({
     candidate = await runInstrumentedStage({
       attempt,
       emitEvent,
-      label: strategy === "targeted-repair"
-        ? "Repair affected Section Trees"
-        : "Generate review trees",
+      label:
+        strategy === "targeted-repair" ? "Repair affected Section Trees" : "Generate review trees",
       metricsForError: () => ({
         affectedFileCount: repairScope?.fileIds.length || 0,
         strategy,
@@ -369,46 +352,45 @@ async function runAnalysisAttempt({
 
         promptPath = artifacts.reviewTreesPromptPath;
         candidateRawOutputPath = artifacts.reviewTreesRawPath;
-        const generated = reviewStacks.length > 1
-          ? await runShardedReviewTrees({
-              artifacts,
-              cwd: resolvedRunDir,
-              executionConfig,
-              executeCodex,
-              inventory,
-              metadataText,
-              reviewTreesPrompt,
-              previousFailure,
-              sharedPrompt,
-              reviewStacks,
-            })
-          : await runJsonStage({
-              cwd: resolvedRunDir,
-              executionConfig,
-              executeCodex,
-              outputPath: artifacts.reviewTreesRawPath,
-              prompt: buildReviewTreesPrompt({
+        const generated =
+          reviewStacks.length > 1
+            ? await runShardedReviewTrees({
+                artifacts,
+                cwd: resolvedRunDir,
+                executionConfig,
+                executeCodex,
+                inventory,
                 metadataText,
                 reviewTreesPrompt,
                 previousFailure,
                 sharedPrompt,
-                structuredDiffText,
-              }),
-              promptPath: artifacts.reviewTreesPromptPath,
-              schemaPath: REVIEW_TREES_SCHEMA_PATH,
-            }).then((result) => assembleReviewAnalysis({
-              generated: result,
-              reviewStacks,
-            }));
+                reviewStacks,
+              })
+            : await runJsonStage({
+                cwd: resolvedRunDir,
+                executionConfig,
+                executeCodex,
+                outputPath: artifacts.reviewTreesRawPath,
+                prompt: buildReviewTreesPrompt({
+                  metadataText,
+                  reviewTreesPrompt,
+                  previousFailure,
+                  sharedPrompt,
+                  structuredDiffText,
+                }),
+                promptPath: artifacts.reviewTreesPromptPath,
+                schemaPath: REVIEW_TREES_SCHEMA_PATH,
+              }).then((result) =>
+                assembleReviewAnalysis({
+                  generated: result,
+                  reviewStacks,
+                }),
+              );
         return materializeLineOwnership(generated, { inventory });
       },
       stageId: generationStageId,
     });
-    await writeFile(
-      artifacts.analysisRawPath,
-      `${JSON.stringify(candidate, null, 2)}\n`,
-      "utf8",
-    );
+    await writeFile(artifacts.analysisRawPath, `${JSON.stringify(candidate, null, 2)}\n`, "utf8");
   } catch (error) {
     if (isAbortError(error)) {
       throw error;
@@ -417,11 +399,7 @@ async function runAnalysisAttempt({
   }
 
   if (candidate) {
-    await writeFile(
-      candidatePath,
-      `${JSON.stringify(candidate, null, 2)}\n`,
-      "utf8",
-    );
+    await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`, "utf8");
     const candidateText = `${JSON.stringify(compactLineOwnership(candidate))}\n`;
 
     evaluation = await runCandidateEvaluation({
@@ -518,27 +496,32 @@ async function runShardedReviewTrees({
   });
 
   const fileTrees = new Map();
-  await Promise.all([...shardIndicesByStackId].map(async ([stackId, indices]) => {
-    if (indices.length === 1 && results[indices[0]]?.fileTree) {
-      fileTrees.set(stackId, results[indices[0]].fileTree);
-      return;
-    }
+  await Promise.all(
+    [...shardIndicesByStackId].map(async ([stackId, indices]) => {
+      if (indices.length === 1 && results[indices[0]]?.fileTree) {
+        fileTrees.set(stackId, results[indices[0]].fileTree);
+        return;
+      }
 
-    const stack = reviewStacks.find((candidate) => candidate.id === stackId);
-    const stackFileIds = new Set(stack.fileIds);
-    const files = results
-      .flatMap((result) => result.files || [])
-      .filter((file) => stackFileIds.has(file.id));
-    fileTrees.set(stackId, await runJsonStage({
-      cwd,
-      executionConfig,
-      executeCodex,
-      outputPath: `${outputBase}.file-tree.${stackId}.json`,
-      prompt: buildFileTreePrompt({ files, metadataText, previousFailure, stack }),
-      promptPath: `${promptBase}.file-tree.${stackId}.md`,
-      schemaPath: FILE_TREE_SCHEMA_PATH,
-    }));
-  }));
+      const stack = reviewStacks.find((candidate) => candidate.id === stackId);
+      const stackFileIds = new Set(stack.fileIds);
+      const files = results
+        .flatMap((result) => result.files || [])
+        .filter((file) => stackFileIds.has(file.id));
+      fileTrees.set(
+        stackId,
+        await runJsonStage({
+          cwd,
+          executionConfig,
+          executeCodex,
+          outputPath: `${outputBase}.file-tree.${stackId}.json`,
+          prompt: buildFileTreePrompt({ files, metadataText, previousFailure, stack }),
+          promptPath: `${promptBase}.file-tree.${stackId}.md`,
+          schemaPath: FILE_TREE_SCHEMA_PATH,
+        }),
+      );
+    }),
+  );
 
   const { fileTree: _discardedShardTree, ...firstResult } = results[0];
   const merged = {
@@ -751,11 +734,8 @@ async function runCandidateEvaluation({
           judge = await runInstrumentedStage({
             attempt,
             emitEvent,
-            errorForResult: (judgeResult) => (
-              judgeResult.verdict === "pass"
-                ? undefined
-                : formatJudgeFailure(judgeResult)
-            ),
+            errorForResult: (judgeResult) =>
+              judgeResult.verdict === "pass" ? undefined : formatJudgeFailure(judgeResult),
             label: "AI semantic judge",
             metricsForError: () => ({
               ...executionMetrics(judgeExecutionConfig),
@@ -784,9 +764,8 @@ async function runCandidateEvaluation({
               return judgeResult;
             },
             stageId: `${evaluationStageId}.judge-candidate`,
-            statusForResult: (judgeResult) => (
-              judgeResult.verdict === "pass" ? "completed" : "failed"
-            ),
+            statusForResult: (judgeResult) =>
+              judgeResult.verdict === "pass" ? "completed" : "failed",
           });
         } catch (error) {
           if (isAbortError(error)) {
@@ -828,9 +807,7 @@ async function runCandidateEvaluation({
         judge,
         judgeFailure,
         judgeSkipped,
-        passed: validationFailure === null && (
-          judgeSkipped || judge?.verdict === "pass"
-        ),
+        passed: validationFailure === null && (judgeSkipped || judge?.verdict === "pass"),
         validationFailure,
       };
     },
@@ -971,20 +948,23 @@ async function runTargetedRepair({
   promptPath,
   repairScope,
 }) {
-  const repairPayload = materializeLineOwnership(await runJsonStage({
-    cwd,
-    executionConfig,
-    executeCodex,
-    outputPath,
-    prompt: buildTargetedRepairPrompt({
-      candidate,
-      evaluation,
-      inventory,
-      repairScope,
+  const repairPayload = materializeLineOwnership(
+    await runJsonStage({
+      cwd,
+      executionConfig,
+      executeCodex,
+      outputPath,
+      prompt: buildTargetedRepairPrompt({
+        candidate,
+        evaluation,
+        inventory,
+        repairScope,
+      }),
+      promptPath,
+      schemaPath: REVIEW_TREES_SCHEMA_PATH,
     }),
-    promptPath,
-    schemaPath: REVIEW_TREES_SCHEMA_PATH,
-  }), { inventory });
+    { inventory },
+  );
 
   validateRepairPayload({
     candidate,
@@ -1000,12 +980,7 @@ async function runTargetedRepair({
   });
 }
 
-function buildTargetedRepairPrompt({
-  candidate,
-  evaluation,
-  inventory,
-  repairScope,
-}) {
+function buildTargetedRepairPrompt({ candidate, evaluation, inventory, repairScope }) {
   const affectedFileIdsText = `${JSON.stringify(repairScope.fileIds)}\n`;
   const affectedDiffText = `${JSON.stringify(
     buildAffectedDiffInput({ inventory, repairScope }),
@@ -1093,9 +1068,7 @@ function buildAffectedDiffInput({ inventory, repairScope }) {
 }
 
 function resolveRepairScope({ candidate, evaluation, inventory }) {
-  const changedFiles = (inventory?.files || []).filter(
-    (file) => file.changedLineIds?.length > 0,
-  );
+  const changedFiles = (inventory?.files || []).filter((file) => file.changedLineIds?.length > 0);
   const fileById = new Map(changedFiles.map((file) => [file.id, file]));
   const fileByPath = new Map(changedFiles.map((file) => [file.path, file]));
   const hunkById = new Map();
@@ -1172,10 +1145,7 @@ function resolveRepairScope({ candidate, evaluation, inventory }) {
     if (sectionLocations?.length > 0) {
       for (const location of sectionLocations) {
         const sectionFile = fileById.get(location.candidateFile.id);
-        markFile(
-          sectionFile,
-          location.hunkIds.length > 0 ? location.hunkIds : null,
-        );
+        markFile(sectionFile, location.hunkIds.length > 0 ? location.hunkIds : null);
       }
       return true;
     }
@@ -1218,10 +1188,7 @@ function resolveRepairScope({ candidate, evaluation, inventory }) {
       }
       for (const location of locations) {
         const sectionFile = fileById.get(location.candidateFile.id);
-        markFile(
-          sectionFile,
-          location.hunkIds.length > 0 ? location.hunkIds : null,
-        );
+        markFile(sectionFile, location.hunkIds.length > 0 ? location.hunkIds : null);
       }
       resolvedSpecificIdentifier = true;
     }
@@ -1231,10 +1198,7 @@ function resolveRepairScope({ candidate, evaluation, inventory }) {
     }
 
     for (const file of changedFiles) {
-      if (
-        containsIdentifier(text, file.id)
-        || (file.path && text.includes(file.path))
-      ) {
+      if (containsIdentifier(text, file.id) || (file.path && text.includes(file.path))) {
         markFile(file);
       }
     }
@@ -1264,9 +1228,7 @@ function resolveRepairScope({ candidate, evaluation, inventory }) {
 function changedLineIdsToHunkIds(changedLineIds, lineLocationById) {
   return [
     ...new Set(
-      (changedLineIds || [])
-        .map((lineId) => lineLocationById.get(lineId)?.hunk.id)
-        .filter(Boolean),
+      (changedLineIds || []).map((lineId) => lineLocationById.get(lineId)?.hunk.id).filter(Boolean),
     ),
   ];
 }
@@ -1277,30 +1239,19 @@ function containsIdentifier(text, identifier) {
   }
 
   const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(
-    `(^|[^A-Za-z0-9:_-])${escaped}(?=$|[^A-Za-z0-9:_-])`,
-  ).test(text);
+  return new RegExp(`(^|[^A-Za-z0-9:_-])${escaped}(?=$|[^A-Za-z0-9:_-])`).test(text);
 }
 
-function validateRepairPayload({
-  candidate,
-  inventory,
-  repairPayload,
-  repairScope,
-}) {
+function validateRepairPayload({ candidate, inventory, repairPayload, repairScope }) {
   const errors = [];
   const expectedIds = new Set(repairScope.fileIds);
   const replacementIds = new Set();
-  const inventoryFileById = new Map(
-    (inventory?.files || []).map((file) => [file.id, file]),
-  );
-  const candidateFileById = new Map(
-    (candidate?.files || []).map((file) => [file.id, file]),
-  );
+  const inventoryFileById = new Map((inventory?.files || []).map((file) => [file.id, file]));
+  const candidateFileById = new Map((candidate?.files || []).map((file) => [file.id, file]));
 
   if (
-    repairPayload?.schemaVersion !== "pr-review-trees/v1"
-    || !Array.isArray(repairPayload?.files)
+    repairPayload?.schemaVersion !== "pr-review-trees/v1" ||
+    !Array.isArray(repairPayload?.files)
   ) {
     errors.push("targeted repair must use pr-review-trees/v1 with a files array.");
   }
@@ -1318,8 +1269,8 @@ function validateRepairPayload({
     }
     replacementIds.add(replacement.id);
 
-    const expectedPath = inventoryFileById.get(replacement.id)?.path
-      || candidateFileById.get(replacement.id)?.path;
+    const expectedPath =
+      inventoryFileById.get(replacement.id)?.path || candidateFileById.get(replacement.id)?.path;
     if (replacement.path !== expectedPath) {
       errors.push(
         `targeted repair file ${replacement.id} path must remain ${expectedPath}; got ${replacement.path}.`,
@@ -1339,12 +1290,8 @@ function validateRepairPayload({
 }
 
 function mergeTargetedRepair({ candidate, inventory, repairPayload }) {
-  const candidateFileById = new Map(
-    (candidate.files || []).map((file) => [file.id, file]),
-  );
-  const replacementFileById = new Map(
-    repairPayload.files.map((file) => [file.id, file]),
-  );
+  const candidateFileById = new Map((candidate.files || []).map((file) => [file.id, file]));
+  const replacementFileById = new Map(repairPayload.files.map((file) => [file.id, file]));
 
   return {
     ...candidate,
@@ -1357,15 +1304,15 @@ function mergeTargetedRepair({ candidate, inventory, repairPayload }) {
 
 function isSchemaUsableCandidate(candidate) {
   return (
-    candidate !== null
-    && typeof candidate === "object"
-    && !Array.isArray(candidate)
-    && candidate.schemaVersion === "pr-review-analysis/v1"
-    && Array.isArray(candidate.files)
-    && candidate.files.length > 0
-    && candidate.files.every((file) => (
-      file !== null && typeof file === "object" && !Array.isArray(file)
-    ))
+    candidate !== null &&
+    typeof candidate === "object" &&
+    !Array.isArray(candidate) &&
+    candidate.schemaVersion === "pr-review-analysis/v1" &&
+    Array.isArray(candidate.files) &&
+    candidate.files.length > 0 &&
+    candidate.files.every(
+      (file) => file !== null && typeof file === "object" && !Array.isArray(file),
+    )
   );
 }
 
@@ -1391,9 +1338,10 @@ function buildReviewStackStructuredDiff(inventory) {
           .filter((hunk) => hunk.changedLineIds?.length > 0)
           .map((hunk) => ({
             header: hunk.header,
-            lines: (hunk.lines || []).map((line) => (
-              `${line.kind === "insert" ? "+" : line.kind === "delete" ? "-" : " "}${line.content}`
-            )),
+            lines: (hunk.lines || []).map(
+              (line) =>
+                `${line.kind === "insert" ? "+" : line.kind === "delete" ? "-" : " "}${line.content}`,
+            ),
           })),
       })),
   };
@@ -1404,10 +1352,10 @@ function buildStructuredDiff(inventory, { hunkIdsByFileId = null } = {}) {
     schemaVersion: "pr-structured-diff/v1",
     changedLineCount: inventory?.changedLineCount || 0,
     files: (inventory?.files || [])
-      .filter((file) => (
-        file.changedLineIds?.length > 0
-        && (!hunkIdsByFileId || hunkIdsByFileId.has(file.id))
-      ))
+      .filter(
+        (file) =>
+          file.changedLineIds?.length > 0 && (!hunkIdsByFileId || hunkIdsByFileId.has(file.id)),
+      )
       .map((file) => {
         const selectedHunkIds = hunkIdsByFileId?.get(file.id);
         return {
@@ -1417,14 +1365,13 @@ function buildStructuredDiff(inventory, { hunkIdsByFileId = null } = {}) {
           add: file.addedLines ?? 0,
           del: file.deletedLines ?? 0,
           hunks: (file.hunks || [])
-            .filter((hunk) => (
-              hunk.changedLineIds?.length > 0
-              && (
-                selectedHunkIds === undefined
-                || selectedHunkIds === null
-                || selectedHunkIds.has(hunk.id)
-              )
-            ))
+            .filter(
+              (hunk) =>
+                hunk.changedLineIds?.length > 0 &&
+                (selectedHunkIds === undefined ||
+                  selectedHunkIds === null ||
+                  selectedHunkIds.has(hunk.id)),
+            )
             .map((hunk) => ({
               id: hunk.id,
               header: hunk.header,
@@ -1444,19 +1391,14 @@ function buildStructuredDiff(inventory, { hunkIdsByFileId = null } = {}) {
 }
 
 function materializeLineOwnership(analysis, { inventory }) {
-  const inventoryFileById = new Map(
-    (inventory?.files || []).map((file) => [file.id, file]),
-  );
-  const inventoryFileByPath = new Map(
-    (inventory?.files || []).map((file) => [file.path, file]),
-  );
+  const inventoryFileById = new Map((inventory?.files || []).map((file) => [file.id, file]));
+  const inventoryFileByPath = new Map((inventory?.files || []).map((file) => [file.path, file]));
   const locations = indexChangedLineLocations(inventory);
 
   return {
     ...analysis,
     files: (analysis?.files || []).map((file) => {
-      const inventoryFile = inventoryFileById.get(file.id)
-        || inventoryFileByPath.get(file.path);
+      const inventoryFile = inventoryFileById.get(file.id) || inventoryFileByPath.get(file.path);
       if (!inventoryFile) {
         throw new Error(
           `Cannot materialize line ownership for unknown file ${file.id || file.path || "<missing>"}.`,
@@ -1471,14 +1413,12 @@ function materializeLineOwnership(analysis, { inventory }) {
           section,
         }),
       }));
-      const coveredIds = new Set(
-        sections.flatMap((section) => section.changedLineIds),
-      );
+      const coveredIds = new Set(sections.flatMap((section) => section.changedLineIds));
 
       return {
         ...file,
-        changedLineIds: (inventoryFile.changedLineIds || []).filter(
-          (lineId) => coveredIds.has(lineId),
+        changedLineIds: (inventoryFile.changedLineIds || []).filter((lineId) =>
+          coveredIds.has(lineId),
         ),
         sectionTree: {
           ...file.sectionTree,
@@ -1514,9 +1454,7 @@ function indexChangedLineLocations(inventory) {
 
 function expandChangedLineRanges({ file, locations, section }) {
   if (!Array.isArray(section.changedLineRanges) || section.changedLineRanges.length === 0) {
-    throw new Error(
-      `Review section ${section.id || "<missing>"} must include changedLineRanges.`,
-    );
+    throw new Error(`Review section ${section.id || "<missing>"} must include changedLineRanges.`);
   }
 
   const expanded = [];
@@ -1531,10 +1469,10 @@ function expandChangedLineRanges({ file, locations, section }) {
       );
     }
     if (
-      start.fileId !== file.id
-      || end.fileId !== file.id
-      || start.hunk.id !== end.hunk.id
-      || start.hunkChangedIndex > end.hunkChangedIndex
+      start.fileId !== file.id ||
+      end.fileId !== file.id ||
+      start.hunk.id !== end.hunk.id ||
+      start.hunkChangedIndex > end.hunkChangedIndex
     ) {
       throw new Error(
         `Review section ${section.id || "<missing>"} ranges must be forward, file-local, and stay within one hunk.`,
@@ -1547,10 +1485,7 @@ function expandChangedLineRanges({ file, locations, section }) {
     }
 
     expanded.push(
-      ...start.hunk.changedLineIds.slice(
-        start.hunkChangedIndex,
-        end.hunkChangedIndex + 1,
-      ),
+      ...start.hunk.changedLineIds.slice(start.hunkChangedIndex, end.hunkChangedIndex + 1),
     );
     previousEndIndex = end.fileChangedIndex;
   }
@@ -1613,9 +1548,9 @@ function buildReviewTreesPrompt({
 ${reviewTreesPrompt.trim()}
 ${buildRetryGuidance(previousFailure)}
 ${buildSourceInput({
-    metadataText,
-    structuredDiffText,
-  })}
+  metadataText,
+  structuredDiffText,
+})}
 
 Generate the complete File Tree and every changed file's Section Tree as your final answer.
 `;
@@ -1639,10 +1574,7 @@ issue while following the authoritative shared contract above.
     : "";
 }
 
-function buildSourceInput({
-  metadataText,
-  structuredDiffText,
-}) {
+function buildSourceInput({ metadataText, structuredDiffText }) {
   return `
 ## Inline Input
 
@@ -1736,11 +1668,7 @@ async function runJudge({
   return parseJsonObject(await readFile(outputPath, "utf8"));
 }
 
-export function resolveCodexExecutionConfig({
-  env = process.env,
-  model,
-  reasoningEffort,
-} = {}) {
+export function resolveCodexExecutionConfig({ env = process.env, model, reasoningEffort } = {}) {
   return {
     model: resolveSelectedString({
       envValue: env.PRC_CODEX_MODEL,
@@ -1888,10 +1816,7 @@ export async function runCodexExec({
         rejectOnce(createCodexAbortError(signal?.reason, stdout));
         return;
       }
-      rejectOnce(createCodexExecError(
-        `Failed to start codex: ${error.message}`,
-        stdout,
-      ));
+      rejectOnce(createCodexExecError(`Failed to start codex: ${error.message}`, stdout));
     });
 
     child.on("close", async (code) => {
@@ -1909,10 +1834,9 @@ export async function runCodexExec({
       }
 
       if (timedOut) {
-        rejectOnce(createCodexExecError(
-          `codex exec timed out after ${CODEX_EXEC_TIMEOUT_MS}ms.`,
-          stdout,
-        ));
+        rejectOnce(
+          createCodexExecError(`codex exec timed out after ${CODEX_EXEC_TIMEOUT_MS}ms.`, stdout),
+        );
         return;
       }
 
@@ -1924,10 +1848,12 @@ export async function runCodexExec({
       }
 
       const details = summarizeCodexFailure({ stderr, stdout });
-      rejectOnce(createCodexExecError(
-        `codex exec failed with exit code ${code}${details ? `:\n${details}` : ""}`,
-        stdout,
-      ));
+      rejectOnce(
+        createCodexExecError(
+          `codex exec failed with exit code ${code}${details ? `:\n${details}` : ""}`,
+          stdout,
+        ),
+      );
     });
 
     child.stdin.on("error", () => {
@@ -1963,9 +1889,8 @@ function throwIfAborted(signal) {
 }
 
 function createAbortError(reason) {
-  const message = reason instanceof Error && reason.message
-    ? reason.message
-    : "The operation was aborted.";
+  const message =
+    reason instanceof Error && reason.message ? reason.message : "The operation was aborted.";
   const error = new Error(message, reason === undefined ? undefined : { cause: reason });
   error.name = "AbortError";
   error.code = "ABORT_ERR";
@@ -2013,10 +1938,10 @@ function validateJudge(judge) {
   }
 
   if (
-    typeof judge?.confidence !== "number"
-    || !Number.isFinite(judge.confidence)
-    || judge.confidence < 0
-    || judge.confidence > 1
+    typeof judge?.confidence !== "number" ||
+    !Number.isFinite(judge.confidence) ||
+    judge.confidence < 0 ||
+    judge.confidence > 1
   ) {
     errors.push("judge.json confidence must be a number from 0 to 1.");
   }
@@ -2026,9 +1951,7 @@ function validateJudge(judge) {
   } else {
     for (const [index, finding] of judge.findings.entries()) {
       if (!isNonEmptyString(finding?.explanation)) {
-        errors.push(
-          `judge.json finding ${index + 1} must include a non-empty explanation.`,
-        );
+        errors.push(`judge.json finding ${index + 1} must include a non-empty explanation.`);
       }
     }
   }
@@ -2072,7 +1995,7 @@ function summarizeCodexFailure({ stderr, stdout }) {
   const apiMessage = apiMessages.at(-1)?.[1];
 
   if (apiMessage) {
-    return apiMessage.replaceAll("\\n", "\n").replaceAll("\\\"", "\"");
+    return apiMessage.replaceAll("\\n", "\n").replaceAll('\\"', '"');
   }
 
   return details.slice(-4000);
@@ -2091,8 +2014,7 @@ function resolveSelectedString({ envValue, label, value }) {
 function reportedExecutionConfig(executionConfig) {
   return {
     model: executionConfig.model || "Codex CLI default",
-    reasoningEffort:
-      executionConfig.reasoningEffort || "Codex CLI default",
+    reasoningEffort: executionConfig.reasoningEffort || "Codex CLI default",
   };
 }
 
@@ -2129,25 +2051,26 @@ function computeFileTreeMetrics({ analysis, inventory }) {
     }
     const rootId = (stack.fileIds || []).find((fileId) => !hasIncoming.has(fileId));
 
-    fileTreeDepth = Math.max(
-      fileTreeDepth,
-      measureFileTreeDepth(rootId, childBranchesByParentId),
-    );
+    fileTreeDepth = Math.max(fileTreeDepth, measureFileTreeDepth(rootId, childBranchesByParentId));
 
     const treeOrderIds = fileTreeDfsOrder(rootId, childBranchesByParentId);
     const sourceOrderIds = (stack.fileIds || [])
       .slice()
-      .sort((left, right) => (inventoryOrderById.get(left) ?? 0) - (inventoryOrderById.get(right) ?? 0));
+      .sort(
+        (left, right) => (inventoryOrderById.get(left) ?? 0) - (inventoryOrderById.get(right) ?? 0),
+      );
     if (
-      treeOrderIds.length === sourceOrderIds.length
-      && treeOrderIds.every((fileId, index) => fileId === sourceOrderIds[index])
+      treeOrderIds.length === sourceOrderIds.length &&
+      treeOrderIds.every((fileId, index) => fileId === sourceOrderIds[index])
     ) {
       sourceOrderMatches += 1;
     }
 
     if (rootId) {
       const rootFile = fileById.get(rootId);
-      const stackFiles = (stack.fileIds || []).map((fileId) => fileById.get(fileId)).filter(Boolean);
+      const stackFiles = (stack.fileIds || [])
+        .map((fileId) => fileById.get(fileId))
+        .filter(Boolean);
       if (rootFile && !isAcceptableFileTreeRoot(rootFile, stackFiles)) {
         invalidFileTreeRootCount += 1;
       }
@@ -2210,15 +2133,9 @@ function normalizeUsage(value) {
     return emptyUsage();
   }
 
-  const inputTokens = nonNegativeNumber(
-    value.inputTokens ?? value.input_tokens,
-  );
-  const cachedInputTokens = nonNegativeNumber(
-    value.cachedInputTokens ?? value.cached_input_tokens,
-  );
-  const outputTokens = nonNegativeNumber(
-    value.outputTokens ?? value.output_tokens,
-  );
+  const inputTokens = nonNegativeNumber(value.inputTokens ?? value.input_tokens);
+  const cachedInputTokens = nonNegativeNumber(value.cachedInputTokens ?? value.cached_input_tokens);
+  const outputTokens = nonNegativeNumber(value.outputTokens ?? value.output_tokens);
 
   return {
     inputTokens,
@@ -2232,9 +2149,7 @@ function normalizeUsage(value) {
 }
 
 function nonNegativeNumber(value, fallback = 0) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? value
-    : fallback;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
 function addUsage(target, increment) {
@@ -2257,10 +2172,7 @@ function copyUsage(value) {
 function subtractUsage(value, baseline) {
   return {
     inputTokens: Math.max(0, value.inputTokens - baseline.inputTokens),
-    cachedInputTokens: Math.max(
-      0,
-      value.cachedInputTokens - baseline.cachedInputTokens,
-    ),
+    cachedInputTokens: Math.max(0, value.cachedInputTokens - baseline.cachedInputTokens),
     outputTokens: Math.max(0, value.outputTokens - baseline.outputTokens),
     totalTokens: Math.max(0, value.totalTokens - baseline.totalTokens),
   };

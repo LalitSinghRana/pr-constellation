@@ -144,7 +144,10 @@ async function buildReviewAssets() {
     throw new Error("Failed to build review tree bundle.");
   }
 
-  const diffViewCss = await readFile(require.resolve("@git-diff-view/react/styles/diff-view.css"), "utf8");
+  const diffViewCss = await readFile(
+    require.resolve("@git-diff-view/react/styles/diff-view.css"),
+    "utf8",
+  );
 
   return {
     css: `${await readFile(require.resolve("@xyflow/react/dist/style.css"), "utf8")}\n${diffViewCss}\n${webCss}`,
@@ -218,7 +221,12 @@ function buildReviewTreeData({ analysis, diff, syntaxHighlighter }) {
   };
 }
 
-function buildCodeChunksForReviewSection({ file, inventoryIndex, reviewSection, syntaxHighlighter }) {
+function buildCodeChunksForReviewSection({
+  file,
+  inventoryIndex,
+  reviewSection,
+  syntaxHighlighter,
+}) {
   const changedLinesByHunk = new Map();
 
   for (const changedLineId of reviewSection.changedLineIds || []) {
@@ -238,9 +246,7 @@ function buildCodeChunksForReviewSection({ file, inventoryIndex, reviewSection, 
       .slice()
       .sort((left, right) => left.lineIndex - right.lineIndex);
     const runs = [];
-    const allOwnedLineIds = new Set(
-      sortedLines.map((entry) => entry.line.id),
-    );
+    const allOwnedLineIds = new Set(sortedLines.map((entry) => entry.line.id));
 
     for (const indexedLine of sortedLines) {
       const currentRun = runs.at(-1);
@@ -248,10 +254,10 @@ function buildCodeChunksForReviewSection({ file, inventoryIndex, reviewSection, 
       const crossesUnownedChange = previousLine
         ? indexedLine.hunk.lines
             .slice(previousLine.lineIndex + 1, indexedLine.lineIndex)
-            .some((line) => (
-              (line.kind === "insert" || line.kind === "delete")
-              && !allOwnedLineIds.has(line.id)
-            ))
+            .some(
+              (line) =>
+                (line.kind === "insert" || line.kind === "delete") && !allOwnedLineIds.has(line.id),
+            )
         : false;
 
       if (!previousLine || crossesUnownedChange) {
@@ -272,21 +278,20 @@ function buildCodeChunksForReviewSection({ file, inventoryIndex, reviewSection, 
         ownedLineIds,
         startIndex: firstLineIndex,
       });
-      const end = contextBoundary({
-        direction: 1,
-        hunk,
-        ownedLineIds,
-        startIndex: lastLineIndex,
-      }) + 1;
+      const end =
+        contextBoundary({
+          direction: 1,
+          hunk,
+          ownedLineIds,
+          startIndex: lastLineIndex,
+        }) + 1;
       const lines = hunk.lines.slice(start, end).map((line) => inventoryLineToSnippetLine(line));
 
       return {
         file: file.path,
         hunk: `${reviewSection.reviewPriority}/${reviewSection.changeKind} · ${reviewSection.title} · ${hunk.header}`.trim(),
         lines: highlightSnippetLines({
-          contextLines: hunk.lines
-            .slice(0, start)
-            .map((line) => inventoryLineToSnippetLine(line)),
+          contextLines: hunk.lines.slice(0, start).map((line) => inventoryLineToSnippetLine(line)),
           file: file.path,
           lines,
           syntaxHighlighter,
@@ -295,10 +300,11 @@ function buildCodeChunksForReviewSection({ file, inventoryIndex, reviewSection, 
     });
   });
 
-  return chunks.sort((left, right) => (
-    (left.lines[0].oldLine ?? left.lines[0].newLine)
-    - (right.lines[0].oldLine ?? right.lines[0].newLine)
-  ));
+  return chunks.sort(
+    (left, right) =>
+      (left.lines[0].oldLine ?? left.lines[0].newLine) -
+      (right.lines[0].oldLine ?? right.lines[0].newLine),
+  );
 }
 
 function buildCodeChunksForFile({ file, inventoryIndex, syntaxHighlighter }) {
@@ -378,12 +384,7 @@ function inventoryLineToSnippetLine(line) {
   };
 }
 
-function highlightSnippetLines({
-  contextLines = [],
-  file,
-  lines,
-  syntaxHighlighter,
-}) {
+function highlightSnippetLines({ contextLines = [], file, lines, syntaxHighlighter }) {
   const lang = languageForPath(file);
   const entries = [
     ...contextLines.map((line) => ({ displayIndex: null, line })),
@@ -402,11 +403,9 @@ function highlightSnippetLines({
 
   return lines.map((line, displayIndex) => ({
     ...line,
-    syntaxTokens: (
-      line.type === "del"
-        ? oldLineTokens.get(displayIndex)
-        : newLineTokens.get(displayIndex)
-    ) ?? tokensForLine({ code: line.content, lang, syntaxHighlighter }).map(toSyntaxToken),
+    syntaxTokens:
+      (line.type === "del" ? oldLineTokens.get(displayIndex) : newLineTokens.get(displayIndex)) ??
+      tokensForLine({ code: line.content, lang, syntaxHighlighter }).map(toSyntaxToken),
   }));
 }
 
@@ -471,7 +470,7 @@ function shikiTokenStyle(htmlStyle) {
 
   if (lightColor) {
     declarations.push(`--shiki-light:${lightColor}`);
-    declarations.push("color:var(--shiki-light)");
+    declarations.push("color:var(--shiki-color,var(--shiki-light))");
   }
 
   if (darkColor) {
@@ -495,7 +494,9 @@ function languageForPath(filePath) {
 }
 
 function normalizeShikiLanguage(language) {
-  const normalized = SHIKI_LANGUAGE_ALIASES.get(String(language || "").toLowerCase()) || String(language || "").toLowerCase();
+  const normalized =
+    SHIKI_LANGUAGE_ALIASES.get(String(language || "").toLowerCase()) ||
+    String(language || "").toLowerCase();
   return SHIKI_LANGUAGE_SET.has(normalized) ? normalized : "plaintext";
 }
 

@@ -12,30 +12,17 @@ export const USE_DETACHED_PROCESS_GROUP = process.platform !== "win32";
  */
 export function createChildProcessTerminator(
   child,
-  {
-    killGraceMs = DEFAULT_KILL_GRACE_MS,
-    useProcessGroup = USE_DETACHED_PROCESS_GROUP,
-  } = {},
+  { killGraceMs = DEFAULT_KILL_GRACE_MS, useProcessGroup = USE_DETACHED_PROCESS_GROUP } = {},
 ) {
   if (!child || typeof child.kill !== "function") {
     throw new TypeError("child must be a spawned ChildProcess.");
   }
-  if (
-    typeof killGraceMs !== "number"
-    || !Number.isFinite(killGraceMs)
-    || killGraceMs < 0
-  ) {
+  if (typeof killGraceMs !== "number" || !Number.isFinite(killGraceMs) || killGraceMs < 0) {
     throw new TypeError("killGraceMs must be a non-negative number.");
   }
 
-  const childPid = Number.isInteger(child.pid) && child.pid > 0
-    ? child.pid
-    : null;
-  let processGroupEnabled = Boolean(
-    useProcessGroup
-    && childPid
-    && childPid !== process.pid,
-  );
+  const childPid = Number.isInteger(child.pid) && child.pid > 0 ? child.pid : null;
+  let processGroupEnabled = Boolean(useProcessGroup && childPid && childPid !== process.pid);
   let childClosed = false;
   let forceKillTimer = null;
   let groupPollTimer = null;

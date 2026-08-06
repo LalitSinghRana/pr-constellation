@@ -51,21 +51,25 @@ const validAnalysis = {
       changeKind: "test",
       file: testFile,
       reviewPriority: "secondary",
-      sections: [buildSection({
-        changedLineIds: testFile.changedLineIds,
-        changeKind: "test",
-        id: "update-value-expectation",
-        title: "Update value expectation",
-      })],
+      sections: [
+        buildSection({
+          changedLineIds: testFile.changedLineIds,
+          changeKind: "test",
+          id: "update-value-expectation",
+          title: "Update value expectation",
+        }),
+      ],
     }),
   ],
-  reviewStacks: [{
-    id: "combined",
-    title: "Runtime value and expectation",
-    explanation: "The assertion follows the runtime behavior it verifies.",
-    fileIds: [runtimeFile.id, testFile.id],
-    fileTree: { branches: [branch(runtimeFile.id, testFile.id)] },
-  }],
+  reviewStacks: [
+    {
+      id: "combined",
+      title: "Runtime value and expectation",
+      explanation: "The assertion follows the runtime behavior it verifies.",
+      fileIds: [runtimeFile.id, testFile.id],
+      fileTree: { branches: [branch(runtimeFile.id, testFile.id)] },
+    },
+  ],
 };
 
 expectValid(validAnalysis);
@@ -82,27 +86,36 @@ index 4444444..5555555 100644
 +run(2);
 `);
 const [contextFile] = contextInventory.files;
-expectValid({
-  schemaVersion: "pr-review-analysis/v1",
-  intent: "Keep one change together across context",
-  summary: "The value and its use form one section.",
-  confidence: 1,
-  files: [buildFile({
-    file: contextFile,
-    sections: [buildSection({
-      changedLineIds: contextFile.changedLineIds,
-      id: "update-value-and-use",
-      title: "Update value and use",
-    })],
-  })],
-  reviewStacks: [{
-    id: "context-change",
-    title: "Context change",
-    explanation: "One file owns the complete change.",
-    fileIds: [contextFile.id],
-    fileTree: { branches: [] },
-  }],
-}, contextInventory);
+expectValid(
+  {
+    schemaVersion: "pr-review-analysis/v1",
+    intent: "Keep one change together across context",
+    summary: "The value and its use form one section.",
+    confidence: 1,
+    files: [
+      buildFile({
+        file: contextFile,
+        sections: [
+          buildSection({
+            changedLineIds: contextFile.changedLineIds,
+            id: "update-value-and-use",
+            title: "Update value and use",
+          }),
+        ],
+      }),
+    ],
+    reviewStacks: [
+      {
+        id: "context-change",
+        title: "Context change",
+        explanation: "One file owns the complete change.",
+        fileIds: [contextFile.id],
+        fileTree: { branches: [] },
+      },
+    ],
+  },
+  contextInventory,
+);
 
 expectInvalid({
   analysis: { ...validAnalysis, schemaVersion: "invalid" },
@@ -171,10 +184,12 @@ expectInvalid({
 expectInvalid({
   analysis: {
     ...validAnalysis,
-    reviewStacks: [{
-      ...validAnalysis.reviewStacks[0],
-      fileTree: { branches: [branch(testFile.id, runtimeFile.id)] },
-    }],
+    reviewStacks: [
+      {
+        ...validAnalysis.reviewStacks[0],
+        fileTree: { branches: [branch(testFile.id, runtimeFile.id)] },
+      },
+    ],
   },
   message: "root file-2 is outranked",
   name: "lower-priority File Tree root",
@@ -183,11 +198,13 @@ expectInvalid({
 expectInvalid({
   analysis: {
     ...validAnalysis,
-    reviewStacks: [{
-      ...validAnalysis.reviewStacks[0],
-      fileIds: [runtimeFile.id],
-      fileTree: { branches: [] },
-    }],
+    reviewStacks: [
+      {
+        ...validAnalysis.reviewStacks[0],
+        fileIds: [runtimeFile.id],
+        fileTree: { branches: [] },
+      },
+    ],
   },
   message: "reviewStacks fileIds must exactly match",
   name: "Review Stack omits a changed file",
@@ -212,13 +229,17 @@ const validStacks = {
 };
 validateReviewStacks(validStacks, { inventory });
 assert.throws(
-  () => validateReviewStacks({
-    ...validStacks,
-    reviewStacks: [
-      validStacks.reviewStacks[0],
-      { ...validStacks.reviewStacks[1], fileIds: [runtimeFile.id] },
-    ],
-  }, { inventory }),
+  () =>
+    validateReviewStacks(
+      {
+        ...validStacks,
+        reviewStacks: [
+          validStacks.reviewStacks[0],
+          { ...validStacks.reviewStacks[1], fileIds: [runtimeFile.id] },
+        ],
+      },
+      { inventory },
+    ),
   /contains duplicate id/,
 );
 

@@ -27,29 +27,19 @@ const file = {
 const collapsed = foldSectionTree(file);
 assert.deepEqual(
   collapsed.sections.map((item) => item.id),
-  [
-    "root",
-    "press",
-    "ui-fold-root-secondary-runtime",
-    "ui-fold-root-skim",
-  ],
+  ["root", "press", "ui-fold-root-secondary-runtime", "ui-fold-root-skim"],
 );
 assert.deepEqual(
   collapsed.branches.map((branch) => `${branch.parentId}->${branch.childId}`),
-  [
-    "root->press",
-    "root->ui-fold-root-secondary-runtime",
-    "root->ui-fold-root-skim",
-  ],
+  ["root->press", "root->ui-fold-root-secondary-runtime", "root->ui-fold-root-skim"],
 );
 assert.equal(
-  collapsed.sections.find((item) => item.id === "ui-fold-root-secondary-runtime")
-    .reviewGroup.sectionCount,
+  collapsed.sections.find((item) => item.id === "ui-fold-root-secondary-runtime").reviewGroup
+    .sectionCount,
   4,
 );
 assert.match(
-  collapsed.sections.find((item) => item.id === "ui-fold-root-secondary-runtime")
-    .explanation,
+  collapsed.sections.find((item) => item.id === "ui-fold-root-secondary-runtime").explanation,
   /- What:/,
 );
 assert.match(
@@ -115,12 +105,7 @@ assert.deepEqual(
   "authored branch order should control visible DFS order, regardless of section labels or declaration order",
 );
 assert.deepEqual(
-  [
-    "file:ordered-file",
-    ...orderedCollapsedIds,
-    "file:next-file",
-    "next-file-root",
-  ],
+  ["file:ordered-file", ...orderedCollapsedIds, "file:next-file", "next-file-root"],
   [
     "file:ordered-file",
     "root",
@@ -138,14 +123,7 @@ const orderedExpanded = foldSectionTree(orderedFile, {
 });
 assert.deepEqual(
   orderedExpanded.sections.map((item) => item.id),
-  [
-    "root",
-    "first-child",
-    "descendant",
-    "ui-fold-root-skim",
-    "grouped-change",
-    "next-sibling",
-  ],
+  ["root", "first-child", "descendant", "ui-fold-root-skim", "grouped-change", "next-sibling"],
   "expansion should retain the group step and insert its child immediately after it",
 );
 

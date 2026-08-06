@@ -13,21 +13,6 @@
   --file-tree-color: var(--primary);
 }
 
-.tree-canvas .react-flow__node-fileNode {
-  z-index: 2 !important;
-  pointer-events: none;
-}
-
-.tree-canvas .react-flow__node-reviewSection {
-  z-index: 4 !important;
-  pointer-events: auto !important;
-}
-
-.tree-canvas .react-flow__node-reviewGroup {
-  z-index: 4 !important;
-  pointer-events: auto !important;
-}
-
 .tree-canvas .react-flow__node[aria-current="step"] {
   border-radius: var(--radius-md);
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--primary) 62%, transparent);
@@ -97,8 +82,6 @@
 
 @layer components {
   .review-tree-map {
-    top: 16px !important;
-    right: 18px !important;
     overflow: hidden;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
@@ -197,13 +180,12 @@
   }
 
   .dark .shiki-token {
-    color: var(--shiki-dark, var(--shiki-light)) !important;
+    --shiki-color: var(--shiki-dark, var(--shiki-light));
   }
-
 }
 
 @media (prefers-reduced-motion: reduce) {
   .tree-canvas .react-flow__node[aria-current="step"] {
-    transition: none !important;
+    transition: none;
   }
 }

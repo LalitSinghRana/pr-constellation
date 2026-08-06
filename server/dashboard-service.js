@@ -5,12 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
-import {
-  createBenchmarkRun,
-  publishStableReview,
-} from "../analysis-worker/review-run.js";
-import { assertStorageId, RunStore } from "./run-store.js";
+import { createBenchmarkRun, publishStableReview } from "../analysis-worker/review-run.js";
 import { parseGitHubPrUrl } from "../analysis-worker/workflow/02-fetch-pr/github.js";
+import { assertStorageId, RunStore } from "./run-store.js";
 
 const execFileAsync = promisify(execFile);
 const ACTIVE_STATUSES = new Set(["queued", "running"]);
@@ -25,25 +22,9 @@ const STAGE_FINISH_EVENT_TYPES = new Set([
 ]);
 const DEFAULT_CODEX_MODEL = "gpt-5.5";
 const DEFAULT_CLAUDE_MODEL = "claude-opus-4-6[1m]";
-export const DEFAULT_REASONING_EFFORTS = Object.freeze([
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-]);
-export const DEFAULT_CLAUDE_REASONING_EFFORTS = Object.freeze([
-  "low",
-  "medium",
-  "high",
-  "max",
-]);
-const REASONING_EFFORT_ORDER = Object.freeze([
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-]);
+export const DEFAULT_REASONING_EFFORTS = Object.freeze(["low", "medium", "high", "xhigh"]);
+export const DEFAULT_CLAUDE_REASONING_EFFORTS = Object.freeze(["low", "medium", "high", "max"]);
+const REASONING_EFFORT_ORDER = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
 
 export async function createDashboardService(options) {
   const service = new DashboardService(options);
@@ -80,9 +61,7 @@ export class DashboardService {
     }
 
     this.reviewsDir = path.resolve(reviewsDir);
-    this.#configuration = configuration
-      ? normalizeDashboardConfiguration(configuration)
-      : null;
+    this.#configuration = configuration ? normalizeDashboardConfiguration(configuration) : null;
     this.#getCodeVersion = getCodeVersion;
     this.#now = now;
     this.#projectRoot = path.resolve(projectRoot);
@@ -121,8 +100,8 @@ export class DashboardService {
     const selectedModel = this.#resolveModel(model);
     const selectedProvider = this.#resolveProvider(selectedModel);
     const reasoningEfforts =
-      this.#configuration.modelReasoningEfforts[selectedModel]
-      || this.#configuration.reasoningEfforts;
+      this.#configuration.modelReasoningEfforts[selectedModel] ||
+      this.#configuration.reasoningEfforts;
     const frozenSource = await this.#resolveRequestedSource({
       parsed,
       refresh,
@@ -140,8 +119,8 @@ export class DashboardService {
 
     for (const [batchIndex, reasoningEffort] of reasoningEfforts.entries()) {
       const usesFrozenSource = Boolean(frozenSource) || batchIndex > 0;
-      const effectiveSourceRunId = frozenSource?.run.runId
-        || (usesFrozenSource ? firstRunId : null);
+      const effectiveSourceRunId =
+        frozenSource?.run.runId || (usesFrozenSource ? firstRunId : null);
       const manifest = await this.#createQueuedRun({
         batchId,
         batchIndex,
@@ -185,10 +164,7 @@ export class DashboardService {
     const parsed = parseGitHubPrUrl(prUrl);
     const selectedModel = this.#resolveModel(model);
     const selectedProvider = this.#resolveProvider(selectedModel);
-    const selectedReasoningEffort = this.#resolveReasoningEffort(
-      selectedModel,
-      reasoningEffort,
-    );
+    const selectedReasoningEffort = this.#resolveReasoningEffort(selectedModel, reasoningEffort);
     const frozenSource = await this.#resolveRequestedSource({
       parsed,
       refresh,
@@ -224,11 +200,11 @@ export class DashboardService {
       slug,
       sourceRunId: runId,
     });
-    const sourceModel = model || (
-      this.#configuration?.models.includes(source.run.metrics?.model)
+    const sourceModel =
+      model ||
+      (this.#configuration?.models.includes(source.run.metrics?.model)
         ? source.run.metrics.model
-        : undefined
-    );
+        : undefined);
     return this.enqueue({
       model: sourceModel,
       prUrl: source.run.url,
@@ -246,9 +222,7 @@ export class DashboardService {
       .filter((run) => run.metrics?.batchId === batchId)
       .sort(compareFrozenSourceCandidates);
     if (candidates.length === 0) {
-      throw createHistoryTargetNotFound(
-        `Analysis batch "${batchId}" was not found.`,
-      );
+      throw createHistoryTargetNotFound(`Analysis batch "${batchId}" was not found.`);
     }
 
     for (const candidate of candidates) {
@@ -308,17 +282,13 @@ export class DashboardService {
     await this.initialize();
     assertStorageId(batchId, "batchId");
 
-    const activeJob = this.#activeJob?.batchId === batchId
-      ? this.#activeJob
-      : null;
+    const activeJob = this.#activeJob?.batchId === batchId ? this.#activeJob : null;
     const queuedJobs = this.#jobs.filter((job) => job.batchId === batchId);
     this.#jobs = this.#jobs.filter((job) => job.batchId !== batchId);
 
-    const storedActiveRuns = (await this.#store.scanRuns())
-      .filter((run) => (
-        run.metrics?.batchId === batchId
-        && ACTIVE_STATUSES.has(run.status)
-      ));
+    const storedActiveRuns = (await this.#store.scanRuns()).filter(
+      (run) => run.metrics?.batchId === batchId && ACTIVE_STATUSES.has(run.status),
+    );
     const targets = uniqueJobs([
       ...queuedJobs,
       ...(activeJob ? [activeJob] : []),
@@ -346,9 +316,7 @@ export class DashboardService {
       )
     ).filter(({ run }) => Boolean(run));
     const canceledRuns = canceledTargets.map(({ run }) => run);
-    await Promise.all(
-      canceledTargets.map(({ job }) => this.#cancelOpenStages(job, { message })),
-    );
+    await Promise.all(canceledTargets.map(({ job }) => this.#cancelOpenStages(job, { message })));
 
     if (canceledRuns.length === 0) {
       throw createCancellationTargetNotFound(
@@ -376,9 +344,7 @@ export class DashboardService {
       manifest = await this.#store.readRun(slug, runId);
     } catch (error) {
       if (error?.code === "ENOENT") {
-        throw createCancellationTargetNotFound(
-          `Run "${slug}/${runId}" was not found.`,
-        );
+        throw createCancellationTargetNotFound(`Run "${slug}/${runId}" was not found.`);
       }
       throw error;
     }
@@ -395,31 +361,18 @@ export class DashboardService {
     }
 
     const activeJob =
-      this.#activeJob?.slug === slug && this.#activeJob?.runId === runId
-        ? this.#activeJob
-        : null;
-    const queuedJob = this.#jobs.find(
-      (job) => job.slug === slug && job.runId === runId,
-    );
+      this.#activeJob?.slug === slug && this.#activeJob?.runId === runId ? this.#activeJob : null;
+    const queuedJob = this.#jobs.find((job) => job.slug === slug && job.runId === runId);
     if (!ACTIVE_STATUSES.has(manifest.status) || (!activeJob && !queuedJob)) {
-      throw createCancellationTargetNotFound(
-        `Run "${slug}/${runId}" is not queued or running.`,
-      );
+      throw createCancellationTargetNotFound(`Run "${slug}/${runId}" is not queued or running.`);
     }
 
-    this.#jobs = this.#jobs.filter(
-      (job) => job.slug !== slug || job.runId !== runId,
-    );
+    this.#jobs = this.#jobs.filter((job) => job.slug !== slug || job.runId !== runId);
     const message = `Analysis run "${slug}/${runId}" was canceled by the user.`;
     activeJob?.abortController?.abort(createAbortError(message));
-    const canceledRun = await this.#markRunCanceled(
-      activeJob || queuedJob,
-      { message },
-    );
+    const canceledRun = await this.#markRunCanceled(activeJob || queuedJob, { message });
     if (!canceledRun) {
-      throw createCancellationTargetNotFound(
-        `Run "${slug}/${runId}" is not queued or running.`,
-      );
+      throw createCancellationTargetNotFound(`Run "${slug}/${runId}" is not queued or running.`);
     }
     await this.#cancelOpenStages(activeJob || queuedJob, { message });
 
@@ -446,9 +399,7 @@ export class DashboardService {
       manifest = await this.#store.readRun(slug, runId);
     } catch (error) {
       if (error?.code === "ENOENT") {
-        throw createHistoryTargetNotFound(
-          `Run "${slug}/${runId}" was not found.`,
-        );
+        throw createHistoryTargetNotFound(`Run "${slug}/${runId}" was not found.`);
       }
       throw error;
     }
@@ -467,21 +418,18 @@ export class DashboardService {
     await this.initialize();
     assertStorageId(batchId, "batchId");
 
-    const manifests = (await this.#store.scanRuns())
-      .filter((run) => run.metrics?.batchId === batchId);
+    const manifests = (await this.#store.scanRuns()).filter(
+      (run) => run.metrics?.batchId === batchId,
+    );
     if (manifests.length === 0) {
-      throw createHistoryTargetNotFound(
-        `Analysis batch "${batchId}" was not found.`,
-      );
+      throw createHistoryTargetNotFound(`Analysis batch "${batchId}" was not found.`);
     }
     for (const manifest of manifests) {
       this.#assertHistoryRunCanBeDeleted(manifest);
     }
 
     await Promise.all(
-      manifests.map((manifest) => (
-        this.#store.deleteRun(manifest.slug, manifest.runId)
-      )),
+      manifests.map((manifest) => this.#store.deleteRun(manifest.slug, manifest.runId)),
     );
     return {
       batchId,
@@ -494,31 +442,20 @@ export class DashboardService {
 
   close() {
     this.#closed = true;
-    this.#activeJob?.abortController?.abort(
-      createAbortError("The dashboard service was closed."),
-    );
+    this.#activeJob?.abortController?.abort(createAbortError("The dashboard service was closed."));
   }
 
   #assertHistoryRunCanBeDeleted(manifest) {
-    const queued = this.#jobs.some((job) => (
-      job.slug === manifest.slug && job.runId === manifest.runId
-    ));
-    const active = (
-      this.#activeJob?.slug === manifest.slug
-      && this.#activeJob?.runId === manifest.runId
+    const queued = this.#jobs.some(
+      (job) => job.slug === manifest.slug && job.runId === manifest.runId,
     );
+    const active =
+      this.#activeJob?.slug === manifest.slug && this.#activeJob?.runId === manifest.runId;
     const usedByActiveOrQueuedRun = [
       ...(this.#activeJob ? [this.#activeJob] : []),
       ...this.#jobs,
-    ].some((job) => (
-      job.slug === manifest.slug && job.sourceRunId === manifest.runId
-    ));
-    if (
-      ACTIVE_STATUSES.has(manifest.status)
-      || active
-      || queued
-      || usedByActiveOrQueuedRun
-    ) {
+    ].some((job) => job.slug === manifest.slug && job.sourceRunId === manifest.runId);
+    if (ACTIVE_STATUSES.has(manifest.status) || active || queued || usedByActiveOrQueuedRun) {
       throw createHistoryTargetActive(
         `Run "${manifest.slug}/${manifest.runId}" is queued, running, or supplying frozen input to queued work. Cancel or finish that work before deleting its history.`,
       );
@@ -585,22 +522,17 @@ export class DashboardService {
       }
       const cancellationEvent = canceledFinish
         ? {
-          ...event,
-          error: cancellationEventError(event.error),
-          status: "canceled",
-        }
+            ...event,
+            error: cancellationEventError(event.error),
+            status: "canceled",
+          }
         : event;
       const normalizedEvent =
-        cancellationEvent.stageId !== "run.total"
-        && !cancellationEvent.parentStageId
+        cancellationEvent.stageId !== "run.total" && !cancellationEvent.parentStageId
           ? { ...cancellationEvent, parentStageId: "run.total" }
           : cancellationEvent;
 
-      await this.#store.recordStageEvent(
-        job.slug,
-        job.runId,
-        normalizedEvent,
-      );
+      await this.#store.recordStageEvent(job.slug, job.runId, normalizedEvent);
 
       if (normalizedEvent.type === "stage-start" && !signal.aborted) {
         await this.#store.updateRun(job.slug, job.runId, {
@@ -644,20 +576,16 @@ export class DashboardService {
 
       const frozenSource = job.sourceRunId
         ? await this.#store.resolveFrozenSource({
-          slug: job.slug,
-          sourceRunId: job.sourceRunId,
-        })
+            slug: job.slug,
+            sourceRunId: job.sourceRunId,
+          })
         : null;
       const sourceRunDir = frozenSource?.runDir || null;
       if (frozenSource) {
         const sourceFingerprint = await resolveFrozenInputFingerprint(frozenSource);
         await this.#store.updateRun(job.slug, job.runId, {
-          ...(frozenSource.run.baseSha
-            ? { baseSha: frozenSource.run.baseSha }
-            : {}),
-          ...(frozenSource.run.headSha
-            ? { headSha: frozenSource.run.headSha }
-            : {}),
+          ...(frozenSource.run.baseSha ? { baseSha: frozenSource.run.baseSha } : {}),
+          ...(frozenSource.run.headSha ? { headSha: frozenSource.run.headSha } : {}),
           metrics: {
             inputFingerprint: sourceFingerprint,
           },
@@ -706,10 +634,7 @@ export class DashboardService {
           headSha: resolveHeadSha(result.metadata),
           metrics: {
             additions: result.metadata?.additions ?? 0,
-            changedFiles:
-              result.metadata?.changedFiles
-              ?? result.diffSummary?.files?.length
-              ?? 0,
+            changedFiles: result.metadata?.changedFiles ?? result.diffSummary?.files?.length ?? 0,
             changedLines: result.diffSummary?.changedLineCount ?? 0,
             deletions: result.metadata?.deletions ?? 0,
             inputFingerprint,
@@ -727,22 +652,13 @@ export class DashboardService {
       if (!successCommitted) {
         throw signal.reason instanceof Error
           ? signal.reason
-          : createAbortError(
-            "Analysis was canceled before success could be committed.",
-          );
+          : createAbortError("Analysis was canceled before success could be committed.");
       }
 
-      const hasPublicationPath = Boolean(
-        result.htmlPath || result.stableHtmlPath,
-      );
+      const hasPublicationPath = Boolean(result.htmlPath || result.stableHtmlPath);
       if (hasPublicationPath) {
-        if (
-          typeof result.htmlPath !== "string"
-          || typeof result.stableHtmlPath !== "string"
-        ) {
-          throw new Error(
-            "A completed review must provide both htmlPath and stableHtmlPath.",
-          );
+        if (typeof result.htmlPath !== "string" || typeof result.stableHtmlPath !== "string") {
+          throw new Error("A completed review must provide both htmlPath and stableHtmlPath.");
         }
         await this.#publishReview({
           htmlPath: result.htmlPath,
@@ -751,27 +667,21 @@ export class DashboardService {
       }
     } catch (error) {
       const inputFingerprint = await tryReadInputFingerprint(runDir);
-      const usage = normalizeTokenUsage(
-        error?.usage || completedResult?.usage,
-      );
+      const usage = normalizeTokenUsage(error?.usage || completedResult?.usage);
       const completedAt = this.#nowDate();
       const elapsedMs = Math.round((performance.now() - startedNs) * 1000) / 1000;
       const message = error instanceof Error ? error.message : String(error);
-      const canceled = !successCommitted && (
-        signal.aborted || isAbortError(error)
-      );
+      const canceled = !successCommitted && (signal.aborted || isAbortError(error));
       const errorDetails = canceled
         ? {
-          code: "RUN_CANCELED",
-          message: message || "Analysis was canceled.",
-          ...(typeof error?.code === "string"
-            ? { causeCode: error.code }
-            : {}),
-        }
+            code: "RUN_CANCELED",
+            message: message || "Analysis was canceled.",
+            ...(typeof error?.code === "string" ? { causeCode: error.code } : {}),
+          }
         : {
-          code: "RUN_FAILED",
-          message,
-        };
+            code: "RUN_FAILED",
+            message,
+          };
 
       if (totalStageStarted) {
         await trackPendingWrite(
@@ -786,11 +696,10 @@ export class DashboardService {
         );
       }
       await this.#store.updateRun(job.slug, job.runId, (current) => {
-        const canFinalize = (
-          ACTIVE_STATUSES.has(current.status)
-          || (canceled && current.status === "canceled")
-          || (successCommitted && current.status === "succeeded")
-        );
+        const canFinalize =
+          ACTIVE_STATUSES.has(current.status) ||
+          (canceled && current.status === "canceled") ||
+          (successCommitted && current.status === "succeeded");
         if (!canFinalize) {
           return {};
         }
@@ -815,34 +724,27 @@ export class DashboardService {
   async #markRunCanceled(job, { message }) {
     const completedAt = this.#nowDate();
     let transitioned = false;
-    const updated = await this.#store.updateRun(
-      job.slug,
-      job.runId,
-      (current) => {
-        if (
-          current.status === "canceled"
-          && current.error?.code === "RUN_CANCELED"
-        ) {
-          transitioned = true;
-          return {};
-        }
-        if (!ACTIVE_STATUSES.has(current.status)) {
-          return {};
-        }
+    const updated = await this.#store.updateRun(job.slug, job.runId, (current) => {
+      if (current.status === "canceled" && current.error?.code === "RUN_CANCELED") {
         transitioned = true;
-        return {
-          error: {
-            code: "RUN_CANCELED",
-            message,
-          },
-          phase: "Canceled",
-          status: "canceled",
-          timestamps: {
-            completedAt,
-          },
-        };
-      },
-    );
+        return {};
+      }
+      if (!ACTIVE_STATUSES.has(current.status)) {
+        return {};
+      }
+      transitioned = true;
+      return {
+        error: {
+          code: "RUN_CANCELED",
+          message,
+        },
+        phase: "Canceled",
+        status: "canceled",
+        timestamps: {
+          completedAt,
+        },
+      };
+    });
     return transitioned ? updated : null;
   }
 
@@ -861,13 +763,9 @@ export class DashboardService {
       throw error;
     }
     const stagesToCancel = timings.stages
-      .filter((stage) => (
-        !stage.endedAt
-        || (
-          stage.stageId === "run.total"
-          && stage.status !== "canceled"
-        )
-      ))
+      .filter(
+        (stage) => !stage.endedAt || (stage.stageId === "run.total" && stage.status !== "canceled"),
+      )
       .reverse();
     if (stagesToCancel.length === 0) {
       return;
@@ -895,10 +793,7 @@ export class DashboardService {
     const metrics = event.metrics || {};
     const patch = {};
 
-    if (
-      event.stageId === "input.fetch.snapshot"
-      || event.stageId === "input.fetch.metadata"
-    ) {
+    if (event.stageId === "input.fetch.snapshot" || event.stageId === "input.fetch.metadata") {
       patch.headSha = metrics.headSha || null;
       patch.metrics = {
         additions: metrics.additions ?? 0,
@@ -919,12 +814,12 @@ export class DashboardService {
 
   async #findReusableSource(parsed) {
     const slug = parsed.slug;
-    const runs = (await this.#store.scanRuns())
-      .filter((run) => (
-        run.slug === slug
-        && !ACTIVE_STATUSES.has(run.status)
-        && pullRequestIdentityMatches(run, parsed)
-      ));
+    const runs = (await this.#store.scanRuns()).filter(
+      (run) =>
+        run.slug === slug &&
+        !ACTIVE_STATUSES.has(run.status) &&
+        pullRequestIdentityMatches(run, parsed),
+    );
 
     for (const run of runs) {
       try {
@@ -934,9 +829,9 @@ export class DashboardService {
         });
       } catch (error) {
         if (
-          error?.code !== "SOURCE_INPUT_MISSING"
-          && error?.code !== "INVALID_SOURCE_INPUT"
-          && error?.code !== "ENOENT"
+          error?.code !== "SOURCE_INPUT_MISSING" &&
+          error?.code !== "INVALID_SOURCE_INPUT" &&
+          error?.code !== "ENOENT"
         ) {
           throw error;
         }
@@ -1005,17 +900,10 @@ export class DashboardService {
     return manifest;
   }
 
-  async #resolveRequestedSource({
-    parsed,
-    refresh,
-    sourceRunId,
-    sourceSlug,
-  }) {
+  async #resolveRequestedSource({ parsed, refresh, sourceRunId, sourceSlug }) {
     const slug = parsed.slug;
     if (sourceSlug && sourceSlug !== slug) {
-      throw new Error(
-        `Frozen source ${sourceSlug} does not match requested PR ${slug}.`,
-      );
+      throw new Error(`Frozen source ${sourceSlug} does not match requested PR ${slug}.`);
     }
 
     const frozenSource = sourceRunId
@@ -1036,9 +924,8 @@ export class DashboardService {
   }
 
   #resolveModel(model) {
-    const selected = typeof model === "string" && model.trim()
-      ? model.trim()
-      : this.#configuration.defaultModel;
+    const selected =
+      typeof model === "string" && model.trim() ? model.trim() : this.#configuration.defaultModel;
     if (!this.#configuration.models.includes(selected)) {
       const error = new Error(
         `Unsupported model "${selected}". Select one of: ${this.#configuration.models.join(", ")}.`,
@@ -1051,19 +938,17 @@ export class DashboardService {
 
   #resolveReasoningEffort(model, reasoningEffort) {
     const supported =
-      this.#configuration.modelReasoningEfforts[model]
-      || this.#configuration.reasoningEfforts;
-    const selected = typeof reasoningEffort === "string" && reasoningEffort.trim()
-      ? reasoningEffort.trim()
-      : supported.includes("xhigh")
-        ? "xhigh"
-        : supported.includes("max")
-          ? "max"
-          : supported.at(-1);
+      this.#configuration.modelReasoningEfforts[model] || this.#configuration.reasoningEfforts;
+    const selected =
+      typeof reasoningEffort === "string" && reasoningEffort.trim()
+        ? reasoningEffort.trim()
+        : supported.includes("xhigh")
+          ? "xhigh"
+          : supported.includes("max")
+            ? "max"
+            : supported.at(-1);
     if (!supported.includes(selected)) {
-      const error = new Error(
-        `Unsupported reasoning effort "${selected}" for ${model}.`,
-      );
+      const error = new Error(`Unsupported reasoning effort "${selected}" for ${model}.`);
       error.code = "INVALID_REASONING_EFFORT";
       throw error;
     }
@@ -1071,8 +956,7 @@ export class DashboardService {
   }
 
   #resolveProvider(model) {
-    return this.#configuration.modelProviders[model]
-      || inferModelProvider(model);
+    return this.#configuration.modelProviders[model] || inferModelProvider(model);
   }
 
   #nowDate() {
@@ -1094,11 +978,11 @@ export async function readCodeVersion({ cwd = process.cwd() } = {}) {
           cwd,
           maxBuffer: 1024 * 1024 * 100,
         }),
-        execFileAsync(
-          "git",
-          ["ls-files", "--others", "--exclude-standard", "-z"],
-          { cwd, encoding: "buffer", maxBuffer: 1024 * 1024 * 20 },
-        ),
+        execFileAsync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
+          cwd,
+          encoding: "buffer",
+          maxBuffer: 1024 * 1024 * 20,
+        }),
       ]);
     const commit = commitOutput.trim();
     const hash = createHash("sha256");
@@ -1119,9 +1003,7 @@ export async function readCodeVersion({ cwd = process.cwd() } = {}) {
     return {
       commit,
       dirty,
-      fingerprint: dirty
-        ? `${commit.slice(0, 12)}-dirty-${dirtyHash}`
-        : commit,
+      fingerprint: dirty ? `${commit.slice(0, 12)}-dirty-${dirtyHash}` : commit,
     };
   } catch {
     return {
@@ -1204,8 +1086,8 @@ function assertFrozenSourceIdentity(run, parsed) {
   }
 
   const error = new Error(
-    `Frozen source ${run?.slug || "unknown"} does not belong to `
-    + `${parsed.owner}/${parsed.repo}#${parsed.number}.`,
+    `Frozen source ${run?.slug || "unknown"} does not belong to ` +
+      `${parsed.owner}/${parsed.repo}#${parsed.number}.`,
   );
   error.code = "INVALID_SOURCE_RUN";
   throw error;
@@ -1213,9 +1095,9 @@ function assertFrozenSourceIdentity(run, parsed) {
 
 function pullRequestIdentityMatches(run, parsed) {
   if (
-    normalizeGitHubName(run?.owner) !== normalizeGitHubName(parsed.owner)
-    || normalizeGitHubName(run?.repo) !== normalizeGitHubName(parsed.repo)
-    || Number(run?.number) !== Number(parsed.number)
+    normalizeGitHubName(run?.owner) !== normalizeGitHubName(parsed.owner) ||
+    normalizeGitHubName(run?.repo) !== normalizeGitHubName(parsed.repo) ||
+    Number(run?.number) !== Number(parsed.number)
   ) {
     return false;
   }
@@ -1223,9 +1105,9 @@ function pullRequestIdentityMatches(run, parsed) {
   try {
     const urlIdentity = parseGitHubPrUrl(run.url);
     return (
-      normalizeGitHubName(urlIdentity.owner) === normalizeGitHubName(parsed.owner)
-      && normalizeGitHubName(urlIdentity.repo) === normalizeGitHubName(parsed.repo)
-      && Number(urlIdentity.number) === Number(parsed.number)
+      normalizeGitHubName(urlIdentity.owner) === normalizeGitHubName(parsed.owner) &&
+      normalizeGitHubName(urlIdentity.repo) === normalizeGitHubName(parsed.repo) &&
+      Number(urlIdentity.number) === Number(parsed.number)
     );
   } catch {
     return false;
@@ -1261,53 +1143,49 @@ export async function loadDashboardConfiguration({
   homeDir = os.homedir(),
   isClaudeAvailable = detectClaudeCli,
 } = {}) {
-  const codexHome = typeof env.CODEX_HOME === "string" && env.CODEX_HOME.trim()
-    ? path.resolve(env.CODEX_HOME.trim())
-    : path.join(homeDir, ".codex");
+  const codexHome =
+    typeof env.CODEX_HOME === "string" && env.CODEX_HOME.trim()
+      ? path.resolve(env.CODEX_HOME.trim())
+      : path.join(homeDir, ".codex");
   const configuredModel =
-    normalizeOptionalName(env.PRC_CODEX_MODEL)
-    || await readConfiguredCodexModel(path.join(codexHome, "config.toml"))
-    || DEFAULT_CODEX_MODEL;
+    normalizeOptionalName(env.PRC_CODEX_MODEL) ||
+    (await readConfiguredCodexModel(path.join(codexHome, "config.toml"))) ||
+    DEFAULT_CODEX_MODEL;
   const configuredEfforts = parseNameList(env.PRC_CODEX_REASONING_EFFORTS);
-  const reasoningEfforts = configuredEfforts.length > 0
-    ? orderedReasoningEfforts(configuredEfforts)
-    : [...DEFAULT_REASONING_EFFORTS];
+  const reasoningEfforts =
+    configuredEfforts.length > 0
+      ? orderedReasoningEfforts(configuredEfforts)
+      : [...DEFAULT_REASONING_EFFORTS];
   const configuredModels = parseNameList(env.PRC_CODEX_MODELS);
-  const cachedModels = configuredModels.length > 0
-    ? []
-    : await readVisibleCodexModels(path.join(codexHome, "models_cache.json"));
+  const cachedModels =
+    configuredModels.length > 0
+      ? []
+      : await readVisibleCodexModels(path.join(codexHome, "models_cache.json"));
   const codexModels = uniqueNames([
     configuredModel,
-    ...(configuredModels.length > 0
-      ? configuredModels
-      : cachedModels.map((model) => model.slug)),
+    ...(configuredModels.length > 0 ? configuredModels : cachedModels.map((model) => model.slug)),
   ]);
   const configuredClaudeModels = parseNameList(env.PRC_CLAUDE_MODELS);
   const explicitClaudeModel = normalizeOptionalName(env.PRC_CLAUDE_MODEL);
   const configuredClaudeModel = explicitClaudeModel || DEFAULT_CLAUDE_MODEL;
-  const claudeAvailable = Boolean(explicitClaudeModel)
-    || configuredClaudeModels.length > 0
-    || await isClaudeAvailable();
+  const claudeAvailable =
+    Boolean(explicitClaudeModel) ||
+    configuredClaudeModels.length > 0 ||
+    (await isClaudeAvailable());
   const claudeModels = claudeAvailable
-    ? uniqueNames([
-        configuredClaudeModel,
-        ...configuredClaudeModels,
-      ])
+    ? uniqueNames([configuredClaudeModel, ...configuredClaudeModels])
     : [];
   const models = uniqueNames([...codexModels, ...claudeModels]);
   const modelProviders = Object.fromEntries([
     ...codexModels.map((model) => [model, "codex"]),
     ...claudeModels.map((model) => [model, "claude"]),
   ]);
-  const configuredClaudeEfforts = parseNameList(
-    env.PRC_CLAUDE_REASONING_EFFORTS,
-  );
-  const claudeReasoningEfforts = configuredClaudeEfforts.length > 0
-    ? orderedReasoningEfforts(configuredClaudeEfforts)
-    : [...DEFAULT_CLAUDE_REASONING_EFFORTS];
-  const cachedModelsBySlug = new Map(
-    cachedModels.map((model) => [model.slug, model]),
-  );
+  const configuredClaudeEfforts = parseNameList(env.PRC_CLAUDE_REASONING_EFFORTS);
+  const claudeReasoningEfforts =
+    configuredClaudeEfforts.length > 0
+      ? orderedReasoningEfforts(configuredClaudeEfforts)
+      : [...DEFAULT_CLAUDE_REASONING_EFFORTS];
+  const cachedModelsBySlug = new Map(cachedModels.map((model) => [model.slug, model]));
   const modelReasoningEfforts = Object.fromEntries(
     models.map((model) => {
       if (modelProviders[model] === "claude") {
@@ -1319,10 +1197,7 @@ export async function loadDashboardConfiguration({
           reasoningEfforts.includes(effort),
         ),
       );
-      return [
-        model,
-        supported.length > 0 ? supported : [...reasoningEfforts],
-      ];
+      return [model, supported.length > 0 ? supported : [...reasoningEfforts]];
     }),
   );
 
@@ -1340,9 +1215,7 @@ function normalizeDashboardConfiguration(configuration) {
     throw new TypeError("Dashboard configuration must be an object.");
   }
 
-  const defaultModel =
-    normalizeOptionalName(configuration.defaultModel)
-    || DEFAULT_CODEX_MODEL;
+  const defaultModel = normalizeOptionalName(configuration.defaultModel) || DEFAULT_CODEX_MODEL;
   const models = uniqueNames([
     defaultModel,
     ...(Array.isArray(configuration.models) ? configuration.models : []),
@@ -1353,26 +1226,21 @@ function normalizeDashboardConfiguration(configuration) {
       : DEFAULT_REASONING_EFFORTS,
   );
   if (reasoningEfforts.length === 0) {
-    throw new TypeError(
-      "Dashboard configuration must include at least one reasoning effort.",
-    );
+    throw new TypeError("Dashboard configuration must include at least one reasoning effort.");
   }
 
   const configuredByModel =
-    configuration.modelReasoningEfforts
-    && typeof configuration.modelReasoningEfforts === "object"
+    configuration.modelReasoningEfforts && typeof configuration.modelReasoningEfforts === "object"
       ? configuration.modelReasoningEfforts
       : {};
   const configuredProviders =
-    configuration.modelProviders
-    && typeof configuration.modelProviders === "object"
+    configuration.modelProviders && typeof configuration.modelProviders === "object"
       ? configuration.modelProviders
       : {};
   const modelProviders = Object.fromEntries(
     models.map((model) => [
       model,
-      normalizeModelProvider(configuredProviders[model])
-        || inferModelProvider(model),
+      normalizeModelProvider(configuredProviders[model]) || inferModelProvider(model),
     ]),
   );
   const modelReasoningEfforts = Object.fromEntries(
@@ -1383,9 +1251,8 @@ function normalizeDashboardConfiguration(configuration) {
           ? DEFAULT_CLAUDE_REASONING_EFFORTS
           : reasoningEfforts;
       const supported = orderedReasoningEfforts(configured);
-      const fallback = modelProviders[model] === "claude"
-        ? DEFAULT_CLAUDE_REASONING_EFFORTS
-        : reasoningEfforts;
+      const fallback =
+        modelProviders[model] === "claude" ? DEFAULT_CLAUDE_REASONING_EFFORTS : reasoningEfforts;
       return [model, supported.length > 0 ? supported : [...fallback]];
     }),
   );
@@ -1405,14 +1272,10 @@ async function detectClaudeCli() {
       timeout: 3_000,
       windowsHide: true,
     });
-    const { stdout } = await execFileAsync(
-      "claude",
-      ["auth", "status", "--json"],
-      {
-        timeout: 3_000,
-        windowsHide: true,
-      },
-    );
+    const { stdout } = await execFileAsync("claude", ["auth", "status", "--json"], {
+      timeout: 3_000,
+      windowsHide: true,
+    });
     return JSON.parse(stdout)?.loggedIn === true;
   } catch {
     return false;
@@ -1422,9 +1285,7 @@ async function detectClaudeCli() {
 async function readConfiguredCodexModel(configPath) {
   try {
     const contents = await readFile(configPath, "utf8");
-    const match = contents.match(
-      /^\s*model\s*=\s*(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s#\r\n]+))/m,
-    );
+    const match = contents.match(/^\s*model\s*=\s*(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s#\r\n]+))/m);
     return normalizeOptionalName(match?.[1] || match?.[2] || match?.[3]);
   } catch (error) {
     if (error?.code === "ENOENT") {
@@ -1439,17 +1300,18 @@ async function readVisibleCodexModels(cachePath) {
     const document = JSON.parse(await readFile(cachePath, "utf8"));
     const models = Array.isArray(document?.models) ? document.models : [];
     return models
-      .filter((model) => (
-        model?.visibility === "list"
-        && typeof model.slug === "string"
-        && model.slug.trim().length > 0
-      ))
+      .filter(
+        (model) =>
+          model?.visibility === "list" &&
+          typeof model.slug === "string" &&
+          model.slug.trim().length > 0,
+      )
       .map((model) => ({
         slug: model.slug.trim(),
         supportedReasoningEfforts: Array.isArray(model.supported_reasoning_levels)
           ? model.supported_reasoning_levels
-            .map((level) => normalizeOptionalName(level?.effort))
-            .filter(Boolean)
+              .map((level) => normalizeOptionalName(level?.effort))
+              .filter(Boolean)
           : [],
       }));
   } catch {
@@ -1459,30 +1321,19 @@ async function readVisibleCodexModels(cachePath) {
 
 function orderedReasoningEfforts(values) {
   const names = new Set(uniqueNames(values));
-  return [
-    ...REASONING_EFFORT_ORDER.filter((effort) => names.delete(effort)),
-    ...names,
-  ];
+  return [...REASONING_EFFORT_ORDER.filter((effort) => names.delete(effort)), ...names];
 }
 
 function parseNameList(value) {
-  return typeof value === "string"
-    ? uniqueNames(value.split(","))
-    : [];
+  return typeof value === "string" ? uniqueNames(value.split(",")) : [];
 }
 
 function uniqueNames(values) {
-  return [...new Set(
-    values
-      .map(normalizeOptionalName)
-      .filter(Boolean),
-  )];
+  return [...new Set(values.map(normalizeOptionalName).filter(Boolean))];
 }
 
 function normalizeOptionalName(value) {
-  return typeof value === "string" && value.trim()
-    ? value.trim()
-    : null;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function normalizeModelProvider(value) {
@@ -1501,11 +1352,7 @@ function normalizeTokenUsage(value) {
 
   const aliases = {
     inputTokens: ["inputTokens", "input_tokens"],
-    cachedInputTokens: [
-      "cachedInputTokens",
-      "cached_input_tokens",
-      "cachedTokens",
-    ],
+    cachedInputTokens: ["cachedInputTokens", "cached_input_tokens", "cachedTokens"],
     outputTokens: ["outputTokens", "output_tokens"],
     totalTokens: ["totalTokens", "total_tokens"],
   };
@@ -1513,11 +1360,10 @@ function normalizeTokenUsage(value) {
   for (const [target, candidates] of Object.entries(aliases)) {
     const metric = candidates
       .map((candidate) => value[candidate])
-      .find((candidate) => (
-        typeof candidate === "number"
-        && Number.isFinite(candidate)
-        && candidate >= 0
-      ));
+      .find(
+        (candidate) =>
+          typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0,
+      );
     if (metric !== undefined) {
       usage[target] = metric;
     }
@@ -1538,7 +1384,7 @@ function uniqueJobs(jobs) {
 }
 
 function compareFrozenSourceCandidates(left, right) {
-  const statusRank = (run) => run.status === "succeeded" ? 0 : 1;
+  const statusRank = (run) => (run.status === "succeeded" ? 0 : 1);
   const statusDifference = statusRank(left) - statusRank(right);
   if (statusDifference !== 0) {
     return statusDifference;
@@ -1546,8 +1392,8 @@ function compareFrozenSourceCandidates(left, right) {
   const leftIndex = Number(left.metrics?.batchIndex);
   const rightIndex = Number(right.metrics?.batchIndex);
   return (
-    (Number.isFinite(leftIndex) ? leftIndex : Number.MAX_SAFE_INTEGER)
-    - (Number.isFinite(rightIndex) ? rightIndex : Number.MAX_SAFE_INTEGER)
+    (Number.isFinite(leftIndex) ? leftIndex : Number.MAX_SAFE_INTEGER) -
+    (Number.isFinite(rightIndex) ? rightIndex : Number.MAX_SAFE_INTEGER)
   );
 }
 
@@ -1571,9 +1417,7 @@ function throwIfAborted(signal) {
   if (!signal.aborted) {
     return;
   }
-  throw signal.reason instanceof Error
-    ? signal.reason
-    : createAbortError("Analysis was canceled.");
+  throw signal.reason instanceof Error ? signal.reason : createAbortError("Analysis was canceled.");
 }
 
 function isAbortError(error) {
@@ -1587,10 +1431,7 @@ function isStageFinishEvent(event) {
 function cancellationEventError(error) {
   if (error && typeof error === "object" && !Array.isArray(error)) {
     return {
-      code:
-        typeof error.code === "string" && error.code
-          ? error.code
-          : "RUN_CANCELED",
+      code: typeof error.code === "string" && error.code ? error.code : "RUN_CANCELED",
       message:
         typeof error.message === "string" && error.message
           ? error.message

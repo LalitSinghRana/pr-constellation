@@ -17,10 +17,7 @@ const sourceServer = fileURLToPath(new URL("./server.mjs", import.meta.url));
 const domain = `gui/${process.getuid()}`;
 
 function xml(value) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 const { stdout } = await exec("/usr/bin/which", ["gh"]);

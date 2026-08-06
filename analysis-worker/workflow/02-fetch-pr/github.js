@@ -25,13 +25,13 @@ export function parseGitHubPrUrl(prUrl) {
   const numericNumber = Number(number);
 
   if (
-    !owner
-    || !repo
-    || pull !== "pull"
-    || !number
-    || !/^\d+$/.test(number)
-    || !Number.isSafeInteger(numericNumber)
-    || numericNumber < 1
+    !owner ||
+    !repo ||
+    pull !== "pull" ||
+    !number ||
+    !/^\d+$/.test(number) ||
+    !Number.isSafeInteger(numericNumber) ||
+    numericNumber < 1
   ) {
     throw new Error(`Expected a GitHub pull request URL, got: ${prUrl}`);
   }
@@ -60,12 +60,7 @@ function createReviewSlug({ owner, repo, number }) {
 
 export async function fetchPullRequest(
   prUrl,
-  {
-    executeGh = ghText,
-    onEvent,
-    parentStageId = "input.fetch",
-    signal,
-  } = {},
+  { executeGh = ghText, onEvent, parentStageId = "input.fetch", signal } = {},
 ) {
   throwIfAborted(signal);
 
@@ -97,13 +92,14 @@ export async function fetchPullRequest(
     parentStageId,
     signal,
     stageId: `${parentStageId}.snapshot`,
-    task: () => fetchConsistentSnapshot({
-      executeGh,
-      onEvent,
-      parentStageId: `${parentStageId}.snapshot`,
-      prUrl,
-      signal,
-    }),
+    task: () =>
+      fetchConsistentSnapshot({
+        executeGh,
+        onEvent,
+        parentStageId: `${parentStageId}.snapshot`,
+        prUrl,
+        signal,
+      }),
   });
 
   return {
@@ -112,13 +108,7 @@ export async function fetchPullRequest(
   };
 }
 
-async function fetchConsistentSnapshot({
-  executeGh,
-  onEvent,
-  parentStageId,
-  prUrl,
-  signal,
-}) {
+async function fetchConsistentSnapshot({ executeGh, onEvent, parentStageId, prUrl, signal }) {
   let lastSnapshotChange;
 
   for (let attempt = 1; attempt <= MAX_SNAPSHOT_ATTEMPTS; attempt += 1) {
@@ -129,10 +119,7 @@ async function fetchConsistentSnapshot({
         getErrorMetrics: (error) => ({
           attempt,
           ...snapshotChangeMetrics(error),
-          willRetry: (
-            error instanceof SnapshotChangedError
-            && attempt < MAX_SNAPSHOT_ATTEMPTS
-          ),
+          willRetry: error instanceof SnapshotChangedError && attempt < MAX_SNAPSHOT_ATTEMPTS,
         }),
         getMetrics: ({ metadata }) => ({
           attempt,
@@ -213,20 +200,14 @@ async function fetchConsistentSnapshot({
       `GitHub PR refs changed during ${MAX_SNAPSHOT_ATTEMPTS} consecutive snapshot attempts.`,
       "Retry once pushes to the PR or its base branch have stopped.",
       lastSnapshotChange?.message,
-    ].filter(Boolean).join(" "),
+    ]
+      .filter(Boolean)
+      .join(" "),
     { cause: lastSnapshotChange },
   );
 }
 
-function fetchMetadata({
-  executeGh,
-  label,
-  onEvent,
-  parentStageId,
-  prUrl,
-  signal,
-  stageId,
-}) {
+function fetchMetadata({ executeGh, label, onEvent, parentStageId, prUrl, signal, stageId }) {
   return runTimedGhStage({
     getMetrics: (value) => ({
       additions: value.additions ?? 0,
@@ -240,29 +221,34 @@ function fetchMetadata({
     parentStageId,
     signal,
     stageId,
-    task: () => ghJson([
-      "pr",
-      "view",
-      prUrl,
-      "--json",
-      [
-        "additions",
-        "author",
-        "baseRefName",
-        "baseRefOid",
-        "body",
-        "changedFiles",
-        "commits",
-        "deletions",
-        "files",
-        "headRefName",
-        "headRefOid",
-        "number",
-        "state",
-        "title",
-        "url",
-      ].join(","),
-    ], executeGh, signal),
+    task: () =>
+      ghJson(
+        [
+          "pr",
+          "view",
+          prUrl,
+          "--json",
+          [
+            "additions",
+            "author",
+            "baseRefName",
+            "baseRefOid",
+            "body",
+            "changedFiles",
+            "commits",
+            "deletions",
+            "files",
+            "headRefName",
+            "headRefOid",
+            "number",
+            "state",
+            "title",
+            "url",
+          ].join(","),
+        ],
+        executeGh,
+        signal,
+      ),
   });
 }
 
@@ -282,10 +268,10 @@ function readSnapshotRefs(metadata) {
   const headSha = metadata.headRefOid;
 
   if (
-    typeof baseSha !== "string"
-    || baseSha.length === 0
-    || typeof headSha !== "string"
-    || headSha.length === 0
+    typeof baseSha !== "string" ||
+    baseSha.length === 0 ||
+    typeof headSha !== "string" ||
+    headSha.length === 0
   ) {
     throw new Error(
       "GitHub did not return baseRefOid and headRefOid; cannot verify the PR snapshot.",
@@ -312,8 +298,8 @@ function snapshotChangeMetrics(error) {
 class SnapshotChangedError extends Error {
   constructor(before, after) {
     super(
-      `PR refs moved from ${before.baseSha}/${before.headSha} `
-      + `to ${after.baseSha}/${after.headSha} while fetching its diff.`,
+      `PR refs moved from ${before.baseSha}/${before.headSha} ` +
+        `to ${after.baseSha}/${after.headSha} while fetching its diff.`,
     );
     this.name = "SnapshotChangedError";
     this.before = before;
@@ -509,9 +495,8 @@ function throwIfAborted(signal) {
 }
 
 function createAbortError(reason) {
-  const message = reason instanceof Error && reason.message
-    ? reason.message
-    : "The operation was aborted.";
+  const message =
+    reason instanceof Error && reason.message ? reason.message : "The operation was aborted.";
   const error = new Error(message, reason === undefined ? undefined : { cause: reason });
   error.name = "AbortError";
   error.code = "ABORT_ERR";

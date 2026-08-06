@@ -49,10 +49,10 @@ export function validateReviewAnalysis(analysis, { inventory = null } = {}) {
     errors.push("analysis.json must include a non-empty summary.");
   }
   if (
-    typeof analysis?.confidence !== "number"
-    || !Number.isFinite(analysis.confidence)
-    || analysis.confidence < 0
-    || analysis.confidence > 1
+    typeof analysis?.confidence !== "number" ||
+    !Number.isFinite(analysis.confidence) ||
+    analysis.confidence < 0 ||
+    analysis.confidence > 1
   ) {
     errors.push("analysis.json confidence must be a number from 0 to 1.");
   }
@@ -97,8 +97,8 @@ export function validateReviewStacks(document, { inventory = null } = {}) {
 
   const expectedFileIds = inventory
     ? (inventory.files || [])
-      .filter((file) => Array.isArray(file.changedLineIds) && file.changedLineIds.length > 0)
-      .map((file) => file.id)
+        .filter((file) => Array.isArray(file.changedLineIds) && file.changedLineIds.length > 0)
+        .map((file) => file.id)
     : null;
 
   validateReviewStackEntries({
@@ -160,7 +160,9 @@ function validateFiles({ analysis, errors, inventory }) {
       );
     }
     if (inventory && isNonEmptyString(file.path) && !inventoryFileByPath.has(file.path)) {
-      errors.push(`analysis.json references a path not changed in diff-inventory.json: ${file.path}`);
+      errors.push(
+        `analysis.json references a path not changed in diff-inventory.json: ${file.path}`,
+      );
     }
 
     validateClassification({ errors, targetId: `file ${file.id}`, value: file });
@@ -224,7 +226,9 @@ function validateFiles({ analysis, errors, inventory }) {
   }
   for (const changedLineId of inventoryLineById.keys()) {
     if (!changedLineOwnerById.has(changedLineId)) {
-      errors.push(`analysis.json changed line id is not covered by any review section: ${changedLineId}`);
+      errors.push(
+        `analysis.json changed line id is not covered by any review section: ${changedLineId}`,
+      );
     }
   }
 }
@@ -282,7 +286,9 @@ function validateSectionTree({
 
       const inventoryLine = inventoryLineById.get(changedLineId);
       if (inventoryLineById.size > 0 && !inventoryLine) {
-        errors.push(`analysis.json review section ${owner} references unknown changed line id: ${changedLineId}`);
+        errors.push(
+          `analysis.json review section ${owner} references unknown changed line id: ${changedLineId}`,
+        );
         continue;
       }
       if (inventoryLine?.file !== undefined && inventoryLine.file !== file.path) {
@@ -434,7 +440,9 @@ function validateTreeBranches({
     branchIds.add(branchId);
 
     if (!Number.isInteger(branch.order) || branch.order < 0) {
-      errors.push(`analysis.json ${branchLabel} ${branchId} must have a non-negative integer order.`);
+      errors.push(
+        `analysis.json ${branchLabel} ${branchId} must have a non-negative integer order.`,
+      );
     } else {
       const orders = ordersByParentId.get(branch.parentId) || [];
       orders.push(branch.order);
@@ -467,8 +475,8 @@ function validateTreeBranches({
   for (const [parentId, orders] of ordersByParentId) {
     const sortedOrders = orders.slice().sort((left, right) => left - right);
     if (
-      sortedOrders.length !== new Set(sortedOrders).size
-      || sortedOrders.some((order, index) => order !== index)
+      sortedOrders.length !== new Set(sortedOrders).size ||
+      sortedOrders.some((order, index) => order !== index)
     ) {
       errors.push(
         `analysis.json ${branchLabel} from ${parentId} must use unique contiguous sibling order values starting at 0.`,
@@ -485,7 +493,9 @@ function validateTreeBranches({
   for (const item of itemById.values()) {
     const parents = parentCounts.get(item.id) || 0;
     if (root && item.id !== root.id && parents !== 1) {
-      errors.push(`analysis.json non-root ${itemLabel} must have exactly one parent: ${item.id} has ${parents}.`);
+      errors.push(
+        `analysis.json non-root ${itemLabel} must have exactly one parent: ${item.id} has ${parents}.`,
+      );
     }
   }
 
@@ -493,7 +503,9 @@ function validateTreeBranches({
     const reachable = collectReachableIds(root.id, childrenById);
     for (const item of itemById.values()) {
       if (!reachable.has(item.id)) {
-        errors.push(`analysis.json ${rootLabel} ${itemLabel} is not reachable from its root: ${item.id}`);
+        errors.push(
+          `analysis.json ${rootLabel} ${itemLabel} is not reachable from its root: ${item.id}`,
+        );
       }
     }
   }
@@ -502,16 +514,12 @@ function validateTreeBranches({
 }
 
 export function isAcceptableFileTreeRoot(rootFile, files) {
-  return !files.some((file) => (
-    file.id !== rootFile.id
-    && isStrictlyHigherPriority(file, rootFile)
-  ));
+  return !files.some((file) => file.id !== rootFile.id && isStrictlyHigherPriority(file, rootFile));
 }
 
 function isStrictlyHigherPriority(file, otherFile) {
-  const reviewPriorityDifference = (
-    reviewPriorityOrder(file.reviewPriority) - reviewPriorityOrder(otherFile.reviewPriority)
-  );
+  const reviewPriorityDifference =
+    reviewPriorityOrder(file.reviewPriority) - reviewPriorityOrder(otherFile.reviewPriority);
   if (reviewPriorityDifference !== 0) {
     return reviewPriorityDifference < 0;
   }
@@ -565,7 +573,9 @@ function validateExactIdSet({ actualIds, errors, expectedIds, label }) {
     const details = [
       missing.length > 0 ? `missing ${missing.slice(0, 5).join(", ")}` : "",
       extra.length > 0 ? `extra ${extra.slice(0, 5).join(", ")}` : "",
-    ].filter(Boolean).join("; ");
+    ]
+      .filter(Boolean)
+      .join("; ");
     errors.push(
       `analysis.json ${label} must exactly match covered diff ids${details ? ` (${details})` : ""}.`,
     );
@@ -640,9 +650,11 @@ function validateChangedLineSequence({
     return;
   }
 
-  const hunkLocations = new Set(positions.map((entry) => {
-    return `${entry.position.file}\0${entry.position.hunkId}`;
-  }));
+  const hunkLocations = new Set(
+    positions.map((entry) => {
+      return `${entry.position.file}\0${entry.position.hunkId}`;
+    }),
+  );
   if (hunkLocations.size !== 1) {
     errors.push(
       `analysis.json review section ${owner} changedLineIds must belong to one hunk; unchanged context gaps within that hunk are allowed.`,
@@ -663,11 +675,10 @@ function validateChangedLineSequence({
 
     if (current.position.changedIndex !== previous.position.changedIndex + 1) {
       const skippedChangedLine = [...inventoryLinePositionById.entries()].find(
-        ([, position]) => (
-          position.file === previous.position.file
-          && position.hunkId === previous.position.hunkId
-          && position.changedIndex === previous.position.changedIndex + 1
-        ),
+        ([, position]) =>
+          position.file === previous.position.file &&
+          position.hunkId === previous.position.hunkId &&
+          position.changedIndex === previous.position.changedIndex + 1,
       );
 
       errors.push(
@@ -686,7 +697,9 @@ function validateChangedLineRanges({
   owner,
 }) {
   if (changedLineRanges.length === 0) {
-    errors.push(`analysis.json review section ${owner} must contain at least one changedLineRange.`);
+    errors.push(
+      `analysis.json review section ${owner} must contain at least one changedLineRange.`,
+    );
     return;
   }
 
@@ -704,9 +717,9 @@ function validateChangedLineRanges({
       continue;
     }
     if (
-      start.file !== end.file
-      || start.hunkId !== end.hunkId
-      || start.changedIndex > end.changedIndex
+      start.file !== end.file ||
+      start.hunkId !== end.hunkId ||
+      start.changedIndex > end.changedIndex
     ) {
       errors.push(
         `analysis.json review section ${owner} changedLineRanges[${rangeIndex}] must be forward and stay within one file hunk.`,
@@ -714,14 +727,10 @@ function validateChangedLineRanges({
       continue;
     }
     if (
-      previousEndPosition
-      && (
-        start.fileIndex < previousEndPosition.fileIndex
-        || (
-          start.fileIndex === previousEndPosition.fileIndex
-          && start.fileChangedIndex <= previousEndPosition.fileChangedIndex
-        )
-      )
+      previousEndPosition &&
+      (start.fileIndex < previousEndPosition.fileIndex ||
+        (start.fileIndex === previousEndPosition.fileIndex &&
+          start.fileChangedIndex <= previousEndPosition.fileChangedIndex))
     ) {
       errors.push(
         `analysis.json review section ${owner} changedLineRanges must be non-overlapping and appear in source order.`,
@@ -730,12 +739,13 @@ function validateChangedLineRanges({
     }
 
     const rangeIds = [...inventoryLinePositionById.entries()]
-      .filter(([, position]) => (
-        position.file === start.file
-        && position.hunkId === start.hunkId
-        && position.changedIndex >= start.changedIndex
-        && position.changedIndex <= end.changedIndex
-      ))
+      .filter(
+        ([, position]) =>
+          position.file === start.file &&
+          position.hunkId === start.hunkId &&
+          position.changedIndex >= start.changedIndex &&
+          position.changedIndex <= end.changedIndex,
+      )
       .sort((left, right) => left[1].changedIndex - right[1].changedIndex)
       .map(([lineId]) => lineId);
     expandedIds.push(...rangeIds);
@@ -743,8 +753,8 @@ function validateChangedLineRanges({
   }
 
   if (
-    expandedIds.length !== changedLineIds.length
-    || expandedIds.some((lineId, index) => lineId !== changedLineIds[index])
+    expandedIds.length !== changedLineIds.length ||
+    expandedIds.some((lineId, index) => lineId !== changedLineIds[index])
   ) {
     errors.push(
       `analysis.json review section ${owner} changedLineIds must exactly match its materialized changedLineRanges.`,

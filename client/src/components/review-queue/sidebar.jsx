@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle.jsx";
 import {
-  Sidebar as SidebarRoot,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
@@ -20,15 +19,24 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  Sidebar as SidebarRoot,
 } from "@/components/ui/sidebar.jsx";
 import { FILTER_GROUPS } from "./config.jsx";
 
-const menuButtonClass = "h-10 px-3 text-sidebar-foreground/70 data-[active=true]:shadow-[inset_2px_0_var(--primary)]";
+const menuButtonClass =
+  "h-10 px-3 text-sidebar-foreground/70 data-[active=true]:shadow-[inset_2px_0_var(--primary)]";
 
 export function Brand() {
   return (
-    <a className="flex items-center gap-3 px-2 text-inherit no-underline" href="/" aria-label="PR Review Cockpit home">
-      <span className="grid size-10 place-items-center rounded-sm border border-primary/35 bg-primary/12 text-primary" aria-hidden="true">
+    <a
+      className="flex items-center gap-3 px-2 text-inherit no-underline"
+      href="/"
+      aria-label="PR Review Cockpit home"
+    >
+      <span
+        className="grid size-10 place-items-center rounded-sm border border-primary/35 bg-primary/12 text-primary"
+        aria-hidden="true"
+      >
         <GitPullRequest className="size-5" strokeWidth={2.3} />
       </span>
       <span>
@@ -73,36 +81,34 @@ function NavigationGroup({ label, children }) {
 export function QueueSidebar({ activeFilter, counts, onFilter, onSettings }) {
   return (
     <AppSidebar
-      footer={(
-        <>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild className={menuButtonClass}>
-                <a href="/analysis" target="_blank" rel="noreferrer">
-                  <Sparkles />
-                  <span>AI analyzer queue</span>
-                  <ArrowUpRight className="ml-auto" />
-                </a>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton className={menuButtonClass} onClick={onSettings}>
-                <Settings2 />
-                <span>Configure team</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild className={menuButtonClass}>
-                <a href="/scoring">
-                  <TableProperties />
-                  <span>Scoring details</span>
-                  <ArrowUpRight className="ml-auto" />
-                </a>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </>
-      )}
+      footer={
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild className={menuButtonClass}>
+              <a href="/analysis" target="_blank" rel="noreferrer">
+                <Sparkles />
+                <span>AI analyzer queue</span>
+                <ArrowUpRight className="ml-auto" />
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton className={menuButtonClass} onClick={onSettings}>
+              <Settings2 />
+              <span>Configure team</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild className={menuButtonClass}>
+              <a href="/scoring">
+                <TableProperties />
+                <span>Scoring details</span>
+                <ArrowUpRight className="ml-auto" />
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      }
     >
       {FILTER_GROUPS.map((group) => (
         <NavigationGroup key={group.label} label={group.label}>
