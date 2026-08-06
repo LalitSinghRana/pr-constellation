@@ -113,7 +113,9 @@ export class RunStore {
 
   async readRun(slug, runId) {
     const runPath = path.join(this.getRunDir(slug, runId), "run.json");
-    return readJson(runPath);
+    const manifest = await readJson(runPath);
+    assertRunDocument(manifest, { slug, runId });
+    return normalizeRunDocument(manifest);
   }
 
   async readTimings(slug, runId) {
@@ -125,8 +127,9 @@ export class RunStore {
     const manifestPath = path.join(this.getRunDir(slug, runId), "run.json");
 
     return this.#serialize(manifestPath, async () => {
-      const current = await readJson(manifestPath);
-      assertRunDocument(current, { slug, runId });
+      const stored = await readJson(manifestPath);
+      assertRunDocument(stored, { slug, runId });
+      const current = normalizeRunDocument(stored);
 
       const requestedPatch =
         typeof patchOrUpdater === "function"
@@ -161,7 +164,7 @@ export class RunStore {
       const manifest = await readJson(path.join(runRealPath, "run.json"));
       assertRunDocument(manifest, { slug, runId });
       await rm(runDir, { recursive: true });
-      return structuredClone(manifest);
+      return normalizeRunDocument(manifest);
     });
   }
 
@@ -237,7 +240,7 @@ export class RunStore {
             slug: slugEntry.name,
             runId: runEntry.name,
           });
-          manifests.push(manifest);
+          manifests.push(normalizeRunDocument(manifest));
         } catch (error) {
           if (
             error?.code !== "ENOENT" &&
@@ -541,7 +544,7 @@ export function createRunManifest(input, now = new Date().toISOString()) {
     },
     phase: nullableString(input.phase, "phase"),
     error: normalizeError(input.error),
-    graphUrl: nullableString(input.graphUrl, "graphUrl"),
+    reviewUrl: status === "succeeded" ? reviewUrlFor(slug, runId) : null,
     gitCommit: nullableString(input.gitCommit, "gitCommit"),
     metrics: normalizeRunMetrics(input.metrics),
   };
@@ -691,7 +694,7 @@ function mergeRunManifest(current, patch, now) {
     timestamps.completedAt = now;
   }
 
-  return {
+  return createRunManifest({
     ...current,
     ...patch,
     schemaVersion: RUN_SCHEMA_VERSION,
@@ -706,7 +709,15 @@ function mergeRunManifest(current, patch, now) {
         ? current.metrics
         : normalizeRunMetrics({ ...current.metrics, ...patch.metrics }),
     error: patch.error === undefined ? current.error : normalizeError(patch.error),
-  };
+  }, now);
+}
+
+function normalizeRunDocument(manifest) {
+  return createRunManifest(manifest, manifest.timestamps?.updatedAt);
+}
+
+function reviewUrlFor(slug, runId) {
+  return `/reviews/${slug}/${runId}/`;
 }
 
 function normalizeStageEvent(event, fallbackAt) {

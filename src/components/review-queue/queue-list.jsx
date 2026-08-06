@@ -264,7 +264,7 @@ function PullRequestRow({
               <>
                 <a className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9" href={analysis.href} target="_blank" rel="noreferrer" onClick={() => onMarkRead(item)}>
                   <Sparkles className="size-3.5" />
-                  Open tree
+                  Open review
                 </a>
                 <Button
                   size="sm"

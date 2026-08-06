@@ -202,7 +202,7 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
         )}
         {successfulRun && (
           <a className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9" href={`/reviews/${encodeURIComponent(entry.pr.slug)}/`} target="_blank" rel="noreferrer">
-            <Sparkles className="size-3.5" />Open tree
+            <Sparkles className="size-3.5" />Open review
           </a>
         )}
         <a className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9" href={safeGitHubUrl(entry.pr.url)} target="_blank" rel="noreferrer">

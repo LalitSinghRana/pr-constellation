@@ -10,23 +10,29 @@ I want to create something that will help humans review PR faster. Goals are
 Next improvements
 
 ### UI/UX
-- ~Fix UI of each gig-diff node starting from 1 instead of their correct line number.~
-- ~tailwind and design sytem should be used over CSS. Keep graph view out of this refactor consideration~
-- a clean snap flow from file to file or node-to-node. with arrow navigation
-- graph and rest of website should be merge for style
-- clean graph UI - a lot to be done here
-- Configure review-stack refences in UI
+- ~Fix each Review Section starting at 1 instead of its correct line number.~
+- ~Use Tailwind and the design system over bespoke CSS. Keep the Review Tree out of this refactor.~
+- ~Add clean snap navigation from file to file or section to section with arrow navigation.~
+- ~Match the Review Tree styling to the rest of the website.~
+- Clean up the Review Tree UI.
+- set-up notifications
+- Configure Review Stack references in the UI.
 
-###AI layer
-- ~build layer flow (middle tree)~
+### AI layer
+- ~Build the Stack Tree.~
 - should we skip generated files from analyse pipeline? Like snapshots.
 - Hide noise
 
+### DX
+- Better, consistent and meaningful terms for everything
+- Reorganize into subprojects: server, client, and analysis workflow.
+- Clean up Review Tree rendering with clear boundaries and guardrails for AI changes.
+- do proper server project. Should be light weight to run continously with low CPU usage. We can go other language other than JS here.
+
 ---
 
-- Explore memory-graph by BE team
+- Explore the BE team's memory system.
 - llm-wiki for repo?
 - https://deepwiki.com/
-
 
 

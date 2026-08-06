@@ -10,8 +10,8 @@ website.
 - `src/components/`, `src/hooks/`, and `src/lib/`: shared UI, state, and helpers.
 - `src/review/render.js`: builds the standalone review HTML and transforms analysis
   plus diff data for the browser.
-- `src/review/graph-app.jsx`: React Flow review application.
-- `src/review/mini-tree-model.js`: deterministic presentation-only tree folding.
+- `src/review/review-tree-app.jsx`: React Flow review application.
+- `src/review/file-tree-model.js`: deterministic presentation-only tree folding.
 - `src/index.css`: cockpit Tailwind entry; `src/review/styles.css` styles generated reviews.
 - `src/components/ui/`: shadcn components used by the application.
 - `server.mjs`: serves the cockpit, APIs, and generated pages on one port.
@@ -19,9 +19,9 @@ website.
 - `docs/dev-agent-browser.md`: browser-development guidance.
 
 The website consumes the validated analysis schema and diff inventory from
-`workflows/pr-graph-analysis/`; it does not author or repair AI analysis.
-File groups, mini-tree node headers, collapsed groups, and review edges expose
-their What/Why comments through shadcn Hover Cards. Comment Markdown is rendered
+`workflows/pr-review-analysis/`; it does not author or repair AI analysis.
+Review Stack headers, Review Section headers, Review Groups, and Review Branches
+expose their explanations through shadcn Hover Cards. Markdown is rendered
 with `react-markdown`, including structured bullet lists for longer
 explanations.
 
@@ -44,5 +44,5 @@ pnpm web
 ```
 
 Open `http://127.0.0.1:4397/` for the inbox or `/analysis` for analysis status.
-Generated graphs remain available at both their run-specific URL and the stable
+Generated review trees remain available at both their run-specific URL and the stable
 `.reviews/<review-slug>/index.html` route.

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PR Review Judge",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "verdict",
+    "confidence",
+    "summary",
+    "findings"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "pr-review-judge/v1"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail"
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "severity",
+        "type",
+        "targetId",
+        "explanation"
+      ],
+      "properties": {
+        "severity": {
+          "type": "string",
+          "enum": [
+            "blocker",
+            "warning",
+            "note"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "changeKind",
+            "explanation",
+            "grouping",
+            "reviewPriority",
+            "risk",
+            "semantic",
+            "tree",
+            "validation"
+          ]
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

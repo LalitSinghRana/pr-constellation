@@ -8,10 +8,10 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import { createDiffInventory, createDiffSummary } from "../workflows/pr-graph-analysis/03-build-diff-inventory/diff-inventory.js";
-import { runCodexGraphAnalysis } from "../workflows/pr-graph-analysis/07-run-retry-loop/codex-agent.js";
-import { runClaudeExec } from "../workflows/pr-graph-analysis/07-run-retry-loop/claude-agent.js";
-import { fetchPullRequest, parseGitHubPrUrl } from "../workflows/pr-graph-analysis/02-fetch-pr/github.js";
+import { createDiffInventory, createDiffSummary } from "../workflows/pr-review-analysis/03-build-diff-inventory/diff-inventory.js";
+import { runCodexReviewAnalysis } from "../workflows/pr-review-analysis/07-run-retry-loop/codex-agent.js";
+import { runClaudeExec } from "../workflows/pr-review-analysis/07-run-retry-loop/claude-agent.js";
+import { fetchPullRequest, parseGitHubPrUrl } from "../workflows/pr-review-analysis/02-fetch-pr/github.js";
 import { renderDiffHtml } from "../src/review/render.js";
 
 export async function createReviewRun({ prUrl, reviewsDir }) {
@@ -37,7 +37,7 @@ export async function createReviewRun({ prUrl, reviewsDir }) {
 
 export async function createAnalysisRun({ prUrl, reviewsDir }) {
   const { paths, runDir } = await createPrInputRun({ prUrl, reviewsDir });
-  const analysisResult = await runCodexGraphAnalysis({ runDir });
+  const analysisResult = await runCodexReviewAnalysis({ runDir });
 
   return {
     analysisPath: analysisResult.analysisPath,
@@ -183,7 +183,7 @@ export async function createBenchmarkRun({
 
   const executeAnalysis = executeCodex
     || (selectedProvider === "claude" ? executeClaude : undefined);
-  const analysisResult = await runCodexGraphAnalysis({
+  const analysisResult = await runCodexReviewAnalysis({
     ...(executeAnalysis ? { executeCodex: executeAnalysis } : {}),
     model,
     onEvent,
@@ -197,7 +197,7 @@ export async function createBenchmarkRun({
       getMetrics: (documentHtml) => ({
         outputBytes: Buffer.byteLength(documentHtml),
       }),
-      label: "Render review graph",
+      label: "Render review tree",
       onEvent,
       signal,
       stageId: "render",
@@ -206,7 +206,7 @@ export async function createBenchmarkRun({
           getMetrics: (value) => ({
             outputBytes: Buffer.byteLength(value),
           }),
-          label: "Build graph document",
+          label: "Build review document",
           onEvent,
           parentStageId: "render",
           signal,
@@ -219,7 +219,7 @@ export async function createBenchmarkRun({
         });
 
         await runTimedStage({
-          label: "Persist run review graph",
+          label: "Persist review page",
           onEvent,
           parentStageId: "render",
           stageId: "render.persist",

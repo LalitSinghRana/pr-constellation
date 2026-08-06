@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PR Review Stack Tree",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "branches"
+  ],
+  "properties": {
+    "branches": {
+      "description": "Ordered parent-child branches defining review order across every file in one Review Stack.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/branch"
+      }
+    }
+  },
+  "$defs": {
+    "branch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parentId",
+        "childId",
+        "order",
+        "explanation"
+      ],
+      "properties": {
+        "parentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "childId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "explanation": {
+          "description": "Why the child belongs under the parent in review order.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

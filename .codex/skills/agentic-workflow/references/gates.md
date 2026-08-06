@@ -33,7 +33,7 @@ Review the diff for:
 - CLI contract regressions.
 - Broken headless `analyze` behavior.
 - Broken `view` behavior.
-- Schema drift between `analysis.json`, renderer, and graph UI.
+- Schema drift between `analysis.json`, renderer, and review tree UI.
 - Browser-only breakage hidden by Node checks.
 - Generated artifact churn committed accidentally.
 
@@ -47,9 +47,9 @@ Blockers:
 
 Major findings:
 
-- Graph is visually unusable.
+- Review tree is visually unusable.
 - Node/edge comments are not surfaced when expected.
-- Diff and graph cannot both be reached.
+- Diff and review tree cannot both be reached.
 - Tooling docs are stale or misleading.
 
 Minor findings:

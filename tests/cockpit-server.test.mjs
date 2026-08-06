@@ -65,9 +65,9 @@ test("analysis timeline nests and aligns live analysis stages", () => {
       stages: [
         { stageId: "input.fetch", label: "Fetch PR", status: "completed", durationMs: 2_000, endedAt: "2026-01-01T00:00:02Z" },
         { stageId: "analysis", label: "Analysis", parentStageId: "run.total", status: "running", durationMs: 0, startedAt: "2026-01-01T00:00:10Z", endedAt: null, attempt: 1 },
-        { stageId: "analysis.review-stack", label: "Review stack", parentStageId: "analysis", status: "completed", durationMs: 10_000, startedAt: "2026-01-01T00:00:10Z", endedAt: "2026-01-01T00:00:20Z", attempt: 1 },
+        { stageId: "analysis.review-stacks", label: "Review Stacks", parentStageId: "analysis", status: "completed", durationMs: 10_000, startedAt: "2026-01-01T00:00:10Z", endedAt: "2026-01-01T00:00:20Z", attempt: 1 },
         { stageId: "analysis.attempt-1", label: "Analysis attempt 1", parentStageId: "analysis", status: "running", durationMs: 0, startedAt: "2026-01-01T00:00:20Z", endedAt: null, attempt: 1 },
-        { stageId: "analysis.attempt-1.generate-mini-trees", label: "Generate mini-trees", parentStageId: "analysis.attempt-1", status: "running", durationMs: 0, startedAt: "2026-01-01T00:00:20Z", endedAt: null, attempt: 1 },
+        { stageId: "analysis.attempt-1.generate-file-trees", label: "Generate File Review Trees", parentStageId: "analysis.attempt-1", status: "running", durationMs: 0, startedAt: "2026-01-01T00:00:20Z", endedAt: null, attempt: 1 },
         { stageId: "analysis.attempt-1.evaluation.judge-candidate", label: "AI semantic judge", status: "skipped", durationMs: 0, endedAt: "2026-01-01T00:00:20Z", attempt: 1 },
         { stageId: "render", label: "Render", status: "completed", durationMs: 100, endedAt: "2026-01-01T00:00:21Z" },
       ],
@@ -78,9 +78,9 @@ test("analysis timeline nests and aligns live analysis stages", () => {
   assert.equal(timeline.durationMs, 60_000);
   assert.deepEqual(timeline.rows.map(({ label, depth, durationMs, running }) => ({ label, depth, durationMs, running })), [
     { label: "Analysis", depth: 0, durationMs: 60_000, running: true },
-    { label: "Review stack", depth: 1, durationMs: 10_000, running: false },
+    { label: "Review Stacks", depth: 1, durationMs: 10_000, running: false },
     { label: "Analysis attempt 1", depth: 1, durationMs: 50_000, running: true },
-    { label: "Generate mini-trees", depth: 2, durationMs: 50_000, running: true },
+    { label: "Generate File Review Trees", depth: 2, durationMs: 50_000, running: true },
   ]);
   assert.equal(Math.round(timeline.rows[1].widthPct), 17);
   assert.equal(Math.round(timeline.rows[2].offsetPct), 17);

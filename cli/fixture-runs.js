@@ -1,20 +1,19 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createDiffInventory } from "../workflows/pr-graph-analysis/03-build-diff-inventory/diff-inventory.js";
+import { createDiffInventory } from "../workflows/pr-review-analysis/03-build-diff-inventory/diff-inventory.js";
 import {
-  computeFileFlowMetrics,
-  runCodexGraphAnalysis,
-} from "../workflows/pr-graph-analysis/07-run-retry-loop/codex-agent.js";
+  computeStackTreeMetrics,
+  runCodexReviewAnalysis,
+} from "../workflows/pr-review-analysis/07-run-retry-loop/codex-agent.js";
 import { renderDiffHtml } from "../src/review/render.js";
 import { publishStableReview } from "./review-run.js";
 import { RunStore } from "./run-store.js";
 
 const FIXTURES_DIR = fileURLToPath(new URL("../.context/split-fixtures/", import.meta.url));
 
-// Frozen, SHA-pinned PR diffs used to gate the review-stack grouping feature
-// (see .context/eval-review-stack.mjs, now superseded by the AI-driven
-// thematic split). Kept here too so this page can trigger the real pipeline
+// Frozen, SHA-pinned PR diffs used to gate Review Stack grouping. Kept here
+// so this page can trigger the real pipeline
 // against the same inputs instead of a live GitHub fetch, which would drift
 // as the underlying PRs merge or change.
 // realPr fields are frozen copies of `gh pr view --json number,title,author,state`
@@ -185,7 +184,7 @@ async function finishFixtureRun({ diff, diffInventory, fixture, metadata, runDir
   const stableHtmlPath = path.join(runStore.reviewsDir, fixture.slug, "index.html");
 
   try {
-    const analysisResult = await runCodexGraphAnalysis({ runDir, signal });
+    const analysisResult = await runCodexReviewAnalysis({ runDir, signal });
     const html = await renderDiffHtml({ analysis: analysisResult.analysis, diff, pr: metadata });
     const htmlPath = path.join(runDir, "index.html");
 
@@ -193,11 +192,10 @@ async function finishFixtureRun({ diff, diffInventory, fixture, metadata, runDir
     await publishStableReview({ htmlPath, stableHtmlPath });
 
     return await runStore.updateRun(fixture.slug, runId, {
-      graphUrl: `/reviews/${fixture.slug}/${runId}/`,
       metrics: {
         changedFiles: metadata.changedFiles,
-        stackCount: analysisResult.analysis?.reviewStack?.stacks?.length ?? null,
-        ...computeFileFlowMetrics({ analysis: analysisResult.analysis, inventory: diffInventory }),
+        stackCount: analysisResult.analysis?.reviewStacks?.length ?? null,
+        ...computeStackTreeMetrics({ analysis: analysisResult.analysis, inventory: diffInventory }),
       },
       status: "succeeded",
     });

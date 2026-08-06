@@ -74,7 +74,7 @@ has been registered. MCP tools are loaded when the session starts. In that new
 chat, ask for Agent Browser directly, for example:
 
 ```text
-Use Agent Browser to open the latest generated review page, inspect the graph,
+Use Agent Browser to open the latest generated review page, inspect the review tree,
 check console errors, and tell me what looks broken.
 ```
 

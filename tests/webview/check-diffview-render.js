@@ -39,8 +39,8 @@ const { createRoot } = await import("react-dom/client");
 const { act } = await import("react");
 const { DiffView, DiffModeEnum } = await import("@git-diff-view/react");
 
-// Mirrors graph-app.jsx's buildChunkDiffData/buildLineAstNodes/createPreHighlightedHighlighter,
-// since graph-app.jsx is a browser JSX entry point (imports library CSS) and isn't importable
+// Mirrors review-tree-app.jsx's buildChunkDiffData/buildLineAstNodes/createPreHighlightedHighlighter,
+// since review-tree-app.jsx is a browser JSX entry point (imports library CSS) and isn't importable
 // from a plain Node test.
 function tokensToAstNodes(tokens) {
   return (tokens || []).map((token) => (
@@ -205,7 +205,7 @@ function DiffChunkView({ chunk }) {
     "div",
     { ref: containerRef },
     React.createElement(DiffView, {
-      className: "mini-diff-code",
+      className: "review-section-code",
       data,
       diffViewFontSize: 11,
       diffViewHighlight: true,
