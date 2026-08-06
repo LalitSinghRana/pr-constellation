@@ -13,7 +13,7 @@ const installedServer = join(installDirectory, "server.mjs");
 const launchAgents = join(home, "Library", "LaunchAgents");
 const plistPath = join(launchAgents, `${label}.plist`);
 const logDirectory = join(home, ".config", "pr-review-cockpit");
-const sourceServer = fileURLToPath(new URL("../server.mjs", import.meta.url));
+const sourceServer = fileURLToPath(new URL("./server.mjs", import.meta.url));
 const domain = `gui/${process.getuid()}`;
 
 function xml(value) {

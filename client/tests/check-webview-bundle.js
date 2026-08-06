@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { renderDiffHtml } from "../../src/review/render.js";
+import { renderDiffHtml } from "../src/review/render.js";
 
 const html = await renderDiffHtml({
   analysis: {
@@ -102,8 +102,8 @@ assert.deepEqual(
 assert.ok(!("relations" in treeData.files[0].sectionTree));
 
 const [treeAppSource, webStyles] = await Promise.all([
-  readFile(new URL("../../src/review/review-tree-app.jsx", import.meta.url), "utf8"),
-  readFile(new URL("../../src/review/styles.css", import.meta.url), "utf8"),
+  readFile(new URL("../src/review/review-tree-app.jsx", import.meta.url), "utf8"),
+  readFile(new URL("../src/review/styles.css", import.meta.url), "utf8"),
 ]);
 assert.match(treeAppSource, /nodesDraggable=\{false\}/);
 assert.match(treeAppSource, /reviewBranch: React\.memo\(ReviewBranch\)/);

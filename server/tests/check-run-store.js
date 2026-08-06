@@ -18,7 +18,7 @@ import {
   RunStore,
   TIMINGS_SCHEMA_VERSION,
   assertStorageId,
-} from "../cli/run-store.js";
+} from "../run-store.js";
 
 const reviewsDir = await mkdtemp(path.join(os.tmpdir(), "pr-review-run-store-"));
 const sourceInputContents = {

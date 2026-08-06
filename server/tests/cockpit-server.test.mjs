@@ -4,8 +4,8 @@ import {
   analysisState,
   analysisTimeline,
   formatDuration,
-} from "../src/lib/utils.js";
-import { groupByUpdatedDate, myPullRequestStatus } from "../src/lib/queue.js";
+} from "../../client/src/lib/utils.js";
+import { groupByUpdatedDate, myPullRequestStatus } from "../../client/src/lib/queue.js";
 import {
   addReviewRequests,
   addSignal,

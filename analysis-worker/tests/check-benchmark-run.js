@@ -12,8 +12,8 @@ import path from "node:path";
 import {
   createBenchmarkRun,
   publishStableReview,
-} from "../cli/review-run.js";
-import { parseGitHubPrUrl } from "../workflows/pr-review-analysis/02-fetch-pr/github.js";
+} from "../review-run.js";
+import { parseGitHubPrUrl } from "../workflow/02-fetch-pr/github.js";
 
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "pr-review-benchmark-"));
 const reviewsDir = path.join(temporaryRoot, ".reviews");

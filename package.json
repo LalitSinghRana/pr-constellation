@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "prc": "./bin/prc.js"
+    "prc": "./analysis-worker/bin/prc.js"
   },
   "scripts": {
     "ab": "npm exec --yes --registry=https://registry.npmjs.org/ agent-browser@latest",
@@ -12,17 +12,17 @@
     "ab:doctor": "npm exec --yes --registry=https://registry.npmjs.org/ agent-browser@latest -- doctor --quick --offline",
     "ab:mcp": "npm exec --yes --registry=https://registry.npmjs.org/ agent-browser@latest -- mcp --tools core,react,debug,network",
     "check": "pnpm check:core && pnpm check:analysis && pnpm check:webview && pnpm check:dashboard && pnpm check:cockpit",
-    "check:cockpit": "node --check server.mjs && node --test tests/cockpit-server.test.mjs && vite build",
-    "check:core": "node --check bin/prc.js && node --check cli/cli.js && node --check cli/review-run.js",
-    "check:dashboard": "node --check cli/run-store.js && node --check cli/dashboard-service.js && node --check cli/dashboard-api.js && node --check cli/dashboard-vite-plugin.js && node --check tests/check-run-store.js && node --check tests/check-benchmark-run.js && node --check tests/check-dashboard-service.js && node tests/check-run-store.js && node tests/check-benchmark-run.js && node tests/check-dashboard-service.js",
-    "check:analysis": "node --check workflows/pr-review-analysis/02-fetch-pr/github.js && node --check workflows/pr-review-analysis/03-build-diff-inventory/diff-inventory.js && node --check workflows/pr-review-analysis/05-validate-candidate/validate-analysis.js && node --check workflows/pr-review-analysis/07-run-retry-loop/codex-agent.js && node --check workflows/pr-review-analysis/07-run-retry-loop/claude-agent.js && node --check workflows/pr-review-analysis/tests/check-analysis-pipeline.js && node --check workflows/pr-review-analysis/tests/check-analysis-validator.js && node --check workflows/pr-review-analysis/tests/check-claude-exec.js && node --check workflows/pr-review-analysis/tests/check-diff-inventory.js && node workflows/pr-review-analysis/tests/check-diff-inventory.js && node workflows/pr-review-analysis/tests/check-analysis-validator.js && node workflows/pr-review-analysis/tests/check-claude-exec.js && node workflows/pr-review-analysis/tests/check-analysis-pipeline.js",
-    "check:webview": "node --check src/review/render.js && node --check src/review/section-tree-model.js && node --check vite.config.js && node --check tests/webview/check-section-tree-folding.js && node --check tests/webview/check-review-hosting.js && node --check tests/webview/check-webview-bundle.js && node --check tests/webview/check-diffview-render.js && node tests/webview/check-section-tree-folding.js && node tests/webview/check-review-hosting.js && node tests/webview/check-webview-bundle.js && node tests/webview/check-diffview-render.js",
-    "dev": "node server.mjs",
-    "install:sync": "node cli/install-sync.mjs",
-    "start": "node server.mjs",
-    "sync": "node server.mjs --sync",
-    "web": "node server.mjs",
-    "prc": "node bin/prc.js",
+    "check:cockpit": "node --check server/server.mjs && node --test server/tests/cockpit-server.test.mjs && vite build client",
+    "check:core": "node --check analysis-worker/bin/prc.js && node --check analysis-worker/cli.js && node --check analysis-worker/review-run.js",
+    "check:dashboard": "node --check server/run-store.js && node --check server/dashboard-service.js && node --check server/dashboard-api.js && node --check server/dashboard-vite-plugin.js && node --check server/tests/check-run-store.js && node --check analysis-worker/tests/check-benchmark-run.js && node --check server/tests/check-dashboard-service.js && node server/tests/check-run-store.js && node analysis-worker/tests/check-benchmark-run.js && node server/tests/check-dashboard-service.js",
+    "check:analysis": "node --check analysis-worker/workflow/02-fetch-pr/github.js && node --check analysis-worker/workflow/03-build-diff-inventory/diff-inventory.js && node --check analysis-worker/workflow/05-validate-candidate/validate-analysis.js && node --check analysis-worker/workflow/07-run-retry-loop/codex-agent.js && node --check analysis-worker/workflow/07-run-retry-loop/claude-agent.js && node --check analysis-worker/workflow/tests/check-analysis-pipeline.js && node --check analysis-worker/workflow/tests/check-analysis-validator.js && node --check analysis-worker/workflow/tests/check-claude-exec.js && node --check analysis-worker/workflow/tests/check-diff-inventory.js && node analysis-worker/workflow/tests/check-diff-inventory.js && node analysis-worker/workflow/tests/check-analysis-validator.js && node analysis-worker/workflow/tests/check-claude-exec.js && node analysis-worker/workflow/tests/check-analysis-pipeline.js",
+    "check:webview": "node --check client/src/review/render.js && node --check client/src/review/section-tree-model.js && node --check client/vite.config.js && node --check client/tests/check-section-tree-folding.js && node --check analysis-worker/tests/check-review-hosting.js && node --check client/tests/check-webview-bundle.js && node --check client/tests/check-diffview-render.js && node client/tests/check-section-tree-folding.js && node analysis-worker/tests/check-review-hosting.js && node client/tests/check-webview-bundle.js && node client/tests/check-diffview-render.js",
+    "dev": "node server/server.mjs",
+    "install:sync": "node server/install-sync.mjs",
+    "start": "node server/server.mjs",
+    "sync": "node server/server.mjs --sync",
+    "web": "node server/server.mjs",
+    "prc": "node analysis-worker/bin/prc.js",
     "ui:add": "shadcn add",
     "ui:info": "shadcn info"
   },

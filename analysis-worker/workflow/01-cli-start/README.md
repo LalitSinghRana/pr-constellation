@@ -2,8 +2,8 @@
 
 Entry point:
 
-- `bin/prc.js`
-- `cli/cli.js`
+- `analysis-worker/bin/prc.js`
+- `analysis-worker/cli.js`
 
 Current command:
 

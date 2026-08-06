@@ -8,9 +8,9 @@ import { promisify } from "node:util";
 import {
   createBenchmarkRun,
   publishStableReview,
-} from "./review-run.js";
+} from "../analysis-worker/review-run.js";
 import { assertStorageId, RunStore } from "./run-store.js";
-import { parseGitHubPrUrl } from "../workflows/pr-review-analysis/02-fetch-pr/github.js";
+import { parseGitHubPrUrl } from "../analysis-worker/workflow/02-fetch-pr/github.js";
 
 const execFileAsync = promisify(execFile);
 const ACTIVE_STATUSES = new Set(["queued", "running"]);

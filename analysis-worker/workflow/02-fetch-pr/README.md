@@ -2,8 +2,8 @@
 
 Implementation:
 
-- `cli/review-run.js`
-- `workflows/pr-review-analysis/02-fetch-pr/github.js`
+- `analysis-worker/review-run.js`
+- `analysis-worker/workflow/02-fetch-pr/github.js`
 
 This step:
 
