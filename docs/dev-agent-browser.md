@@ -16,7 +16,7 @@ layout, or browser behavior.
 Run a local Agent Browser health check:
 
 ```sh
-pnpm ab:doctor
+pnpm ab -- doctor --quick --offline
 ```
 
 Run any Agent Browser command:
@@ -34,7 +34,7 @@ pnpm ab -- close --all
 Start the MCP server manually:
 
 ```sh
-pnpm ab:mcp
+pnpm ab -- mcp --tools core,react,debug,network
 ```
 
 ## Codex MCP Setup

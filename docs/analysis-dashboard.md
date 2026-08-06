@@ -4,7 +4,7 @@ The local cockpit tracks GitHub pull requests and their AI analysis status in
 one website.
 
 ```sh
-pnpm web
+pnpm dev
 ```
 
 - Inbox: <http://127.0.0.1:4397/>

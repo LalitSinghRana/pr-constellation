@@ -1,0 +1,42 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": ["**", "!!**/dist"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "a11y": {
+        "noAriaHiddenOnFocusable": "warn",
+        "noInteractiveElementToNoninteractiveRole": "warn",
+        "noStaticElementInteractions": "warn",
+        "noSvgWithoutTitle": "warn",
+        "useAriaPropsSupportedByRole": "warn",
+        "useSemanticElements": "warn"
+      },
+      "correctness": {
+        "useExhaustiveDependencies": "warn"
+      },
+      "suspicious": {
+        "noArrayIndexKey": "warn"
+      }
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  }
+}

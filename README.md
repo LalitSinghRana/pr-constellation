@@ -19,6 +19,10 @@ tests, fixtures, or Storybook noise.
 These directories are ownership boundaries inside one Node and pnpm project,
 not independently packaged workspaces.
 
+One root `biome.json` supplies linting and formatting for all three areas. Run
+`pnpm check` for lint, tests, and a production client build; run `pnpm format`
+to apply the formatter.
+
 ## Dirty v0
 
 Install dependencies:
@@ -55,7 +59,7 @@ pnpm prc -- view .reviews/REVIEW-SLUG/2026-01-01T00-00-00-000Z --open
 Start the local cockpit:
 
 ```sh
-pnpm web
+pnpm dev
 ```
 
 The inbox is the home page and analysis status has its own route:

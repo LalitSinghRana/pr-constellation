@@ -16,7 +16,7 @@ website.
 - `client/src/components/ui/`: shadcn components used by the application.
 - `server/server.mjs`: serves the cockpit, APIs, and generated pages on one port.
 - `client/tests/`: renderer and presentation-model regression checks.
-- `analysis-worker/tests/check-review-hosting.js`: generated-review publication regression check.
+- `analysis-worker/tests/review-hosting.test.js`: generated-review publication regression check.
 - `docs/dev-agent-browser.md`: browser-development guidance.
 
 The website consumes the validated analysis schema and diff inventory from
@@ -26,22 +26,22 @@ expose their explanations through shadcn Hover Cards. Markdown is rendered
 with `react-markdown`, including structured bullet lists for longer
 explanations.
 
-Run its focused suite with:
+Run the repository test suite with:
 
 ```sh
-pnpm check:webview
+pnpm test
 ```
 
-Run the root shadcn wrapper so `components.json` remains the single UI registry:
+Run shadcn from the repository root so `components.json` remains the single UI registry:
 
 ```sh
-pnpm ui:add <component>
+pnpm exec shadcn add <component>
 ```
 
 Start the local cockpit and review server:
 
 ```sh
-pnpm web
+pnpm dev
 ```
 
 Open `http://127.0.0.1:4397/` for the inbox or `/analysis` for analysis status.

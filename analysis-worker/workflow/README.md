@@ -36,4 +36,4 @@ Workflow stages:
 7. retry generation or targeted repair
 8. persist `analysis.json`
 
-Run the workflow checks from the repository root with `pnpm check:analysis`.
+Run the repository tests from the repository root with `pnpm test`.

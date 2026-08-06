@@ -8,23 +8,13 @@
   },
   "scripts": {
     "ab": "npm exec --yes --registry=https://registry.npmjs.org/ agent-browser@latest",
-    "ab:close": "npm exec --yes --registry=https://registry.npmjs.org/ agent-browser@latest -- close --all",
-    "ab:doctor": "npm exec --yes --registry=https://registry.npmjs.org/ agent-browser@latest -- doctor --quick --offline",
-    "ab:mcp": "npm exec --yes --registry=https://registry.npmjs.org/ agent-browser@latest -- mcp --tools core,react,debug,network",
-    "check": "pnpm check:core && pnpm check:analysis && pnpm check:webview && pnpm check:dashboard && pnpm check:cockpit",
-    "check:cockpit": "node --check server/server.mjs && node --test server/tests/cockpit-server.test.mjs && vite build client",
-    "check:core": "node --check analysis-worker/bin/prc.js && node --check analysis-worker/cli.js && node --check analysis-worker/review-run.js",
-    "check:dashboard": "node --check server/run-store.js && node --check server/dashboard-service.js && node --check server/dashboard-api.js && node --check server/dashboard-vite-plugin.js && node --check server/tests/check-run-store.js && node --check analysis-worker/tests/check-benchmark-run.js && node --check server/tests/check-dashboard-service.js && node server/tests/check-run-store.js && node analysis-worker/tests/check-benchmark-run.js && node server/tests/check-dashboard-service.js",
-    "check:analysis": "node --check analysis-worker/workflow/02-fetch-pr/github.js && node --check analysis-worker/workflow/03-build-diff-inventory/diff-inventory.js && node --check analysis-worker/workflow/05-validate-candidate/validate-analysis.js && node --check analysis-worker/workflow/07-run-retry-loop/codex-agent.js && node --check analysis-worker/workflow/07-run-retry-loop/claude-agent.js && node --check analysis-worker/workflow/tests/check-analysis-pipeline.js && node --check analysis-worker/workflow/tests/check-analysis-validator.js && node --check analysis-worker/workflow/tests/check-claude-exec.js && node --check analysis-worker/workflow/tests/check-diff-inventory.js && node analysis-worker/workflow/tests/check-diff-inventory.js && node analysis-worker/workflow/tests/check-analysis-validator.js && node analysis-worker/workflow/tests/check-claude-exec.js && node analysis-worker/workflow/tests/check-analysis-pipeline.js",
-    "check:webview": "node --check client/src/review/render.js && node --check client/src/review/section-tree-model.js && node --check client/vite.config.js && node --check client/tests/check-section-tree-folding.js && node --check analysis-worker/tests/check-review-hosting.js && node --check client/tests/check-webview-bundle.js && node --check client/tests/check-diffview-render.js && node client/tests/check-section-tree-folding.js && node analysis-worker/tests/check-review-hosting.js && node client/tests/check-webview-bundle.js && node client/tests/check-diffview-render.js",
+    "check": "biome lint . --diagnostic-level=error && pnpm test && vite build client",
     "dev": "node server/server.mjs",
+    "format": "biome format --write .",
+    "test": "node --test --test-concurrency=1",
     "install:sync": "node server/install-sync.mjs",
-    "start": "node server/server.mjs",
-    "sync": "node server/server.mjs --sync",
-    "web": "node server/server.mjs",
     "prc": "node analysis-worker/bin/prc.js",
-    "ui:add": "shadcn add",
-    "ui:info": "shadcn info"
+    "sync": "node server/server.mjs --sync"
   },
   "dependencies": {
     "@git-diff-view/react": "^0.1.7",
@@ -52,6 +42,7 @@
   },
   "packageManager": "pnpm@10.14.0",
   "devDependencies": {
+    "@biomejs/biome": "2.5.7",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.0.4",
     "jsdom": "^24.1.3",
