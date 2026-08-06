@@ -35,12 +35,12 @@ const reviewStacksFixtureResult = {
     fileIds: ["file-1"],
   }],
 };
-const fileTreesFixtureResult = {
-  schemaVersion: "pr-file-trees/v1",
+const reviewTreesFixtureResult = {
+  schemaVersion: "pr-review-trees/v1",
   intent: "Replace the fixture value.",
   summary: "The fixture verifies frozen-input benchmark runs.",
   confidence: 1,
-  stackTree: { branches: [] },
+  fileTree: { branches: [] },
   files: [
     {
       id: "file-1",
@@ -48,7 +48,7 @@ const fileTreesFixtureResult = {
       reviewPriority: "primary",
       changeKind: "runtime",
       explanation: "This file changes the fixture value used by the benchmark.",
-      fileTree: {
+      sectionTree: {
         sections: [
           {
             id: "replace-value",
@@ -125,7 +125,7 @@ index 1111111..2222222 100644
         ? reviewStacksFixtureResult
         : schemaPath.includes("06-judge-candidate")
           ? judgeFixtureResult
-          : fileTreesFixtureResult;
+          : reviewTreesFixtureResult;
 
       await writeFile(outputPath, `${JSON.stringify(value)}\n`, "utf8");
     },
@@ -174,7 +174,7 @@ index 1111111..2222222 100644
         ? reviewStacksFixtureResult
         : schemaPath.includes("06-judge-candidate")
           ? judgeFixtureResult
-          : fileTreesFixtureResult;
+          : reviewTreesFixtureResult;
       await writeFile(outputPath, `${JSON.stringify(value)}\n`, "utf8");
     },
     model: "claude-sonnet-4-6",
@@ -235,7 +235,7 @@ index 1111111..2222222 100644
     "analysis",
     "analysis.review-stacks",
     "analysis.attempt-1",
-    "analysis.attempt-1.generate-file-trees",
+    "analysis.attempt-1.generate-review-trees",
     "analysis.attempt-1.evaluation",
     "analysis.attempt-1.evaluation.validate-candidate",
     "analysis.persist-artifacts",
@@ -277,7 +277,7 @@ index 1111111..2222222 100644
             ? `${JSON.stringify(reviewStacksFixtureResult)}\n`
             : schemaPath.includes("06-judge-candidate")
               ? `${JSON.stringify(judgeFixtureResult)}\n`
-              : `${JSON.stringify(fileTreesFixtureResult)}\n`,
+              : `${JSON.stringify(reviewTreesFixtureResult)}\n`,
           "utf8",
         );
         return {

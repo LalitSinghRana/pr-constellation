@@ -44,7 +44,7 @@ import {
 } from "../components/ui/select.jsx";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.jsx";
 import { cn } from "../lib/utils.js";
-import { foldFileTree, normalizeFileTree } from "./file-tree-model.js";
+import { foldSectionTree, normalizeSectionTree } from "./section-tree-model.js";
 
 const FILE_NODE_GAP_X = 160;
 const FILE_NODE_PADDING = 32;
@@ -63,18 +63,18 @@ const REVIEW_SECTION_WIDTH = (
 const REVIEW_SECTION_HEADER_HEIGHT = 42;
 const REVIEW_GROUP_HEIGHT = 118;
 const REVIEW_GROUP_WIDTH = 520;
-const FILE_TREE_LAYER_GAP_Y = 110;
-const FILE_TREE_SIBLING_GAP_X = 72;
+const SECTION_TREE_LAYER_GAP_Y = 110;
+const SECTION_TREE_SIBLING_GAP_X = 72;
 const MIN_TREE_ZOOM = 0.18;
 const REVIEW_CAMERA_DURATION = 220;
 const REVIEW_CAMERA_PADDING_X = 80;
 const REVIEW_STEP_MAX_ZOOM = 1.25;
-const STACK_TREE_LAYER_GAP_Y = FILE_NODE_STACK_GAP_Y * 3;
-const STACK_TREE_SIBLING_GAP_X = FILE_NODE_GAP_X;
+const FILE_TREE_LAYER_GAP_Y = FILE_NODE_STACK_GAP_Y * 3;
+const FILE_TREE_SIBLING_GAP_X = FILE_NODE_GAP_X;
 const VIEWPORT_PADDING_Y = 176;
 const FALLBACK_TREE_VIEWPORT = { x: 72, y: 52, zoom: 0.86 };
-const STACK_TREE_SOURCE_HANDLE = "stack-tree-source";
-const STACK_TREE_TARGET_HANDLE = "stack-tree-target";
+const FILE_TREE_SOURCE_HANDLE = "file-tree-source";
+const FILE_TREE_TARGET_HANDLE = "file-tree-target";
 const INITIAL_COLOR_MODE = document.documentElement.classList.contains("dark") ? "dark" : "light";
 const REVIEW_STEP_BUTTON_CLASS = "review-step-button absolute z-[12] -translate-y-1/2 border-[color-mix(in_oklab,var(--primary)_38%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_12%,var(--background))] text-primary shadow-xs enabled:hover:border-[color-mix(in_oklab,var(--primary)_54%,var(--border))] enabled:hover:bg-[color-mix(in_oklab,var(--primary)_20%,var(--background))] enabled:hover:text-primary motion-reduce:transition-none";
 const REVIEW_NAVIGATION_CONTROL_SELECTOR = [
@@ -126,7 +126,7 @@ const edgeTypes = {
 function App() {
   const review = useMemo(readReviewData, []);
   const treeData = useMemo(readTreeData, []);
-  const hasTree = Boolean((treeData?.files || []).some((file) => fileTreeSections(file).length > 0));
+  const hasTree = Boolean((treeData?.files || []).some((file) => sectionTreeSections(file).length > 0));
   const expansionStorageKey = useMemo(() => {
     return `pr-review-tree-expansion:${window.location.pathname}`;
   }, []);
@@ -506,7 +506,7 @@ function ReviewTreeCanvas({
         >
           <Background
             bgColor="color-mix(in oklab, var(--muted) 34%, var(--background))"
-            color="color-mix(in oklab, var(--file-tree-color) 24%, var(--border))"
+            color="color-mix(in oklab, var(--section-tree-color) 24%, var(--border))"
             gap={24}
             size={1.2}
             variant={BackgroundVariant.Dots}
@@ -624,14 +624,14 @@ function reviewStepTitle(step) {
 
 function reviewTreeMapNodeColor(node) {
   if (node.type === "fileNode") {
-    return "color-mix(in oklab, var(--card) 90%, var(--file-tree-color))";
+    return "color-mix(in oklab, var(--card) 90%, var(--section-tree-color))";
   }
 
   return {
     primary: "var(--coral)",
     secondary: "var(--ochre)",
     skim: "var(--muted-foreground)",
-  }[node.data?.reviewSection?.reviewPriority] || "var(--file-tree-color)";
+  }[node.data?.reviewSection?.reviewPriority] || "var(--section-tree-color)";
 }
 
 function reviewTreeMapNodeClassName(node) {
@@ -756,8 +756,8 @@ function FileNode({ data }) {
       aria-label={`File review tree for ${filePath}`}
       className="file-node relative size-full rounded-lg border border-[color-mix(in_oklab,var(--primary)_34%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_5%,var(--card))]"
     >
-      <Handle className="node-handle" id={STACK_TREE_TARGET_HANDLE} position={Position.Top} type="target" />
-      <Handle className="node-handle" id={STACK_TREE_SOURCE_HANDLE} position={Position.Bottom} type="source" />
+      <Handle className="node-handle" id={FILE_TREE_TARGET_HANDLE} position={Position.Top} type="target" />
+      <Handle className="node-handle" id={FILE_TREE_SOURCE_HANDLE} position={Position.Bottom} type="source" />
       <div className="file-node-header absolute top-[11px] right-3.5 left-3.5 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3.5">
         <ExplanationHoverCard
           explanation={fileExplanation}
@@ -1262,7 +1262,7 @@ function buildReviewTree(
   const activeStack = activeStackId
     ? (analysis?.reviewStacks || []).find((stack) => stack.id === activeStackId)
     : null;
-  const stackTreeBranches = activeStack?.stackTree?.branches || [];
+  const fileTreeBranches = activeStack?.fileTree?.branches || [];
   const fileSpecs = buildFileNodeSpecs(analysis, {
     activeStackId,
     expandedGroupIds,
@@ -1271,7 +1271,7 @@ function buildReviewTree(
   });
 
   for (const spec of fileSpecs) {
-    const { file, reviewSections, fileTree, nodeHeight, nodeId, nodeWidth, viewMode, x, y } = spec;
+    const { file, reviewSections, sectionTree, nodeHeight, nodeId, nodeWidth, viewMode, x, y } = spec;
     if (reviewSections.length === 0) {
       continue;
     }
@@ -1290,7 +1290,7 @@ function buildReviewTree(
       type: "fileNode",
     });
     fileNodes.push({
-      branchCount: fileTree.branches.length,
+      branchCount: sectionTree.branches.length,
       height: nodeHeight,
       reviewSectionCount: reviewSections.length,
       changeKind: file.changeKind,
@@ -1324,28 +1324,28 @@ function buildReviewTree(
 
     const reviewSectionById = new Map(reviewSections.map((reviewSection) => [reviewSection.id, reviewSection]));
     const validReviewSectionIds = new Set(reviewSectionById.keys());
-    for (const branch of fileTree.branches) {
+    for (const branch of sectionTree.branches) {
       if (!validReviewSectionIds.has(branch.parentId) || !validReviewSectionIds.has(branch.childId)) {
         continue;
       }
 
       edges.push({
         id: `${file.id}:${branch.parentId}->${branch.childId}`,
-        className: "file-tree-edge",
+        className: "section-tree-edge",
         data: {
           explanation: branch.explanation || "",
           sourceTitle: reviewSectionById.get(branch.parentId)?.title || branch.parentId,
           targetTitle: reviewSectionById.get(branch.childId)?.title || branch.childId,
         },
         markerEnd: {
-          color: "var(--file-tree-color)",
+          color: "var(--section-tree-color)",
           height: 12,
           type: MarkerType.ArrowClosed,
           width: 12,
         },
         source: reviewSectionId(file, branch.parentId),
         style: {
-          stroke: "var(--file-tree-color)",
+          stroke: "var(--section-tree-color)",
           strokeLinecap: "round",
           strokeOpacity: 0.8,
           strokeWidth: 2.5,
@@ -1359,7 +1359,7 @@ function buildReviewTree(
   }
 
   const fileSpecById = new Map(fileSpecs.map((spec) => [spec.file.id, spec]));
-  for (const branch of stackTreeBranches) {
+  for (const branch of fileTreeBranches) {
     const sourceSpec = fileSpecById.get(branch.parentId);
     const targetSpec = fileSpecById.get(branch.childId);
     if (!sourceSpec || !targetSpec) {
@@ -1367,29 +1367,29 @@ function buildReviewTree(
     }
 
     edges.push({
-      id: `stack-tree:${branch.parentId}->${branch.childId}`,
-      className: "stack-tree-edge",
+      id: `file-tree:${branch.parentId}->${branch.childId}`,
+      className: "file-tree-edge",
       data: {
         explanation: branch.explanation || "",
         sourceTitle: sourceSpec.file.path || branch.parentId,
         targetTitle: targetSpec.file.path || branch.childId,
       },
       markerEnd: {
-        color: "var(--stack-tree-color)",
+        color: "var(--file-tree-color)",
         height: 16,
         type: MarkerType.ArrowClosed,
         width: 16,
       },
       source: sourceSpec.nodeId,
-      sourceHandle: STACK_TREE_SOURCE_HANDLE,
+      sourceHandle: FILE_TREE_SOURCE_HANDLE,
       style: {
-        stroke: "var(--stack-tree-color)",
+        stroke: "var(--file-tree-color)",
         strokeLinecap: "round",
         strokeOpacity: 0.75,
         strokeWidth: 5,
       },
       target: targetSpec.nodeId,
-      targetHandle: STACK_TREE_TARGET_HANDLE,
+      targetHandle: FILE_TREE_TARGET_HANDLE,
       type: "reviewBranch",
       zIndex: 3,
     });
@@ -1398,7 +1398,7 @@ function buildReviewTree(
   return {
     defaultViewport: defaultViewportForFileNodes(fileNodes),
     edges,
-    groupIds: fileSpecs.flatMap((spec) => spec.fileTree.groupIds || []),
+    groupIds: fileSpecs.flatMap((spec) => spec.sectionTree.groupIds || []),
     nodes,
   };
 }
@@ -1417,7 +1417,7 @@ function buildFileNodeSpecs(
     : null;
   const activeFileIds = activeStack ? new Set(activeStack.fileIds || []) : null;
   const fileLayouts = (analysis?.files || [])
-    .filter((file) => fileTreeSections(file).length > 0)
+    .filter((file) => sectionTreeSections(file).length > 0)
     .filter((file) => !activeFileIds || activeFileIds.has(file.id))
     .map((file) => buildFileLayout(file, {
       expandedGroupIds,
@@ -1427,10 +1427,10 @@ function buildFileNodeSpecs(
       viewMode: sourceOrderViewIds.has(file.id) ? "source" : "tree",
     }));
 
-  return layoutFileNodesByStackTree(fileLayouts, activeStack?.stackTree?.branches || []);
+  return layoutFileNodesByFileTree(fileLayouts, activeStack?.fileTree?.branches || []);
 }
 
-function layoutFileNodesByStackTree(fileLayouts, branches) {
+function layoutFileNodesByFileTree(fileLayouts, branches) {
   const items = fileLayouts.map((fileLayout, order) => ({
     fileLayout,
     height: fileLayout.nodeHeight,
@@ -1441,8 +1441,8 @@ function layoutFileNodesByStackTree(fileLayouts, branches) {
     branches,
     getId: (item) => item.fileLayout.file.id,
     items,
-    layerGap: STACK_TREE_LAYER_GAP_Y,
-    siblingGap: STACK_TREE_SIBLING_GAP_X,
+    layerGap: FILE_TREE_LAYER_GAP_Y,
+    siblingGap: FILE_TREE_SIBLING_GAP_X,
   });
 
   return layout.placements.map(({ item, x, y }) => ({ ...item.fileLayout, x, y }));
@@ -1452,17 +1452,17 @@ function buildFileLayout(
   file,
   { expandedGroupIds = new Set(), getReviewSectionHeight = reviewSectionHeight, viewMode = "tree" } = {},
 ) {
-  const fileTree = viewMode === "source"
-    ? buildSourceOrderFileTree(file)
-    : foldFileTree(file, { expandedGroupIds });
-  const reviewSections = fileTree.sections;
-  const layout = layoutReviewSections(reviewSections, fileTree.branches, getReviewSectionHeight);
+  const sectionTree = viewMode === "source"
+    ? buildSourceOrderSectionTree(file)
+    : foldSectionTree(file, { expandedGroupIds });
+  const reviewSections = sectionTree.sections;
+  const layout = layoutReviewSections(reviewSections, sectionTree.branches, getReviewSectionHeight);
 
   return {
     file,
     layout,
     reviewSections,
-    fileTree,
+    sectionTree,
     nodeHeight: Math.max(
       FILE_NODE_MIN_HEIGHT,
       FILE_NODE_PADDING_TOP + layout.height + FILE_NODE_PADDING,
@@ -1473,7 +1473,7 @@ function buildFileLayout(
   };
 }
 
-function buildSourceOrderFileTree(file) {
+function buildSourceOrderSectionTree(file) {
   return {
     branches: [],
     groupIds: [],
@@ -1482,7 +1482,7 @@ function buildSourceOrderFileTree(file) {
       title: "Source-order diff",
       reviewPriority: file.reviewPriority,
       changeKind: file.changeKind,
-      explanation: "This view keeps every changed hunk together in source order for reviewers who prefer top-to-bottom file context. It intentionally presents source order rather than the File Review Tree.",
+      explanation: "This view keeps every changed hunk together in source order for reviewers who prefer top-to-bottom file context. It intentionally presents source order rather than the Section Tree.",
       changedLineIds: file.changedLineIds || [],
       codeChunks: file.sourceCodeChunks || [],
       sourceOrderView: true,
@@ -1710,8 +1710,8 @@ function layoutReviewSections(reviewSections, branches, getReviewSectionHeight =
     branches,
     getId: (item) => item.section.id,
     items,
-    layerGap: FILE_TREE_LAYER_GAP_Y,
-    siblingGap: FILE_TREE_SIBLING_GAP_X,
+    layerGap: SECTION_TREE_LAYER_GAP_Y,
+    siblingGap: SECTION_TREE_SIBLING_GAP_X,
   });
 
   return {
@@ -1747,8 +1747,8 @@ function fileNodeId(file) {
   return `file:${file.id}`;
 }
 
-function fileTreeSections(file) {
-  return normalizeFileTree(file).sections;
+function sectionTreeSections(file) {
+  return normalizeSectionTree(file).sections;
 }
 
 function usePersistentStringSet(storageKey) {

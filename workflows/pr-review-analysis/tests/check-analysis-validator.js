@@ -64,7 +64,7 @@ const validAnalysis = {
     title: "Runtime value and expectation",
     explanation: "The assertion follows the runtime behavior it verifies.",
     fileIds: [runtimeFile.id, testFile.id],
-    stackTree: { branches: [branch(runtimeFile.id, testFile.id)] },
+    fileTree: { branches: [branch(runtimeFile.id, testFile.id)] },
   }],
 };
 
@@ -100,7 +100,7 @@ expectValid({
     title: "Context change",
     explanation: "One file owns the complete change.",
     fileIds: [contextFile.id],
-    stackTree: { branches: [] },
+    fileTree: { branches: [] },
   }],
 }, contextInventory);
 
@@ -117,9 +117,9 @@ expectInvalid({
 });
 
 expectInvalid({
-  analysis: patchFile(validAnalysis, 0, { fileTree: undefined }),
-  message: "must contain exactly one fileTree",
-  name: "missing File Review Tree",
+  analysis: patchFile(validAnalysis, 0, { sectionTree: undefined }),
+  message: "must contain exactly one sectionTree",
+  name: "missing Section Tree",
 });
 
 expectInvalid({
@@ -140,7 +140,7 @@ expectInvalid({
 });
 
 expectInvalid({
-  analysis: patchFileTree(validAnalysis, 0, {
+  analysis: patchSectionTree(validAnalysis, 0, {
     branches: [branch("change-runtime-value", "missing-section")],
   }),
   message: "references unknown childId",
@@ -148,9 +148,9 @@ expectInvalid({
 });
 
 expectInvalid({
-  analysis: patchFileTree(validAnalysis, 0, { branches: [] }),
+  analysis: patchSectionTree(validAnalysis, 0, { branches: [] }),
   message: "must contain exactly one root; found 2",
-  name: "disconnected File Review Tree",
+  name: "disconnected Section Tree",
 });
 
 expectInvalid({
@@ -173,11 +173,11 @@ expectInvalid({
     ...validAnalysis,
     reviewStacks: [{
       ...validAnalysis.reviewStacks[0],
-      stackTree: { branches: [branch(testFile.id, runtimeFile.id)] },
+      fileTree: { branches: [branch(testFile.id, runtimeFile.id)] },
     }],
   },
   message: "root file-2 is outranked",
-  name: "lower-priority Stack Tree root",
+  name: "lower-priority File Tree root",
 });
 
 expectInvalid({
@@ -186,7 +186,7 @@ expectInvalid({
     reviewStacks: [{
       ...validAnalysis.reviewStacks[0],
       fileIds: [runtimeFile.id],
-      stackTree: { branches: [] },
+      fileTree: { branches: [] },
     }],
   },
   message: "reviewStacks fileIds must exactly match",
@@ -238,7 +238,7 @@ function buildFile({
     changeKind,
     explanation: `Review ${file.path}.`,
     changedLineIds: [...file.changedLineIds],
-    fileTree: { sections, branches },
+    sectionTree: { sections, branches },
   };
 }
 
@@ -279,10 +279,10 @@ function patchFile(analysis, fileIndex, patch) {
   return next;
 }
 
-function patchFileTree(analysis, fileIndex, patch) {
+function patchSectionTree(analysis, fileIndex, patch) {
   const next = structuredClone(analysis);
-  next.files[fileIndex].fileTree = {
-    ...next.files[fileIndex].fileTree,
+  next.files[fileIndex].sectionTree = {
+    ...next.files[fileIndex].sectionTree,
     ...patch,
   };
   return next;
@@ -290,8 +290,8 @@ function patchFileTree(analysis, fileIndex, patch) {
 
 function patchSection(analysis, fileIndex, sectionIndex, patch) {
   const next = structuredClone(analysis);
-  next.files[fileIndex].fileTree.sections[sectionIndex] = {
-    ...next.files[fileIndex].fileTree.sections[sectionIndex],
+  next.files[fileIndex].sectionTree.sections[sectionIndex] = {
+    ...next.files[fileIndex].sectionTree.sections[sectionIndex],
     ...patch,
   };
   return next;

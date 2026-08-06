@@ -14,7 +14,7 @@ The runner validates the candidate first. A passing report establishes that:
 - every changed file appears once and belongs to exactly one Review Stack
 - every changed line belongs to exactly one review section
 - changed-line ranges are valid, source-ordered, and file-local
-- each File Tree and Stack Tree is one rooted tree
+- each File Tree and Section Tree is one rooted tree
 - every non-root item has one parent
 - branch sibling orders are contiguous and begin at zero
 - classifications and required explanations use the approved schema values
@@ -31,9 +31,9 @@ Audit these qualities:
 - `changeKind` describes the changed responsibility rather than merely the file
   extension
 - Review Stacks group files that answer one coherent reviewer question
-- each Stack Tree begins with the most useful causal entry point and then
+- each File Tree begins with the most useful causal entry point and then
   follows review causality, not file path or input order
-- each File Tree begins with the behavior, assertion, contract, or main concept
+- each Section Tree begins with the behavior, assertion, contract, or main concept
   a reviewer should inspect first
 - branches connect each child to the nearest reviewer question it explains
 - branch order reflects review value rather than source location

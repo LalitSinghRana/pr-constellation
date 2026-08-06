@@ -71,16 +71,16 @@ function FixtureCard({ fixture, onStop, onTrigger, stopping, triggering }) {
             {latestRun.metrics.stackCount != null && (
               <Badge variant="outline">{latestRun.metrics.stackCount} stacks</Badge>
             )}
-            {latestRun.metrics.stackTreeDepth != null && (
-              <Badge variant="outline">stack tree depth {latestRun.metrics.stackTreeDepth}</Badge>
+            {latestRun.metrics.fileTreeDepth != null && (
+              <Badge variant="outline">File Tree depth {latestRun.metrics.fileTreeDepth}</Badge>
             )}
             {latestRun.metrics.sourceOrderMatch != null && (
               <Badge variant="outline">
                 source-order match {Math.round(latestRun.metrics.sourceOrderMatch * 100)}%
               </Badge>
             )}
-            {latestRun.metrics.invalidStackRootCount != null && (
-              <Badge variant="outline">{latestRun.metrics.invalidStackRootCount} invalid stack roots</Badge>
+            {latestRun.metrics.invalidFileTreeRootCount != null && (
+              <Badge variant="outline">{latestRun.metrics.invalidFileTreeRootCount} invalid File Tree roots</Badge>
             )}
           </div>
         )}

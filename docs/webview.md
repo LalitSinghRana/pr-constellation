@@ -11,7 +11,7 @@ website.
 - `src/review/render.js`: builds the standalone review HTML and transforms analysis
   plus diff data for the browser.
 - `src/review/review-tree-app.jsx`: React Flow review application.
-- `src/review/file-tree-model.js`: deterministic presentation-only tree folding.
+- `src/review/section-tree-model.js`: deterministic presentation-only tree folding.
 - `src/index.css`: cockpit Tailwind entry; `src/review/styles.css` styles generated reviews.
 - `src/components/ui/`: shadcn components used by the application.
 - `server.mjs`: serves the cockpit, APIs, and generated pages on one port.

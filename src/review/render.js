@@ -202,9 +202,9 @@ function buildReviewTreeData({ analysis, diff, syntaxHighlighter }) {
       explanation: file.explanation,
       changedLineIds: file.changedLineIds,
       sourceCodeChunks: buildCodeChunksForFile({ file, inventoryIndex, syntaxHighlighter }),
-      fileTree: {
-        branches: file.fileTree.branches,
-        sections: file.fileTree.sections.map((section) => ({
+      sectionTree: {
+        branches: file.sectionTree.branches,
+        sections: file.sectionTree.sections.map((section) => ({
           ...section,
           codeChunks: buildCodeChunksForReviewSection({
             file,

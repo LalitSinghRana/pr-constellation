@@ -16,7 +16,7 @@ const CHANGE_KINDS = new Set([
   "imports",
 ]);
 
-// Keep these priorities aligned with the review UI's Stack Tree ordering.
+// Keep these priorities aligned with the review UI's File Tree ordering.
 const REVIEW_PRIORITY_ORDER = new Map([
   ["primary", 0],
   ["secondary", 1],
@@ -73,7 +73,7 @@ export function validateReviewAnalysis(analysis, { inventory = null } = {}) {
     expectedFileIds: analysis.files.map((file) => file.id),
     label: "analysis.json reviewStacks",
     reviewStacks: analysis.reviewStacks,
-    requireStackTree: true,
+    requireFileTree: true,
     fileById: new Map(analysis.files.map((file) => [file.id, file])),
   });
 
@@ -106,7 +106,7 @@ export function validateReviewStacks(document, { inventory = null } = {}) {
     expectedFileIds,
     label: "review-stacks.json reviewStacks",
     reviewStacks: document.reviewStacks,
-    requireStackTree: false,
+    requireFileTree: false,
   });
 
   if (errors.length > 0) {
@@ -166,19 +166,19 @@ function validateFiles({ analysis, errors, inventory }) {
     validateClassification({ errors, targetId: `file ${file.id}`, value: file });
     validateRequiredText({ errors, label: `file ${file.id} explanation`, value: file.explanation });
 
-    if (!file.fileTree || typeof file.fileTree !== "object") {
-      errors.push(`analysis.json file ${file.id} must contain exactly one fileTree.`);
+    if (!file.sectionTree || typeof file.sectionTree !== "object") {
+      errors.push(`analysis.json file ${file.id} must contain exactly one sectionTree.`);
       continue;
     }
-    if (!Array.isArray(file.fileTree.sections) || file.fileTree.sections.length === 0) {
-      errors.push(`analysis.json file ${file.id} fileTree must contain at least one section.`);
+    if (!Array.isArray(file.sectionTree.sections) || file.sectionTree.sections.length === 0) {
+      errors.push(`analysis.json file ${file.id} sectionTree must contain at least one section.`);
       continue;
     }
-    if (!Array.isArray(file.fileTree.branches)) {
-      errors.push(`analysis.json file ${file.id} fileTree.branches must be an array.`);
+    if (!Array.isArray(file.sectionTree.branches)) {
+      errors.push(`analysis.json file ${file.id} sectionTree.branches must be an array.`);
     }
 
-    const coveredLineIds = validateFileTree({
+    const coveredLineIds = validateSectionTree({
       changedLineOwnerById,
       errors,
       file,
@@ -206,7 +206,7 @@ function validateFiles({ analysis, errors, inventory }) {
       actualIds: [...coveredLineIds],
       errors,
       expectedIds: expectedLineIds,
-      label: `file ${file.id} fileTree changedLineIds`,
+      label: `file ${file.id} sectionTree changedLineIds`,
     });
   }
 
@@ -229,7 +229,7 @@ function validateFiles({ analysis, errors, inventory }) {
   }
 }
 
-function validateFileTree({
+function validateSectionTree({
   changedLineOwnerById,
   errors,
   file,
@@ -242,7 +242,7 @@ function validateFileTree({
   const childrenById = new Map();
   const fileChangedLineIds = new Set();
 
-  for (const section of file.fileTree.sections) {
+  for (const section of file.sectionTree.sections) {
     if (!isNonEmptyString(section?.id) || sectionIds.has(section.id)) {
       errors.push(
         `analysis.json file ${file.id} contains a missing or duplicate review section id: ${section?.id || "<missing>"}`,
@@ -287,7 +287,7 @@ function validateFileTree({
       }
       if (inventoryLine?.file !== undefined && inventoryLine.file !== file.path) {
         errors.push(
-          `analysis.json review section ${owner} uses changed line ${changedLineId} from ${inventoryLine.file}, but its file tree belongs to ${file.path}.`,
+          `analysis.json review section ${owner} uses changed line ${changedLineId} from ${inventoryLine.file}, but its section tree belongs to ${file.path}.`,
         );
         continue;
       }
@@ -312,14 +312,14 @@ function validateFileTree({
   }
 
   validateTreeBranches({
-    branchLabel: `file ${file.id} fileTree.branches`,
-    branches: file.fileTree.branches,
+    branchLabel: `file ${file.id} sectionTree.branches`,
+    branches: file.sectionTree.branches,
     errors,
     itemById: sectionById,
     itemIds: sectionIds,
     parentCounts,
     childrenById,
-    rootLabel: `file ${file.id} fileTree`,
+    rootLabel: `file ${file.id} sectionTree`,
     itemLabel: "review section",
   });
 
@@ -331,7 +331,7 @@ function validateReviewStackEntries({
   expectedFileIds,
   fileById = null,
   label,
-  requireStackTree,
+  requireFileTree,
   reviewStacks,
 }) {
   const stackIds = [];
@@ -354,15 +354,15 @@ function validateReviewStackEntries({
     validateNoDuplicates({ errors, ids: stack.fileIds, label: `${stackLabel} fileIds` });
     allFileIds.push(...stack.fileIds);
 
-    if (!requireStackTree) {
+    if (!requireFileTree) {
       continue;
     }
-    if (!stack.stackTree || typeof stack.stackTree !== "object") {
-      errors.push(`${stackLabel} must contain a stackTree.`);
+    if (!stack.fileTree || typeof stack.fileTree !== "object") {
+      errors.push(`${stackLabel} must contain a fileTree.`);
       continue;
     }
-    if (!Array.isArray(stack.stackTree.branches)) {
-      errors.push(`${stackLabel} stackTree.branches must be an array.`);
+    if (!Array.isArray(stack.fileTree.branches)) {
+      errors.push(`${stackLabel} fileTree.branches must be an array.`);
       continue;
     }
 
@@ -372,20 +372,20 @@ function validateReviewStackEntries({
     const parentCounts = new Map(stack.fileIds.map((fileId) => [fileId, 0]));
     const childrenById = new Map(stack.fileIds.map((fileId) => [fileId, []]));
     const rootFile = validateTreeBranches({
-      branchLabel: `${stackLabel} stackTree.branches`,
-      branches: stack.stackTree.branches,
+      branchLabel: `${stackLabel} fileTree.branches`,
+      branches: stack.fileTree.branches,
       errors,
       itemById,
       itemIds,
       parentCounts,
       childrenById,
-      rootLabel: `${stackLabel} stackTree`,
+      rootLabel: `${stackLabel} fileTree`,
       itemLabel: "file",
     });
 
-    if (rootFile && !isAcceptableStackTreeRoot(rootFile, stackFiles)) {
+    if (rootFile && !isAcceptableFileTreeRoot(rootFile, stackFiles)) {
       errors.push(
-        `${stackLabel} stackTree root ${rootFile.id} is outranked by another file; the root must be tied for the best reviewPriority/changeKind tier.`,
+        `${stackLabel} fileTree root ${rootFile.id} is outranked by another file; the root must be tied for the best reviewPriority/changeKind tier.`,
       );
     }
   }
@@ -501,7 +501,7 @@ function validateTreeBranches({
   return root;
 }
 
-export function isAcceptableStackTreeRoot(rootFile, files) {
+export function isAcceptableFileTreeRoot(rootFile, files) {
   return !files.some((file) => (
     file.id !== rootFile.id
     && isStrictlyHigherPriority(file, rootFile)

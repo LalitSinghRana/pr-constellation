@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createDiffInventory } from "../workflows/pr-review-analysis/03-build-diff-inventory/diff-inventory.js";
 import {
-  computeStackTreeMetrics,
+  computeFileTreeMetrics,
   runCodexReviewAnalysis,
 } from "../workflows/pr-review-analysis/07-run-retry-loop/codex-agent.js";
 import { renderDiffHtml } from "../src/review/render.js";
@@ -195,7 +195,7 @@ async function finishFixtureRun({ diff, diffInventory, fixture, metadata, runDir
       metrics: {
         changedFiles: metadata.changedFiles,
         stackCount: analysisResult.analysis?.reviewStacks?.length ?? null,
-        ...computeStackTreeMetrics({ analysis: analysisResult.analysis, inventory: diffInventory }),
+        ...computeFileTreeMetrics({ analysis: analysisResult.analysis, inventory: diffInventory }),
       },
       status: "succeeded",
     });

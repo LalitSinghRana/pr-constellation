@@ -4,18 +4,18 @@ Create exactly one `files[]` entry for every changed file with added/deleted
 lines in the structured diff. Never omit a changed file and never emit the same
 file twice. Use the exact structured-diff file `id` and `path` values.
 
-Then create each file's `fileTree`.
+Then create each file's `sectionTree`.
 
-## File Tree Purpose
+## Section Tree Purpose
 
-A file tree belongs to exactly one file. It explains only changes from that
-file while keeping the whole file together for review. A file tree may never
+A section tree belongs to exactly one file. It explains only changes from that
+file while keeping the whole file together for review. A section tree may never
 reference a changed line from another file.
 
-## File Tree Review Hierarchy
+## Section Tree Review Hierarchy
 
-- A file tree is a logical review flow, not top-to-bottom file order.
-- `fileTree.branches[]` alone defines the ordered parent-child hierarchy a
+- A section tree is a logical review flow, not top-to-bottom file order.
+- `sectionTree.branches[]` alone defines the ordered parent-child hierarchy a
   human follows through the file. It is not declaration order, import order,
   compilation order, or a dependency structure.
 - Start from the behavior or reviewer question that motivated the file change.
@@ -55,7 +55,7 @@ reference a changed line from another file.
   not the root merely because exported fixtures call it.
 - In a type-only file, root the complete exported contract or main domain
   concept before smaller secondary shapes merely declared earlier.
-- Each File Tree must have exactly one root with no incoming branch.
+- Each Section Tree must have exactly one root with no incoming branch.
   Every non-root review section must have exactly one parent review branch.
 - Do not emit numeric section depths. `branches` are the sole hierarchy source;
   layout depth is derived deterministically from them.
@@ -128,7 +128,7 @@ Required construction order:
    every other section has exactly one incoming branch, every branch stays
    file-local, and each parent's sibling orders are `0..n-1`.
 
-## File Tree Construction Rules
+## Section Tree Construction Rules
 
 - Split a file into review sections only when it contains multiple cohesive review
   sections.
@@ -159,7 +159,7 @@ Required construction order:
 - `secondary` means the section can be folded initially and inspected when the
   reviewer opens secondary work. Do not label every runtime branch primary
   merely because it executes at runtime.
-- `fileTree.branches[]` connects Review Sections within the same file only.
+- `sectionTree.branches[]` connects Review Sections within the same file only.
 - Before returning the file, compare hierarchy order with changed-line
   positions. If the result mostly follows ascending line numbers, rebuild it
   from review causality. Coincidental file-order trees are invalid.
@@ -189,9 +189,9 @@ Bad review section examples:
 - A test harness root pointing to the assertions it merely enables
 - A props/types/setup root pointing to the runtime behavior that motivated it
 
-## Stack Tree
+## File Tree
 
-Beyond each file's own File Tree, create the Review Stack's `stackTree`. Its
+Beyond each file's own Section Tree, create the Review Stack's `fileTree`. Its
 `branches[]` define the order in which a reviewer should open the stack's files.
 
 - The parent is the reason to review first; the child was caused, enabled,
@@ -199,7 +199,7 @@ Beyond each file's own File Tree, create the Review Stack's `stackTree`. Its
   import direction — a component comes before the types, helpers, mocks, and
   tests that support it, not after, even when the component imports them.
 - Do not order by file path, directory, or diff order. Coincidental file-order
-  trees are invalid, just as they are for a File Tree.
+  trees are invalid, just as they are for a Section Tree.
 - Every file in this stack appears exactly once as a branch `childId`, except
   the root, which never appears as a `childId`. The root is the file whose change is the
   reason the rest of the stack exists — usually the highest-priority file
@@ -210,13 +210,13 @@ Beyond each file's own File Tree, create the Review Stack's `stackTree`. Its
   `order` values starting at 0 for each parent's children.
 - A hook, its tests, and the component that uses it stay adjacent in the tree
   unless the hook is shared by more than one component in this stack.
-- A single-file stack returns `{"stackTree":{"branches":[]}}`.
+- A single-file stack returns `{"fileTree":{"branches":[]}}`.
 
 ## Stage Output
 
-Return `pr-file-trees/v1` JSON containing:
+Return `pr-review-trees/v1` JSON containing:
 
 - the overall review `intent`, `summary`, and `confidence`
 - every changed file in `files[]`
-- each file's complete `fileTree`
-- this Review Stack's file order in `stackTree`
+- each file's complete `sectionTree`
+- this Review Stack's file order in `fileTree`
