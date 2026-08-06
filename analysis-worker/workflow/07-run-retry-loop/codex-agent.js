@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -8,10 +7,14 @@ import {
   validateReviewAnalysis,
   validateReviewStacks,
 } from "../05-validate-candidate/validate-analysis.js";
+import { isAbortError, throwIfAborted } from "../abort.js";
 import {
-  createChildProcessTerminator,
-  USE_DETACHED_PROCESS_GROUP,
-} from "../child-process-termination.js";
+  buildCodexExecArgs,
+  parseCodexJsonUsage,
+  resolveCodexExecutionConfig,
+  runCodexExec,
+} from "./codex-exec.js";
+import { addUsage, copyUsage, emptyUsage, normalizeUsage, subtractUsage } from "./usage.js";
 
 const WORKFLOW_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CANDIDATE_WORKFLOW_DIR = path.join(WORKFLOW_DIR, "04-generate-candidate-analysis");
@@ -44,7 +47,6 @@ const REVIEW_STACKS_SCHEMA_PATH = path.join(
 const JUDGE_PROMPT_PATH = path.join(WORKFLOW_DIR, "06-judge-candidate", "prompt.md");
 const JUDGE_SCHEMA_PATH = path.join(WORKFLOW_DIR, "06-judge-candidate", "schema.json");
 const MAX_ANALYSIS_ATTEMPTS = 3;
-const CODEX_EXEC_TIMEOUT_MS = Number(process.env.PRC_CODEX_TIMEOUT_MS || 900000);
 const DEFAULT_ANALYSIS_REASONING_EFFORT = "xhigh";
 const JUDGE_REASONING_EFFORT = "high";
 const REVIEW_TREES_SHARD_CONCURRENCY = 3;
@@ -55,7 +57,15 @@ const MAX_FILES_PER_REVIEW_TREES_SHARD = 15;
 // Retained for offline benchmarking; deterministic validation is the active gate.
 const SEMANTIC_JUDGE_ENABLED = false;
 
-export { computeFileTreeMetrics, materializeLineOwnership, validateReviewAnalysis };
+export {
+  buildCodexExecArgs,
+  computeFileTreeMetrics,
+  materializeLineOwnership,
+  parseCodexJsonUsage,
+  resolveCodexExecutionConfig,
+  runCodexExec,
+  validateReviewAnalysis,
+};
 
 export async function runCodexReviewAnalysis({
   executeCodex = runCodexExec,
@@ -100,11 +110,11 @@ export async function runCodexReviewAnalysis({
       label: "Analysis",
       metricsForError: () => ({
         ...executionMetrics(executionConfig),
-        ...usageMetrics(usage),
+        ...copyUsage(usage),
       }),
       metricsForResult: (result) => ({
         ...executionMetrics(executionConfig),
-        ...usageMetrics(usage),
+        ...copyUsage(usage),
         ...computeFileTreeMetrics({ analysis: result.analysis, inventory }),
       }),
       run: async () => {
@@ -181,7 +191,7 @@ export async function runCodexReviewAnalysis({
               strategy,
               validationPassed: evaluation?.validationFailure === null,
               willRetry: attemptFailures.length > 0 && attempt < MAX_ANALYSIS_ATTEMPTS,
-              ...usageMetrics(subtractUsage(usage, attemptUsageBefore)),
+              ...copyUsage(subtractUsage(usage, attemptUsageBefore)),
             }),
             parentStageId: "analysis",
             run: async () =>
@@ -324,13 +334,13 @@ async function runAnalysisAttempt({
         affectedFileCount: repairScope?.fileIds.length || 0,
         strategy,
         ...executionMetrics(executionConfig),
-        ...usageMetrics(subtractUsage(usage, candidateUsageBefore)),
+        ...copyUsage(subtractUsage(usage, candidateUsageBefore)),
       }),
       metricsForResult: () => ({
         affectedFileCount: repairScope?.fileIds.length || 0,
         strategy,
         ...executionMetrics(executionConfig),
-        ...usageMetrics(subtractUsage(usage, candidateUsageBefore)),
+        ...copyUsage(subtractUsage(usage, candidateUsageBefore)),
       }),
       parentStageId: attemptStageId,
       run: async () => {
@@ -702,7 +712,7 @@ async function runCandidateEvaluation({
       judgeSkipped,
       judgeVerdict: judge?.verdict || null,
       validationPassed: validationFailure === null,
-      ...usageMetrics(subtractUsage(usage, evaluationUsageBefore)),
+      ...copyUsage(subtractUsage(usage, evaluationUsageBefore)),
     }),
     parentStageId: attemptStageId,
     run: async () => {
@@ -739,13 +749,13 @@ async function runCandidateEvaluation({
             label: "AI semantic judge",
             metricsForError: () => ({
               ...executionMetrics(judgeExecutionConfig),
-              ...usageMetrics(subtractUsage(usage, judgeUsageBefore)),
+              ...copyUsage(subtractUsage(usage, judgeUsageBefore)),
             }),
             metricsForResult: (judgeResult) => ({
               findingCount: judgeResult.findings?.length || 0,
               verdict: judgeResult.verdict,
               ...executionMetrics(judgeExecutionConfig),
-              ...usageMetrics(subtractUsage(usage, judgeUsageBefore)),
+              ...copyUsage(subtractUsage(usage, judgeUsageBefore)),
             }),
             parentStageId: evaluationStageId,
             run: async () => {
@@ -1668,239 +1678,6 @@ async function runJudge({
   return parseJsonObject(await readFile(outputPath, "utf8"));
 }
 
-export function resolveCodexExecutionConfig({ env = process.env, model, reasoningEffort } = {}) {
-  return {
-    model: resolveSelectedString({
-      envValue: env.PRC_CODEX_MODEL,
-      label: "model",
-      value: model,
-    }),
-    reasoningEffort: resolveSelectedString({
-      envValue: env.PRC_CODEX_REASONING_EFFORT,
-      label: "reasoningEffort",
-      value: reasoningEffort,
-    }),
-  };
-}
-
-export function buildCodexExecArgs({
-  cwd,
-  model,
-  outputPath,
-  reasoningEffort,
-  schemaPath = REVIEW_TREES_SCHEMA_PATH,
-}) {
-  return [
-    "exec",
-    "--ephemeral",
-    "--json",
-    "--sandbox",
-    "read-only",
-    "--cd",
-    cwd,
-    "--color",
-    "never",
-    ...(model ? ["--model", model] : []),
-    ...(reasoningEffort
-      ? ["--config", `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`]
-      : []),
-    "--output-schema",
-    schemaPath,
-    "--output-last-message",
-    outputPath,
-    "-",
-  ];
-}
-
-export function parseCodexJsonUsage(stdout) {
-  const usage = emptyUsage();
-
-  for (const line of String(stdout || "").split(/\r?\n/)) {
-    if (!line.trim()) {
-      continue;
-    }
-
-    let event;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      continue;
-    }
-
-    if (event?.type === "turn.completed") {
-      addUsage(usage, normalizeUsage(event.usage));
-    }
-  }
-
-  return usage;
-}
-
-export async function runCodexExec({
-  cwd,
-  model,
-  prompt,
-  outputPath,
-  reasoningEffort,
-  schemaPath = REVIEW_TREES_SCHEMA_PATH,
-  signal,
-}) {
-  throwIfAborted(signal);
-
-  const args = buildCodexExecArgs({
-    cwd,
-    model,
-    outputPath,
-    reasoningEffort,
-    schemaPath,
-  });
-
-  return new Promise((resolve, reject) => {
-    const child = spawn("codex", args, {
-      cwd,
-      detached: USE_DETACHED_PROCESS_GROUP,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    const terminator = createChildProcessTerminator(child);
-
-    let aborted = false;
-    let settled = false;
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    const cleanup = () => {
-      signal?.removeEventListener("abort", onAbort);
-    };
-    const rejectOnce = (error) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      reject(error);
-    };
-    const resolveOnce = (result) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      resolve(result);
-    };
-    const onAbort = () => {
-      aborted = true;
-      clearTimeout(timeoutTimer);
-      terminator.terminate();
-    };
-    const timeoutTimer = setTimeout(() => {
-      timedOut = true;
-      terminator.terminate();
-    }, CODEX_EXEC_TIMEOUT_MS);
-
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-
-    child.on("error", (error) => {
-      clearTimeout(timeoutTimer);
-      if (child.pid) {
-        return;
-      }
-      terminator.childClosed();
-      if (aborted || signal?.aborted) {
-        rejectOnce(createCodexAbortError(signal?.reason, stdout));
-        return;
-      }
-      rejectOnce(createCodexExecError(`Failed to start codex: ${error.message}`, stdout));
-    });
-
-    child.on("close", async (code) => {
-      clearTimeout(timeoutTimer);
-      terminator.childClosed();
-      await terminator.waitForTreeExit();
-
-      if (settled) {
-        return;
-      }
-
-      if (aborted || signal?.aborted) {
-        rejectOnce(createCodexAbortError(signal?.reason, stdout));
-        return;
-      }
-
-      if (timedOut) {
-        rejectOnce(
-          createCodexExecError(`codex exec timed out after ${CODEX_EXEC_TIMEOUT_MS}ms.`, stdout),
-        );
-        return;
-      }
-
-      if (code === 0) {
-        resolveOnce({
-          usage: parseCodexJsonUsage(stdout),
-        });
-        return;
-      }
-
-      const details = summarizeCodexFailure({ stderr, stdout });
-      rejectOnce(
-        createCodexExecError(
-          `codex exec failed with exit code ${code}${details ? `:\n${details}` : ""}`,
-          stdout,
-        ),
-      );
-    });
-
-    child.stdin.on("error", () => {
-      // Process termination is reported through the child close/error handlers.
-    });
-    signal?.addEventListener("abort", onAbort, { once: true });
-    if (signal?.aborted) {
-      onAbort();
-      return;
-    }
-    child.stdin.end(prompt);
-  });
-}
-
-function createCodexAbortError(reason, stdout) {
-  const error = createAbortError(reason);
-  error.usage = parseCodexJsonUsage(stdout);
-  return error;
-}
-
-function createCodexExecError(message, stdout) {
-  const error = new Error(message);
-  error.usage = parseCodexJsonUsage(stdout);
-  return error;
-}
-
-function throwIfAborted(signal) {
-  if (!signal?.aborted) {
-    return;
-  }
-
-  throw createAbortError(signal.reason);
-}
-
-function createAbortError(reason) {
-  const message =
-    reason instanceof Error && reason.message ? reason.message : "The operation was aborted.";
-  const error = new Error(message, reason === undefined ? undefined : { cause: reason });
-  error.name = "AbortError";
-  error.code = "ABORT_ERR";
-  return error;
-}
-
-function isAbortError(error) {
-  return error?.name === "AbortError" || error?.code === "ABORT_ERR";
-}
-
 async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, "utf8"));
 }
@@ -1987,28 +1764,6 @@ function formatAttemptFailure({ attempt, failures }) {
 function formatStageFailure(stage, error) {
   const message = error instanceof Error ? error.message : String(error);
   return `Step ${stage} failed: ${message}`;
-}
-
-function summarizeCodexFailure({ stderr, stdout }) {
-  const details = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n\n");
-  const apiMessages = [...details.matchAll(/"message":\s*"([^"\n]+)"/g)];
-  const apiMessage = apiMessages.at(-1)?.[1];
-
-  if (apiMessage) {
-    return apiMessage.replaceAll("\\n", "\n").replaceAll('\\"', '"');
-  }
-
-  return details.slice(-4000);
-}
-
-function resolveSelectedString({ envValue, label, value }) {
-  if (value !== undefined && value !== null && typeof value !== "string") {
-    throw new TypeError(`${label} must be a string when provided.`);
-  }
-
-  const explicitValue = typeof value === "string" ? value.trim() : "";
-  const fallbackValue = typeof envValue === "string" ? envValue.trim() : "";
-  return explicitValue || fallbackValue || undefined;
 }
 
 function reportedExecutionConfig(executionConfig) {
@@ -2117,74 +1872,6 @@ function fileTreeDfsOrder(rootId, childBranchesByParentId) {
   };
   visit(rootId);
   return order;
-}
-
-function emptyUsage() {
-  return {
-    inputTokens: 0,
-    cachedInputTokens: 0,
-    outputTokens: 0,
-    totalTokens: 0,
-  };
-}
-
-function normalizeUsage(value) {
-  if (!value || typeof value !== "object") {
-    return emptyUsage();
-  }
-
-  const inputTokens = nonNegativeNumber(value.inputTokens ?? value.input_tokens);
-  const cachedInputTokens = nonNegativeNumber(value.cachedInputTokens ?? value.cached_input_tokens);
-  const outputTokens = nonNegativeNumber(value.outputTokens ?? value.output_tokens);
-
-  return {
-    inputTokens,
-    cachedInputTokens,
-    outputTokens,
-    totalTokens: nonNegativeNumber(
-      value.totalTokens ?? value.total_tokens,
-      inputTokens + outputTokens,
-    ),
-  };
-}
-
-function nonNegativeNumber(value, fallback = 0) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
-}
-
-function addUsage(target, increment) {
-  target.inputTokens += increment.inputTokens;
-  target.cachedInputTokens += increment.cachedInputTokens;
-  target.outputTokens += increment.outputTokens;
-  target.totalTokens += increment.totalTokens;
-  return target;
-}
-
-function copyUsage(value) {
-  return {
-    inputTokens: value.inputTokens,
-    cachedInputTokens: value.cachedInputTokens,
-    outputTokens: value.outputTokens,
-    totalTokens: value.totalTokens,
-  };
-}
-
-function subtractUsage(value, baseline) {
-  return {
-    inputTokens: Math.max(0, value.inputTokens - baseline.inputTokens),
-    cachedInputTokens: Math.max(0, value.cachedInputTokens - baseline.cachedInputTokens),
-    outputTokens: Math.max(0, value.outputTokens - baseline.outputTokens),
-    totalTokens: Math.max(0, value.totalTokens - baseline.totalTokens),
-  };
-}
-
-function usageMetrics(usage) {
-  return {
-    inputTokens: usage.inputTokens,
-    cachedInputTokens: usage.cachedInputTokens,
-    outputTokens: usage.outputTokens,
-    totalTokens: usage.totalTokens,
-  };
 }
 
 function throwValidationError(errors) {

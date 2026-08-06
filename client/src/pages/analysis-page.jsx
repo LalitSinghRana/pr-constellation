@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button.jsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs.jsx";
 import { useAnalysisDashboard } from "@/hooks/use-analysis-dashboard.js";
 import { useDocumentTitle } from "@/hooks/use-document-title.js";
-import { analysisState, cn } from "@/lib/utils.js";
+import { analysisState } from "@/lib/analysis.js";
+import { cn } from "@/lib/utils.js";
 
 const terminalStatuses = new Set(["succeeded", "failed", "canceled", "interrupted"]);
 

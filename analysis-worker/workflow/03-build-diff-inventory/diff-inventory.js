@@ -75,10 +75,6 @@ export function createDiffInventory(diff) {
   };
 }
 
-export function flattenInventoryChangedLineIds(inventory) {
-  return new Set((inventory?.changedLines || []).map((line) => line.id));
-}
-
 export function createDiffSummary(inventory) {
   return {
     schemaVersion: "diff-summary/v1",

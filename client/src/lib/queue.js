@@ -1,16 +1,8 @@
+import { ACTIVITY_SIGNAL_KINDS as ACTIVITY_SIGNAL_KIND_VALUES } from "../../../shared/queue-policy.js";
+
 export const EMPTY_SETTINGS = { username: "", people: [], teams: [] };
 
-export const ACTIVITY_SIGNAL_KINDS = new Set([
-  "direct-review",
-  "post-merge-comment",
-  "review-reply",
-  "direct-mention",
-  "my-pr-activity",
-  "new-commits",
-  "team-review",
-  "new-comments",
-  "team-mention",
-]);
+export const ACTIVITY_SIGNAL_KINDS = new Set(ACTIVITY_SIGNAL_KIND_VALUES);
 
 export const NOTIFICATION_LABELS = {
   assign: "Assigned to you",

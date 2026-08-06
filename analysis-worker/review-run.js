@@ -9,6 +9,7 @@ import {
 } from "./workflow/03-build-diff-inventory/diff-inventory.js";
 import { runClaudeExec } from "./workflow/07-run-retry-loop/claude-agent.js";
 import { runCodexReviewAnalysis } from "./workflow/07-run-retry-loop/codex-agent.js";
+import { isAbortError, throwIfAborted } from "./workflow/abort.js";
 
 export async function createReviewRun({ prUrl, reviewsDir }) {
   const { diff, metadata, paths, runDir } = await createPrInputRun({ prUrl, reviewsDir });
@@ -377,27 +378,6 @@ async function runTimedStage({
     });
     throw error;
   }
-}
-
-function throwIfAborted(signal) {
-  if (!signal?.aborted) {
-    return;
-  }
-
-  throw createAbortError(signal.reason);
-}
-
-function createAbortError(reason) {
-  const message =
-    reason instanceof Error && reason.message ? reason.message : "The operation was aborted.";
-  const error = new Error(message, reason === undefined ? undefined : { cause: reason });
-  error.name = "AbortError";
-  error.code = "ABORT_ERR";
-  return error;
-}
-
-function isAbortError(error) {
-  return error?.name === "AbortError" || error?.code === "ABORT_ERR";
 }
 
 async function emitRunEvent(onEvent, event) {

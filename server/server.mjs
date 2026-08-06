@@ -6,6 +6,7 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { ACTIVITY_SIGNAL_KINDS, LIFECYCLE_SCORES } from "../shared/queue-policy.js";
 
 const exec = promisify(execFile);
 export const defaultPort = 4397;
@@ -44,15 +45,7 @@ export const weights = Object.freeze({
   "team-covered": -4,
 });
 
-export const lifecycleScores = Object.freeze({
-  reviewed: 10,
-  new: 0,
-  approved: -5,
-  merged: -5,
-  draft: -10,
-  mine: 0,
-  other: 0,
-});
+export const lifecycleScores = LIFECYCLE_SCORES;
 
 const lifecycleLabels = Object.freeze({
   reviewed: "Reviewed",
@@ -78,17 +71,7 @@ const signalLabels = Object.freeze({
   "team-covered": "Covered by teammate",
 });
 
-const activitySignalKinds = new Set([
-  "direct-review",
-  "post-merge-comment",
-  "review-reply",
-  "direct-mention",
-  "my-pr-activity",
-  "new-commits",
-  "team-review",
-  "new-comments",
-  "team-mention",
-]);
+const activitySignalKinds = new Set(ACTIVITY_SIGNAL_KINDS);
 
 const usernamePattern = /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i;
 const teamPattern = /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?\/[a-z\d](?:[a-z\d-]{0,98}[a-z\d])?$/i;
@@ -732,38 +715,6 @@ export function inboxFromQueue(state, username = state.sync?.username ?? "") {
     notificationSummary: { total: 0, pullRequests: 0, nonPullRequests: 0 },
     warnings: [],
   };
-}
-
-export function findReviewReply(comments, username) {
-  const normalizedUser = username.toLowerCase();
-  const threads = new Map();
-
-  for (const comment of comments) {
-    const rootId = comment.in_reply_to_id ?? comment.id;
-    const thread = threads.get(rootId) ?? [];
-    thread.push(comment);
-    threads.set(rootId, thread);
-  }
-
-  let newestReply = null;
-  for (const thread of threads.values()) {
-    thread.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-    const latest = thread.at(-1);
-    const latestMine = [...thread]
-      .reverse()
-      .find((comment) => comment.user?.login?.toLowerCase() === normalizedUser);
-
-    if (
-      latestMine &&
-      latest?.user?.login?.toLowerCase() !== normalizedUser &&
-      new Date(latest.created_at) > new Date(latestMine.created_at) &&
-      (!newestReply || new Date(latest.created_at) > new Date(newestReply.created_at))
-    ) {
-      newestReply = latest;
-    }
-  }
-
-  return newestReply;
 }
 
 export function summarizeActivity(activity, username, teammates = []) {
