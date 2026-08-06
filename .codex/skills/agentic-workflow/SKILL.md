@@ -39,7 +39,7 @@ Read these resources before making task edits:
    Agent Browser to inspect it:
 
    ```sh
-   pnpm web <run-dir>
+   pnpm dev <run-dir>
    pnpm ab -- open --enable react-devtools http://127.0.0.1:4397/reviews/<review-slug>/<run-id>/
    pnpm ab -- snapshot
    pnpm ab -- errors
@@ -59,7 +59,7 @@ Always give the user a live localhost URL for generated review pages, not a
 Use the fixed local server port:
 
 ```sh
-pnpm web <run-dir>
+pnpm dev <run-dir>
 ```
 
 The canonical URL shape is:

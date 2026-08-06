@@ -7,7 +7,7 @@ Use Agent Browser for UI-facing changes.
 For generated PR review pages, prefer the fixed local review server:
 
 ```sh
-pnpm web <run-dir>
+pnpm dev <run-dir>
 pnpm ab -- open --enable react-devtools http://127.0.0.1:4397/reviews/<review-slug>/<run-id>/
 ```
 

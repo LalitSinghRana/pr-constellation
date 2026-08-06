@@ -15,7 +15,7 @@ suitable implementation. Reuse or install an established component when it
 satisfies the interaction and accessibility requirements. Hand-written generic
 UI primitives are a last resort; create one only when no suitable library
 component exists or the component is inherently project-specific. Add shadcn
-components with `pnpm ui:add <component>` so the root `components.json`
+components with `pnpm exec shadcn add <component>` so the root `components.json`
 remains the single UI registry.
 
 For UI work, use Agent Browser through the project scripts:
@@ -33,7 +33,7 @@ For user-facing review URLs, always serve generated reviews from the fixed local
 server port and give the user the localhost URL:
 
 ```sh
-pnpm web
+pnpm dev
 ```
 
 The canonical user-facing route is stable across generated revisions:
