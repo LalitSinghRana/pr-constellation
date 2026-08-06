@@ -7,8 +7,13 @@ import {
   createDiffInventory,
   createDiffSummary,
 } from "./workflow/03-build-diff-inventory/diff-inventory.js";
-import { runClaudeExec } from "./workflow/07-run-retry-loop/claude-agent.js";
+import {
+  inferAnalysisProvider,
+  normalizeAnalysisProvider,
+  resolveAnalysisExecutor,
+} from "./workflow/07-run-retry-loop/analysis-providers.js";
 import { runCodexReviewAnalysis } from "./workflow/07-run-retry-loop/codex-agent.js";
+import { serializeCursorExecutor } from "./workflow/07-run-retry-loop/cursor-agent.js";
 import { isAbortError, throwIfAborted } from "./workflow/abort.js";
 
 export async function createReviewRun({ prUrl, reviewsDir }) {
@@ -48,12 +53,12 @@ export async function createAnalysisRun({ prUrl, reviewsDir }) {
 }
 
 export async function createBenchmarkRun({
-  executeClaude = runClaudeExec,
+  executeClaude,
   executeCodex,
   model,
   onEvent,
   prUrl,
-  provider = "codex",
+  provider,
   reasoningEffort,
   reviewsDir,
   runDir,
@@ -61,7 +66,7 @@ export async function createBenchmarkRun({
   sourceRunDir = null,
 }) {
   throwIfAborted(signal);
-  const selectedProvider = normalizeAnalysisProvider(provider);
+  const selectedProvider = normalizeAnalysisProvider(provider || inferAnalysisProvider(model));
 
   const parsed = parseGitHubPrUrl(prUrl);
   const resolvedReviewsDir = path.resolve(reviewsDir);
@@ -168,10 +173,12 @@ export async function createBenchmarkRun({
       ]),
   });
 
+  const selectedExecutor =
+    executeCodex || executeClaude || resolveAnalysisExecutor(selectedProvider);
   const executeAnalysis =
-    executeCodex || (selectedProvider === "claude" ? executeClaude : undefined);
+    selectedProvider === "cursor" ? serializeCursorExecutor(selectedExecutor) : selectedExecutor;
   const analysisResult = await runCodexReviewAnalysis({
-    ...(executeAnalysis ? { executeCodex: executeAnalysis } : {}),
+    executeCodex: executeAnalysis,
     model,
     onEvent,
     reasoningEffort,
@@ -242,14 +249,6 @@ export async function createBenchmarkRun({
     stableHtmlPath,
     ...(analysisResult.usage ? { usage: analysisResult.usage } : {}),
   };
-}
-
-function normalizeAnalysisProvider(value) {
-  const provider = typeof value === "string" ? value.trim().toLowerCase() : "";
-  if (provider === "codex" || provider === "claude") {
-    return provider;
-  }
-  throw new TypeError(`Unsupported analysis provider "${value}".`);
 }
 
 export async function renderExistingRun({ runDir }) {

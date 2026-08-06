@@ -1,4 +1,4 @@
-import { ArrowUpRight, ChevronDown, FileClock, LoaderCircle, Sparkles, X } from "lucide-react";
+import { ChevronDown, FileClock, LoaderCircle, Sparkles, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Card, CardContent } from "@/components/ui/card.jsx";
@@ -12,16 +12,6 @@ import { analysisTimeline, formatDuration } from "@/lib/analysis.js";
 import { groupByUpdatedDate, relativeTime, safeGitHubUrl } from "@/lib/queue.js";
 import { cn } from "@/lib/utils.js";
 
-const statusStyles = {
-  running: "border-sky/25 bg-sky/10 text-sky-strong",
-  queued: "border-lilac/25 bg-lilac/10 text-lilac-strong",
-  "not-started": "border-border bg-muted text-muted-foreground",
-  succeeded: "border-emerald-700/20 bg-emerald-700/10 text-emerald-800",
-  failed: "border-coral/25 bg-coral/10 text-coral-strong",
-  canceled: "border-border bg-muted text-muted-foreground",
-  interrupted: "border-ochre/25 bg-ochre/10 text-ochre-strong",
-};
-
 const timestampFormatter = new Intl.DateTimeFormat("en", {
   dateStyle: "medium",
   timeStyle: "short",
@@ -34,11 +24,26 @@ function formatTimestamp(value) {
 }
 
 function runForEntry(entry, mode) {
-  return mode === "running"
-    ? entry.runningRun
-    : mode === "queued"
-      ? entry.queuedRuns[0]
-      : entry.latestRun;
+  if (mode === "ongoing") {
+    return entry.runningRun || entry.queuedRuns[0] || entry.latestRun;
+  }
+  if (mode === "running") return entry.runningRun;
+  if (mode === "queued") return entry.queuedRuns[0];
+  return entry.latestRun;
+}
+
+function entryDetail(entry, mode, run) {
+  if (entry.runningRun || mode === "running") {
+    return run?.currentStage || run?.phase || "Analyzing";
+  }
+  if ((entry.queuedRuns?.length && !entry.runningRun) || mode === "queued") {
+    return `#${entry.queuePosition + 1} in queue`;
+  }
+  if (mode === "not-started" || !run) return "Not queued";
+  if (run.completedAt || run.updatedAt) {
+    return `finished ${relativeTime(run.completedAt || run.updatedAt)}`;
+  }
+  return "finished";
 }
 
 function RunDetails({ run, timeline }) {
@@ -164,7 +169,6 @@ function RunDetails({ run, timeline }) {
 
 function AnalysisRow({ canceling, entry, mode, onCancel }) {
   const run = runForEntry(entry, mode);
-  const status = run?.status ?? "not-started";
   const item = entry.queueItem;
   const metrics = run?.metrics ?? {};
   const changedLines =
@@ -182,16 +186,8 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
       : null;
   const successfulRun = entry.runs.find((candidate) => candidate.status === "succeeded");
   const timeline = analysisTimeline(run);
-  const detail =
-    mode === "queued"
-      ? `#${entry.queuePosition + 1} in queue`
-      : mode === "running"
-        ? run.currentStage || run.phase || "Analyzing"
-        : mode === "not-started"
-          ? "Not queued"
-          : run.completedAt || run.updatedAt
-            ? `finished ${relativeTime(run.completedAt || run.updatedAt)}`
-            : "finished";
+  const canCancel = Boolean(entry.runningRun || entry.queuedRuns?.length);
+  const detail = entryDetail(entry, mode, run);
 
   const summary = (
     <span className="block min-w-0 flex-1">
@@ -199,15 +195,22 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
         <span className="font-semibold text-foreground/65">
           {entry.pr.owner}/{entry.pr.repo} #{entry.pr.number}
         </span>
-        <Badge className={statusStyles[status]} variant="outline">
-          {mode === "running" && <LoaderCircle className="size-3 animate-spin" />}
-          {status.replace("-", " ")}
-        </Badge>
+        {(entry.runningRun || mode === "running") && (
+          <LoaderCircle className="size-3 animate-spin text-sky-strong" aria-hidden="true" />
+        )}
         <span>{detail}</span>
       </span>
-      <span className="mt-1.5 block text-[17px] font-semibold leading-snug tracking-[-0.015em]">
-        {entry.title}
-      </span>
+      <h3 className="mt-1.5 text-[17px] font-semibold leading-snug tracking-[-0.015em]">
+        <a
+          className="decoration-primary/35 underline-offset-4 hover:underline"
+          href={safeGitHubUrl(entry.pr.url)}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {entry.title}
+        </a>
+      </h3>
       <span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         {changedLines != null && <span>{changedLines} changed LoC</span>}
         {changedFiles != null && (
@@ -245,16 +248,23 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
             summary
           )}
           <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:justify-end">
-            {run && ["running", "queued"].includes(mode) && (
+            {canCancel && (
               <Button
                 className="text-coral-strong"
                 disabled={canceling}
                 onClick={() =>
                   onCancel(
-                    (mode === "queued" ? entry.queuedRuns : [run]).map((candidate) => ({
-                      entry,
-                      run: candidate,
-                    })),
+                    [
+                      ...(entry.queuedRuns || []).map((candidate) => ({
+                        entry,
+                        run: candidate,
+                      })),
+                      ...(entry.runningRun ? [{ entry, run: entry.runningRun }] : []),
+                    ].filter(
+                      (target, index, list) =>
+                        list.findIndex((candidate) => candidate.run.runId === target.run.runId) ===
+                        index,
+                    ),
                   )
                 }
                 size="sm"
@@ -275,15 +285,6 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
                 Open review
               </a>
             )}
-            <a
-              className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9"
-              href={safeGitHubUrl(entry.pr.url)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              GitHub
-              <ArrowUpRight className="size-3.5" />
-            </a>
           </div>
         </CardContent>
         {run && <RunDetails run={run} timeline={timeline} />}
@@ -292,7 +293,7 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
   );
 }
 
-export function AnalysisSection({ canceling, description, entries, mode, onCancel, title }) {
+export function AnalysisSection({ canceling, entries, mode, onCancel, title }) {
   const groups = groupByUpdatedDate(
     entries.map((entry) => {
       const run = runForEntry(entry, mode);
@@ -313,17 +314,12 @@ export function AnalysisSection({ canceling, description, entries, mode, onCance
   return (
     <section className="mt-8" aria-labelledby={`analysis-${mode}`}>
       <header className="mb-3 flex items-end justify-between gap-4">
-        <div>
-          <p className="mb-2 flex items-center gap-2 text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-primary">
-            {description}
-          </p>
-          <h2
-            className="font-display text-2xl font-semibold tracking-[-0.035em]"
-            id={`analysis-${mode}`}
-          >
-            {title}
-          </h2>
-        </div>
+        <h2
+          className="font-display text-2xl font-semibold tracking-[-0.035em]"
+          id={`analysis-${mode}`}
+        >
+          {title}
+        </h2>
         <Badge variant="outline">{entries.length}</Badge>
       </header>
       <div className="grid gap-6">
@@ -342,7 +338,7 @@ export function AnalysisSection({ canceling, description, entries, mode, onCance
                 <AnalysisRow
                   canceling={canceling}
                   entry={entry}
-                  key={`${mode}-${entry.pr.slug || entry.pr.url}`}
+                  key={`${mode}-${entry.pr.slug || entry.pr.url}-${entry.runningRun?.runId || entry.queuedRuns?.[0]?.runId || entry.latestRun?.runId || "none"}`}
                   mode={mode}
                   onCancel={onCancel}
                 />

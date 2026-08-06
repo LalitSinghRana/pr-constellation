@@ -1,11 +1,17 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
 import { parseGitHubPrUrl } from "../../analysis-worker/workflow/02-fetch-pr/github.js";
+import {
+  analysisModelReasoningEffort,
+  createAnalysisDashboardConfiguration,
+  DEFAULT_ANALYSIS_MODEL,
+  inferAnalysisProvider,
+  normalizeAnalysisProvider,
+} from "../../shared/analysis-models.js";
 import { assertStorageId, RunStore } from "./run-store.js";
 
 const execFileAsync = promisify(execFile);
@@ -20,8 +26,6 @@ const STAGE_FINISH_EVENT_TYPES = new Set([
   "fail",
   "error",
 ]);
-const DEFAULT_CODEX_MODEL = "gpt-5.5";
-const DEFAULT_CLAUDE_MODEL = "claude-opus-4-6[1m]";
 export const DEFAULT_REASONING_EFFORTS = Object.freeze(["low", "medium", "high", "xhigh"]);
 export const DEFAULT_CLAUDE_REASONING_EFFORTS = Object.freeze(["low", "medium", "high", "max"]);
 const REASONING_EFFORT_ORDER = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
@@ -1074,14 +1078,17 @@ export class DashboardService {
   #resolveReasoningEffort(model, reasoningEffort) {
     const supported =
       this.#configuration.modelReasoningEfforts[model] || this.#configuration.reasoningEfforts;
+    const preferred =
+      analysisModelReasoningEffort(model) ||
+      (supported.includes("xhigh")
+        ? "xhigh"
+        : supported.includes("max")
+          ? "max"
+          : supported.at(-1));
     const selected =
       typeof reasoningEffort === "string" && reasoningEffort.trim()
         ? reasoningEffort.trim()
-        : supported.includes("xhigh")
-          ? "xhigh"
-          : supported.includes("max")
-            ? "max"
-            : supported.at(-1);
+        : preferred;
     if (!supported.includes(selected)) {
       const error = new Error(`Unsupported reasoning effort "${selected}" for ${model}.`);
       error.code = "INVALID_REASONING_EFFORT";
@@ -1291,76 +1298,8 @@ function resolveBaseSha(metadata) {
   return metadata?.baseRefOid || null;
 }
 
-export async function loadDashboardConfiguration({
-  env = process.env,
-  homeDir = os.homedir(),
-  isClaudeAvailable = detectClaudeCli,
-} = {}) {
-  const codexHome =
-    typeof env.CODEX_HOME === "string" && env.CODEX_HOME.trim()
-      ? path.resolve(env.CODEX_HOME.trim())
-      : path.join(homeDir, ".codex");
-  const configuredModel =
-    normalizeOptionalName(env.PRC_CODEX_MODEL) ||
-    (await readConfiguredCodexModel(path.join(codexHome, "config.toml"))) ||
-    DEFAULT_CODEX_MODEL;
-  const configuredEfforts = parseNameList(env.PRC_CODEX_REASONING_EFFORTS);
-  const reasoningEfforts =
-    configuredEfforts.length > 0
-      ? orderedReasoningEfforts(configuredEfforts)
-      : [...DEFAULT_REASONING_EFFORTS];
-  const configuredModels = parseNameList(env.PRC_CODEX_MODELS);
-  const cachedModels =
-    configuredModels.length > 0
-      ? []
-      : await readVisibleCodexModels(path.join(codexHome, "models_cache.json"));
-  const codexModels = uniqueNames([
-    configuredModel,
-    ...(configuredModels.length > 0 ? configuredModels : cachedModels.map((model) => model.slug)),
-  ]);
-  const configuredClaudeModels = parseNameList(env.PRC_CLAUDE_MODELS);
-  const explicitClaudeModel = normalizeOptionalName(env.PRC_CLAUDE_MODEL);
-  const configuredClaudeModel = explicitClaudeModel || DEFAULT_CLAUDE_MODEL;
-  const claudeAvailable =
-    Boolean(explicitClaudeModel) ||
-    configuredClaudeModels.length > 0 ||
-    (await isClaudeAvailable());
-  const claudeModels = claudeAvailable
-    ? uniqueNames([configuredClaudeModel, ...configuredClaudeModels])
-    : [];
-  const models = uniqueNames([...codexModels, ...claudeModels]);
-  const modelProviders = Object.fromEntries([
-    ...codexModels.map((model) => [model, "codex"]),
-    ...claudeModels.map((model) => [model, "claude"]),
-  ]);
-  const configuredClaudeEfforts = parseNameList(env.PRC_CLAUDE_REASONING_EFFORTS);
-  const claudeReasoningEfforts =
-    configuredClaudeEfforts.length > 0
-      ? orderedReasoningEfforts(configuredClaudeEfforts)
-      : [...DEFAULT_CLAUDE_REASONING_EFFORTS];
-  const cachedModelsBySlug = new Map(cachedModels.map((model) => [model.slug, model]));
-  const modelReasoningEfforts = Object.fromEntries(
-    models.map((model) => {
-      if (modelProviders[model] === "claude") {
-        return [model, [...claudeReasoningEfforts]];
-      }
-      const cached = cachedModelsBySlug.get(model);
-      const supported = orderedReasoningEfforts(
-        (cached?.supportedReasoningEfforts || []).filter((effort) =>
-          reasoningEfforts.includes(effort),
-        ),
-      );
-      return [model, supported.length > 0 ? supported : [...reasoningEfforts]];
-    }),
-  );
-
-  return normalizeDashboardConfiguration({
-    defaultModel: configuredModel,
-    modelProviders,
-    modelReasoningEfforts,
-    models,
-    reasoningEfforts,
-  });
+export async function loadDashboardConfiguration() {
+  return normalizeDashboardConfiguration(createAnalysisDashboardConfiguration());
 }
 
 function normalizeDashboardConfiguration(configuration) {
@@ -1368,7 +1307,7 @@ function normalizeDashboardConfiguration(configuration) {
     throw new TypeError("Dashboard configuration must be an object.");
   }
 
-  const defaultModel = normalizeOptionalName(configuration.defaultModel) || DEFAULT_CODEX_MODEL;
+  const defaultModel = normalizeOptionalName(configuration.defaultModel) || DEFAULT_ANALYSIS_MODEL;
   const models = uniqueNames([
     defaultModel,
     ...(Array.isArray(configuration.models) ? configuration.models : []),
@@ -1398,14 +1337,20 @@ function normalizeDashboardConfiguration(configuration) {
   );
   const modelReasoningEfforts = Object.fromEntries(
     models.map((model) => {
+      const registryEffort = analysisModelReasoningEffort(model);
       const configured = Array.isArray(configuredByModel[model])
         ? configuredByModel[model]
+        : registryEffort
+          ? [registryEffort]
+          : modelProviders[model] === "claude"
+            ? DEFAULT_CLAUDE_REASONING_EFFORTS
+            : reasoningEfforts;
+      const supported = orderedReasoningEfforts(configured);
+      const fallback = registryEffort
+        ? [registryEffort]
         : modelProviders[model] === "claude"
           ? DEFAULT_CLAUDE_REASONING_EFFORTS
           : reasoningEfforts;
-      const supported = orderedReasoningEfforts(configured);
-      const fallback =
-        modelProviders[model] === "claude" ? DEFAULT_CLAUDE_REASONING_EFFORTS : reasoningEfforts;
       return [model, supported.length > 0 ? supported : [...fallback]];
     }),
   );
@@ -1419,66 +1364,9 @@ function normalizeDashboardConfiguration(configuration) {
   };
 }
 
-async function detectClaudeCli() {
-  try {
-    await execFileAsync("claude", ["--version"], {
-      timeout: 3_000,
-      windowsHide: true,
-    });
-    const { stdout } = await execFileAsync("claude", ["auth", "status", "--json"], {
-      timeout: 3_000,
-      windowsHide: true,
-    });
-    return JSON.parse(stdout)?.loggedIn === true;
-  } catch {
-    return false;
-  }
-}
-
-async function readConfiguredCodexModel(configPath) {
-  try {
-    const contents = await readFile(configPath, "utf8");
-    const match = contents.match(/^\s*model\s*=\s*(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s#\r\n]+))/m);
-    return normalizeOptionalName(match?.[1] || match?.[2] || match?.[3]);
-  } catch (error) {
-    if (error?.code === "ENOENT") {
-      return null;
-    }
-    return null;
-  }
-}
-
-async function readVisibleCodexModels(cachePath) {
-  try {
-    const document = JSON.parse(await readFile(cachePath, "utf8"));
-    const models = Array.isArray(document?.models) ? document.models : [];
-    return models
-      .filter(
-        (model) =>
-          model?.visibility === "list" &&
-          typeof model.slug === "string" &&
-          model.slug.trim().length > 0,
-      )
-      .map((model) => ({
-        slug: model.slug.trim(),
-        supportedReasoningEfforts: Array.isArray(model.supported_reasoning_levels)
-          ? model.supported_reasoning_levels
-              .map((level) => normalizeOptionalName(level?.effort))
-              .filter(Boolean)
-          : [],
-      }));
-  } catch {
-    return [];
-  }
-}
-
 function orderedReasoningEfforts(values) {
   const names = new Set(uniqueNames(values));
   return [...REASONING_EFFORT_ORDER.filter((effort) => names.delete(effort)), ...names];
-}
-
-function parseNameList(value) {
-  return typeof value === "string" ? uniqueNames(value.split(",")) : [];
 }
 
 function uniqueNames(values) {
@@ -1490,12 +1378,11 @@ function normalizeOptionalName(value) {
 }
 
 function normalizeModelProvider(value) {
-  const provider = normalizeOptionalName(value)?.toLowerCase();
-  return provider === "codex" || provider === "claude" ? provider : null;
+  return normalizeAnalysisProvider(value);
 }
 
 function inferModelProvider(model) {
-  return /^claude(?:-|$)/i.test(model) ? "claude" : "codex";
+  return inferAnalysisProvider(model);
 }
 
 function normalizeTokenUsage(value) {

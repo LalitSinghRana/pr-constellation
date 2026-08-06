@@ -15,6 +15,14 @@ test("analysis entries have one visible section", () => {
     analysisState({ runningRun: null, queuedRuns: [], latestRun: { status: "failed" } }),
     "failed",
   );
+  assert.equal(
+    analysisState({ runningRun: null, queuedRuns: [], latestRun: { status: "canceled" } }),
+    "canceled",
+  );
+  assert.equal(
+    analysisState({ runningRun: null, queuedRuns: [], latestRun: { status: "interrupted" } }),
+    "canceled",
+  );
 });
 
 test("analysis timeline nests and aligns live analysis stages", () => {

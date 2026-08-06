@@ -1610,9 +1610,13 @@ export async function handleApiRequest(
 
   if (url.pathname === "/api/analyses" && request.method === "POST") {
     try {
-      const candidate = normalizeAnalysisCandidate(await readRequestJson(request));
+      const body = await readRequestJson(request);
+      const candidate = normalizeAnalysisCandidate(body);
       const run = await dashboardService.enqueue({
+        model: typeof body.model === "string" ? body.model.trim() : undefined,
         prUrl: candidate.url,
+        reasoningEffort:
+          typeof body.reasoningEffort === "string" ? body.reasoningEffort.trim() : undefined,
         refresh: true,
         title: candidate.title,
       });

@@ -2,7 +2,9 @@ export function analysisState({ latestRun, queuedRuns, runningRun }) {
   if (runningRun) return "running";
   if (queuedRuns.length) return "queued";
   if (!latestRun) return "not-started";
-  return latestRun.status === "succeeded" ? "completed" : "failed";
+  if (latestRun.status === "succeeded") return "completed";
+  if (latestRun.status === "canceled" || latestRun.status === "interrupted") return "canceled";
+  return "failed";
 }
 
 export function analysisTimeline(run, now = Date.now()) {
