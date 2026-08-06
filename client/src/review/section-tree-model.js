@@ -167,7 +167,7 @@ export function foldSectionTree(file, { expandedGroupIds = [] } = {}) {
         title: bucket.label,
         reviewPriority: bucket.reviewPriority,
         changeKind: bucket.changeKind,
-        explanation: `${bucket.label} groups lower-priority changes that support "${section.title}".\n\n- What: ${children.length} related review ${pluralize("branch", children.length)} covering ${forestSections.length} sections.\n- Why: They share the same review priority and change kind, so the reviewer can inspect them together after the parent question.`,
+        explanation: `${bucket.label} groups lower-priority changes that support "${section.title}".\n\n${children.length} related review ${children.length === 1 ? "branch" : "branches"} covering ${forestSections.length} sections share the same review priority and change kind.`,
         changedLineIds: [],
         reviewGroup: {
           bucketId: bucket.id,
@@ -189,7 +189,7 @@ export function foldSectionTree(file, { expandedGroupIds = [] } = {}) {
         parentId: sectionId,
         childId: groupSectionId,
         order: childEntry.order,
-        explanation: `${bucket.label} follows "${section.title}" because these lower-priority changes support that parent question without replacing its primary review focus.`,
+        explanation: `${bucket.label} follows "${section.title}" because these lower-priority changes support that parent question without replacing its primary focus.`,
         synthetic: true,
       });
 
@@ -206,7 +206,7 @@ export function foldSectionTree(file, { expandedGroupIds = [] } = {}) {
           parentId: groupSectionId,
           childId: child.sectionId,
           order,
-          explanation: `"${childTitle}" belongs under ${bucket.label} because it is a distinct lower-priority review question with the same priority and change kind as the grouped changes.`,
+          explanation: `"${childTitle}" belongs under ${bucket.label} as a distinct lower-priority question with the same priority and change kind as the grouped changes.`,
           synthetic: true,
         });
         visit(child.sectionId, nextRevealedBucketIds, nextAncestry);
@@ -288,8 +288,4 @@ function humanizeKind(value) {
 function capitalize(value) {
   const text = String(value);
   return `${text.slice(0, 1).toUpperCase()}${text.slice(1)}`;
-}
-
-function pluralize(value, count) {
-  return count === 1 ? value : `${value}s`;
 }

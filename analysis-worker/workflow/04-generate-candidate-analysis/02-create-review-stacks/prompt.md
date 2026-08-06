@@ -42,7 +42,9 @@ together.
   suggestions API" or "variant pill selector UI"), never generic ("Stack 1",
   "Backend changes").
 - `explanation` explains in one or two sentences why these particular files form
-  one coherent review unit.
+  one coherent review unit. Use plain prose without `What:` / `Why:` labels or
+  review directives; add a final `Reviewer attention:` section only when a
+  specific check is warranted.
 - Array order should be a sensible default reading order for a reviewer (for
   example, data model before the API that depends on it, API before the UI
   that calls it), but this is not a strict requirement and no cross-stack

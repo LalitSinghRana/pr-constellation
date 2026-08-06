@@ -30,9 +30,11 @@ reference a changed line from another file.
 - A tree branch direction means: review the parent question first, then inspect
   the child as part of that parent's logical branch.
 - Every tree branch explanation must name what requirement or review relationship
-  connects the two sections and why the child belongs under the parent. Do
-  not use generic sequencing text such as "review this next" or narrate how the
-  target's code is implemented.
+  connects the two sections and why the child belongs under the parent. Write
+  that as plain explanation prose. Do not use generic sequencing text such as
+  "review this next", do not label the text with `What:` / `Why:`, and do not
+  narrate how the target's code is implemented. Put any rare explicit check under
+  a final `Reviewer attention:` section.
 - Each parent's tree branches must use unique contiguous `order` values starting
   at 0. Order siblings by review value and narrative flow, never by line number.
 - Review priority is `primary > secondary > skim`. Order sections by

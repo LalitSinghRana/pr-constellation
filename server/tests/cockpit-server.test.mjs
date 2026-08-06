@@ -5,6 +5,7 @@ import {
   addReviewRequests,
   addSignal,
   addSource,
+  apiMutationRejection,
   applyAutomaticDone,
   applyQueueState,
   defaultPort,
@@ -15,6 +16,7 @@ import {
   queueVersion,
   rankItems,
   rememberQueueItems,
+  requestHostRejection,
   reviewArtifactPath,
   seedNotificationPullRequests,
   setQueueItemDone,
@@ -28,6 +30,46 @@ import {
 
 test("the cockpit uses its dedicated local port", () => {
   assert.equal(defaultPort, 4397);
+});
+
+test("state-changing APIs reject cross-site and form requests", () => {
+  assert.deepEqual(
+    apiMutationRejection(
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://attacker.example",
+        },
+      },
+      "/api/inbox/sync",
+    ),
+    { status: 403, error: "Cross-origin API mutations are not allowed." },
+  );
+  assert.equal(
+    apiMutationRejection(
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://127.0.0.1:4397",
+        },
+      },
+      "/api/inbox/sync",
+    ),
+    null,
+  );
+  assert.equal(apiMutationRejection({ method: "GET", headers: {} }, "/api/inbox"), null);
+  assert.equal(
+    apiMutationRejection({ method: "POST", headers: {} }, "/api/inbox/sync")?.status,
+    415,
+  );
+});
+
+test("the HTTP boundary rejects DNS-rebinding hostnames", () => {
+  assert.equal(requestHostRejection({ headers: { host: "127.0.0.1:4397" } }), null);
+  assert.equal(requestHostRejection({ headers: { host: "localhost:4397" } }), null);
+  assert.equal(requestHostRejection({ headers: { host: "attacker.example:4397" } })?.status, 421);
 });
 
 const pr = {
@@ -49,6 +91,8 @@ test("one app serves generated reviews without allowing path traversal", () => {
   assert.equal(reviewArtifactPath("/reviews/"), null);
   assert.match(reviewArtifactPath("/reviews/example-pr/"), /\.reviews\/example-pr$/);
   assert.equal(reviewArtifactPath("/reviews/%2e%2e/server.mjs"), null);
+  assert.equal(reviewArtifactPath("/reviews/.run-store.sqlite"), null);
+  assert.equal(reviewArtifactPath("/reviews/example-pr/.private"), null);
   assert.equal(reviewArtifactPath("/api/dashboard"), null);
 });
 
@@ -200,6 +244,35 @@ test("PR and non-PR notification threads stay visible", () => {
   assert.equal(prFromNotification(pullRequest).notificationThreadId, "123");
   assert.equal(otherNotificationFromThread(issue).url, "https://github.com/example/repo/issues/7");
   assert.equal(otherNotificationFromThread(issue).notificationThreadId, "123");
+});
+
+test("non-PR notifications survive the local queue round trip", () => {
+  const notification = otherNotificationFromThread({
+    id: "123",
+    reason: "mention",
+    unread: true,
+    updated_at: "2026-07-04T00:00:00Z",
+    repository: {
+      full_name: "example/repo",
+      html_url: "https://github.com/example/repo",
+    },
+    subject: {
+      type: "Issue",
+      title: "Keep all notifications",
+      url: "https://api.github.com/repos/example/repo/issues/7",
+    },
+  });
+  const state = { version: 2, sync: {}, items: {} };
+  rememberQueueItems(state, [notification], "2026-07-04T00:00:00Z");
+
+  const [restored] = inboxFromQueue(state).notifications;
+  assert.equal(restored.id, "notification:123");
+  assert.equal(restored.title, "Keep all notifications");
+  assert.equal(restored.unread, true);
+  assert.equal(restored.done, false);
+
+  setQueueItemDone(state, restored.id, true);
+  assert.equal(inboxFromQueue(state).notifications[0].done, true);
 });
 
 test("notifications prioritize changed tracked PRs without adding unknown PRs", () => {

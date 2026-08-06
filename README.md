@@ -23,7 +23,9 @@ One root `biome.json` supplies linting and formatting for all three areas. Run
 `pnpm check` for formatting, lint, tests, and a production client build; run
 `pnpm format` to apply the formatter.
 
-## Dirty v0
+## Local setup
+
+Use Node.js 24 (see `.nvmrc`), pnpm 10, and an authenticated GitHub CLI.
 
 Install dependencies:
 
@@ -62,6 +64,14 @@ Start the local cockpit:
 pnpm dev
 ```
 
+`pnpm dev` includes Vite for hot reload. The continuously running production path builds once and
+serves static assets without Vite:
+
+```sh
+pnpm build
+pnpm start
+```
+
 The inbox is the home page and analysis status has its own route:
 
 ```text
@@ -88,15 +98,20 @@ http://127.0.0.1:4397/reviews/REVIEW-SLUG/2026-01-01T00-00-00-000Z/
 
 The CLI uses local `gh` authentication, fetches PR metadata and the cumulative
 diff, then writes a timestamped run under `.reviews/<repo-pr-number>/`.
-Dashboard history and timing data are persisted in those run directories and
-survive stopping or restarting the local server. See
+Large review artifacts remain in those run directories; mutable dashboard history and timings use
+SQLite and survive stopping or restarting the local server. See
 [`docs/analysis-dashboard.md`](docs/analysis-dashboard.md) for the storage
 layout and benchmark semantics.
 
-Install the hourly GitHub reconciliation worker once with `pnpm install:sync`.
-Run `pnpm sync` for a manual refresh. Queue state is stored in
-`~/.config/pr-review-cockpit/queue.json`; generated analyses remain under the
-gitignored `.reviews/` directory.
+Install or update the continuously running macOS user service with `pnpm install:service`. It hosts
+the UI, conditionally polls GitHub notifications, performs an hourly full reconciliation, and runs
+the durable analysis queue. Run `pnpm sync` for a one-off manual reconciliation. Inbox state is
+stored in `~/.config/pr-review-cockpit/cockpit.sqlite3`; analysis metadata is stored in
+`.reviews/.run-store.sqlite`; generated artifacts remain under the gitignored `.reviews/` directory.
+
+See [`docs/backend-architecture.md`](docs/backend-architecture.md) for runtime boundaries,
+concurrency limits, notification delivery, persistence, and the reasons for keeping one lightweight
+Node.js daemon.
 
 The `analyze` command is headless. It invokes `codex exec` in read-only mode and
 writes one Section Tree per changed file to `analysis.json`; it does not

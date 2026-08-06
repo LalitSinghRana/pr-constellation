@@ -84,8 +84,7 @@ for (const marker of [
   "review-section-gap-divider",
   "file-node-label",
   "section-tree-edge",
-  "Review section: What / Why",
-  "Review branch: What / Why",
+  "explanation-hover-card",
   "review-group",
   "--section-tree-color",
   "--file-tree-color",
@@ -105,6 +104,12 @@ assert.deepEqual(
   treeData.files[0].sourceCodeChunks[0].lines.map((line) => line.content),
   ["const value = 1;", "const value = 2;"],
 );
+assert.ok(
+  treeData.files[0].sourceCodeChunks[0].lines
+    .flatMap((line) => line.syntaxTokens)
+    .some((token) => token.style?.includes("--shiki-light")),
+  "the server-side highlighter should provide styled syntax tokens",
+);
 assert.ok(!("relations" in treeData.files[0].sectionTree));
 
 const [treeAppSource, webStyles] = await Promise.all([
@@ -118,9 +123,17 @@ assert.match(treeAppSource, /foldSectionTree\(file, \{ expandedGroupIds \}\)/);
 assert.match(treeAppSource, /value="source"/);
 assert.match(treeAppSource, /ariaLabel="Review tree map"/);
 assert.match(treeAppSource, /pointerEvents: "auto"/);
-assert.match(webStyles, /\.explanation-hover-body ul/);
+assert.match(treeAppSource, /text-base leading-relaxed/);
+assert.match(treeAppSource, /bg-diff-add\/15/);
+assert.match(treeAppSource, /text-pr-open/);
+assert.doesNotMatch(treeAppSource, /What \/ Why/);
+assert.doesNotMatch(treeAppSource, /formatExplanationForHover/);
+assert.doesNotMatch(treeAppSource, /state-badge/);
+assert.doesNotMatch(treeAppSource, /text-\[15px\]/);
 assert.match(webStyles, /\.review-branch-hit-path/);
 assert.match(webStyles, /\.review-tree-map/);
+assert.doesNotMatch(webStyles, /\.change-pill\.is-add/);
+assert.doesNotMatch(webStyles, /\.review-mark\.is-open/);
 
 function extractJsonScript(documentHtml, id) {
   const match = documentHtml.match(

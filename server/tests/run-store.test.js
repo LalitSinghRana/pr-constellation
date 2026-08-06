@@ -1,24 +1,29 @@
 import assert from "node:assert/strict";
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readdir,
   readFile,
   realpath,
   rm,
+  stat,
   symlink,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
   assertStorageId,
+  createRunManifest,
+  createTimingsDocument,
   DASHBOARD_SCHEMA_VERSION,
   FROZEN_INPUT_FILES,
   RUN_SCHEMA_VERSION,
   RunStore,
   TIMINGS_SCHEMA_VERSION,
-} from "../run-store.js";
+} from "../analysis/run-store.js";
 
 const reviewsDir = await mkdtemp(path.join(os.tmpdir(), "pr-review-run-store-"));
 const sourceInputContents = {
@@ -27,9 +32,12 @@ const sourceInputContents = {
   "diff-inventory.json": "{}\n",
   "diff-summary.json": "{}\n",
 };
+let reloadedStore;
+let store;
 
 try {
-  const store = new RunStore({
+  await chmod(reviewsDir, 0o755);
+  store = new RunStore({
     reviewsDir,
     clock: () => new Date("2026-07-27T10:00:00.000Z"),
   });
@@ -58,22 +66,22 @@ try {
   assert.equal(firstRun.sourceMode, "fresh");
   assert.equal(firstRun.sourceRunId, null);
 
-  const persistedRun = JSON.parse(
-    await readFile(path.join(reviewsDir, "widgets-42", "run-1", "run.json"), "utf8"),
-  );
-  const persistedTimings = JSON.parse(
-    await readFile(path.join(reviewsDir, "widgets-42", "run-1", "timings.json"), "utf8"),
-  );
+  const runDirectoryEntries = await readdir(path.join(reviewsDir, "widgets-42", "run-1"));
+  const persistedRun = await store.readRun("widgets-42", "run-1");
+  const persistedTimings = await store.readTimings("widgets-42", "run-1");
   assert.deepEqual(persistedRun, firstRun);
   assert.equal(persistedTimings.schemaVersion, TIMINGS_SCHEMA_VERSION);
   assert.equal(persistedTimings.runId, "run-1");
   assert.deepEqual(persistedTimings.stages, []);
+  assert.equal(runDirectoryEntries.includes("run.json"), false);
+  assert.equal(runDirectoryEntries.includes("timings.json"), false);
   assert.equal(
-    (await readdir(path.join(reviewsDir, "widgets-42", "run-1"))).some((name) =>
-      name.endsWith(".tmp"),
-    ),
+    runDirectoryEntries.some((name) => name.endsWith(".tmp")),
     false,
   );
+  assert.equal((await readdir(reviewsDir)).includes(".run-store.sqlite"), true);
+  assert.equal((await stat(reviewsDir)).mode & 0o777, 0o700);
+  assert.equal((await stat(path.join(reviewsDir, ".run-store.sqlite"))).mode & 0o777, 0o600);
 
   await store.updateRun("widgets-42", "run-1", {
     status: "running",
@@ -150,7 +158,7 @@ try {
   });
   assert.equal(completedRun.reviewUrl, "/reviews/other-7/run-1/");
 
-  const reloadedStore = new RunStore({
+  reloadedStore = new RunStore({
     reviewsDir,
     clock: () => new Date("2026-07-27T10:05:00.000Z"),
   });
@@ -185,12 +193,12 @@ try {
   }
 
   const recovered = await reloadedStore.recoverInterruptedRuns();
-  assert.deepEqual(recovered.map((run) => `${run.slug}/${run.runId}`).sort(), [
-    "widgets-42/run-1",
-    "widgets-42/run-2",
-  ]);
+  assert.deepEqual(
+    recovered.map((run) => `${run.slug}/${run.runId}`),
+    ["widgets-42/run-1"],
+  );
   assert.equal((await reloadedStore.readRun("widgets-42", "run-1")).status, "interrupted");
-  assert.equal((await reloadedStore.readRun("widgets-42", "run-2")).status, "interrupted");
+  assert.equal((await reloadedStore.readRun("widgets-42", "run-2")).status, "queued");
   assert.equal((await reloadedStore.readRun("other-7", "run-1")).status, "succeeded");
   const recoveredTimings = await reloadedStore.readTimings("widgets-42", "run-1");
   const interruptedStage = recoveredTimings.stages.find((stage) => stage.stageId === "analysis");
@@ -260,14 +268,186 @@ try {
     (await reloadedStore.deleteRun(disposableRun.slug, disposableRun.runId)).runId,
     disposableRun.runId,
   );
+  await assert.rejects(
+    () => readdir(reloadedStore.getRunDir(disposableRun.slug, disposableRun.runId)),
+    { code: "ENOENT" },
+  );
   await assert.rejects(() => reloadedStore.readRun(disposableRun.slug, disposableRun.runId), {
+    code: "ENOENT",
+  });
+  await assert.rejects(() => reloadedStore.readTimings(disposableRun.slug, disposableRun.runId), {
     code: "ENOENT",
   });
   await assert.rejects(() => reloadedStore.deleteRun("../escape", disposableRun.runId), {
     code: "INVALID_STORAGE_ID",
   });
 
+  const linkedRun = await reloadedStore.createRun({
+    runId: "linked-run",
+    url: "https://github.com/example/disposable/pull/10",
+    owner: "example",
+    repo: "disposable",
+    number: 10,
+    slug: "disposable-10",
+  });
+  const linkedRunDir = reloadedStore.getRunDir(linkedRun.slug, linkedRun.runId);
+  const protectedDir = await mkdtemp(path.join(os.tmpdir(), "pr-review-run-store-protected-"));
+  try {
+    const protectedFile = path.join(protectedDir, "keep.txt");
+    await writeFile(protectedFile, "keep\n", "utf8");
+    await rm(linkedRunDir, { recursive: true });
+    await symlink(protectedDir, linkedRunDir);
+    await assert.rejects(() => reloadedStore.deleteRun(linkedRun.slug, linkedRun.runId), {
+      code: "INVALID_RUN_DOCUMENT",
+    });
+    assert.equal(await readFile(protectedFile, "utf8"), "keep\n");
+    await unlink(linkedRunDir);
+    assert.equal(
+      (await reloadedStore.deleteRun(linkedRun.slug, linkedRun.runId)).runId,
+      "linked-run",
+    );
+  } finally {
+    await rm(protectedDir, { force: true, recursive: true });
+  }
+
+  await verifyLegacyMigration();
+  await verifyConcurrentStores();
+
   console.log("run store checks passed");
 } finally {
+  reloadedStore?.close();
+  store?.close();
   await rm(reviewsDir, { force: true, recursive: true });
+}
+
+async function verifyLegacyMigration() {
+  const legacyReviewsDir = await mkdtemp(path.join(os.tmpdir(), "pr-review-run-store-legacy-"));
+  const legacyRunDir = path.join(legacyReviewsDir, "legacy-8", "old-run");
+  const legacyManifest = createRunManifest(
+    {
+      runId: "old-run",
+      url: "https://github.com/example/legacy/pull/8",
+      owner: "example",
+      repo: "legacy",
+      number: 8,
+      slug: "legacy-8",
+      title: "Imported JSON run",
+    },
+    "2026-07-26T09:00:00.000Z",
+  );
+  const legacyTimings = createTimingsDocument("old-run", "2026-07-26T09:00:00.000Z");
+  const manifestJson = `${JSON.stringify(legacyManifest, null, 2)}\n`;
+  const timingsJson = `${JSON.stringify(legacyTimings, null, 2)}\n`;
+  let migratedStore;
+  let reopenedStore;
+
+  try {
+    await mkdir(legacyRunDir, { recursive: true });
+    await Promise.all([
+      writeFile(path.join(legacyRunDir, "run.json"), manifestJson, "utf8"),
+      writeFile(path.join(legacyRunDir, "timings.json"), timingsJson, "utf8"),
+    ]);
+
+    migratedStore = new RunStore({
+      reviewsDir: legacyReviewsDir,
+      clock: () => new Date("2026-07-27T11:00:00.000Z"),
+    });
+    assert.equal((await migratedStore.readRun("legacy-8", "old-run")).title, "Imported JSON run");
+
+    await migratedStore.updateRun("legacy-8", "old-run", {
+      phase: "migrated",
+      status: "running",
+    });
+    await migratedStore.recordStageEvent("legacy-8", "old-run", {
+      type: "stage-start",
+      stageId: "migration-check",
+      at: "2026-07-27T11:00:01.000Z",
+    });
+    assert.equal(await readFile(path.join(legacyRunDir, "run.json"), "utf8"), manifestJson);
+    assert.equal(await readFile(path.join(legacyRunDir, "timings.json"), "utf8"), timingsJson);
+
+    migratedStore.close();
+    migratedStore = null;
+    await rm(legacyRunDir, { recursive: true });
+
+    reopenedStore = new RunStore({ reviewsDir: legacyReviewsDir });
+    assert.equal((await reopenedStore.readRun("legacy-8", "old-run")).phase, "migrated");
+    assert.equal((await reopenedStore.readTimings("legacy-8", "old-run")).events.length, 1);
+    assert.deepEqual(
+      (await reopenedStore.scanRuns()).map((run) => `${run.slug}/${run.runId}`),
+      ["legacy-8/old-run"],
+    );
+    assert.equal((await reopenedStore.deleteRun("legacy-8", "old-run")).runId, "old-run");
+    await assert.rejects(() => reopenedStore.readRun("legacy-8", "old-run"), { code: "ENOENT" });
+  } finally {
+    reopenedStore?.close();
+    migratedStore?.close();
+    await rm(legacyReviewsDir, { force: true, recursive: true });
+  }
+}
+
+async function verifyConcurrentStores() {
+  const concurrentReviewsDir = await mkdtemp(
+    path.join(os.tmpdir(), "pr-review-run-store-concurrent-"),
+  );
+  let firstStore;
+  const pendingUpdates = [];
+  let releaseUpdate = () => {};
+  let secondStore;
+
+  try {
+    firstStore = new RunStore({ reviewsDir: concurrentReviewsDir });
+    secondStore = new RunStore({ reviewsDir: concurrentReviewsDir });
+    await firstStore.createRun({
+      runId: "shared-run",
+      url: "https://github.com/example/concurrent/pull/3",
+      owner: "example",
+      repo: "concurrent",
+      number: 3,
+      slug: "concurrent-3",
+    });
+
+    let notifyUpdateStarted;
+    const updateStarted = new Promise((resolve) => {
+      notifyUpdateStarted = resolve;
+    });
+    const updateCanFinish = new Promise((resolve) => {
+      releaseUpdate = resolve;
+    });
+    const staleUpdate = firstStore.updateRun("concurrent-3", "shared-run", async () => {
+      notifyUpdateStarted();
+      await updateCanFinish;
+      return { phase: "stale" };
+    });
+    pendingUpdates.push(staleUpdate);
+    await updateStarted;
+    await secondStore.updateRun("concurrent-3", "shared-run", { phase: "winner" });
+    releaseUpdate();
+    await assert.rejects(() => staleUpdate, { code: "RUN_UPDATE_CONFLICT" });
+    assert.equal((await firstStore.readRun("concurrent-3", "shared-run")).phase, "winner");
+
+    let notifyDeleteRaceStarted;
+    const deleteRaceStarted = new Promise((resolve) => {
+      notifyDeleteRaceStarted = resolve;
+    });
+    const deleteRaceCanFinish = new Promise((resolve) => {
+      releaseUpdate = resolve;
+    });
+    const deletedUpdate = firstStore.updateRun("concurrent-3", "shared-run", async () => {
+      notifyDeleteRaceStarted();
+      await deleteRaceCanFinish;
+      return { phase: "deleted" };
+    });
+    pendingUpdates.push(deletedUpdate);
+    await deleteRaceStarted;
+    await secondStore.deleteRun("concurrent-3", "shared-run");
+    releaseUpdate();
+    await assert.rejects(() => deletedUpdate, { code: "ENOENT" });
+  } finally {
+    releaseUpdate();
+    await Promise.allSettled(pendingUpdates);
+    secondStore?.close();
+    firstStore?.close();
+    await rm(concurrentReviewsDir, { force: true, recursive: true });
+  }
 }

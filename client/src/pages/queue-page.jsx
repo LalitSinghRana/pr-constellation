@@ -5,6 +5,7 @@ import { LIFECYCLE_META, LIFECYCLE_ORDER } from "@/components/review-queue/confi
 import { EmptyQueue, LoadingQueue, QueueSection } from "@/components/review-queue/queue-list.jsx";
 import { SettingsDialog } from "@/components/review-queue/settings-dialog.jsx";
 import { QueueSidebar } from "@/components/review-queue/sidebar.jsx";
+import { Button } from "@/components/ui/button.jsx";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar.jsx";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.jsx";
 import { useAnalysisDashboard } from "@/hooks/use-analysis-dashboard.js";
@@ -15,14 +16,16 @@ import { cn } from "@/lib/utils.js";
 
 export function QueuePage() {
   useDocumentTitle({ title: "Review Queue · PR Review Cockpit" });
-  const { data, error, loading, refresh, setData, setError } = useInbox();
+  const [activeFilter, setActiveFilter] = useQueryState("filter", parseAsString.withDefault("new"));
+  const [activeProject, setActiveProject] = useQueryState("project", parseAsString.withDefault(""));
+  const { data, error, loadMore, loading, loadingMore, refresh, setData, setError } = useInbox(
+    activeFilter === "done" ? "done" : "active",
+  );
   const {
     dashboard: analysisDashboard,
     error: analysisServiceError,
     refresh: refreshAnalyses,
   } = useAnalysisDashboard();
-  const [activeFilter, setActiveFilter] = useQueryState("filter", parseAsString.withDefault("new"));
-  const [activeProject, setActiveProject] = useQueryState("project", parseAsString.withDefault(""));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
   const [doneMutation, setDoneMutation] = useState([]);
@@ -56,8 +59,8 @@ export function QueuePage() {
       ),
     [analysisDashboard],
   );
-  const counts = useMemo(
-    () => ({
+  const counts = useMemo(() => {
+    const derived = {
       reviewed: openPrs.filter((item) => item.lifecycle === "reviewed").length,
       new: openPrs.filter((item) => item.lifecycle === "new").length,
       approved: openPrs.filter((item) => item.lifecycle === "approved").length,
@@ -65,9 +68,9 @@ export function QueuePage() {
       mine: openPrs.filter((item) => item.authored).length,
       other: openPrs.filter((item) => item.lifecycle === "other" && !item.authored).length,
       nonpr: openNotifications.length,
-    }),
-    [openNotifications.length, openPrs],
-  );
+    };
+    return { ...derived, ...data.counts };
+  }, [data.counts, openNotifications.length, openPrs]);
 
   const availableProjects = useMemo(() => {
     const completed = activeFilter === "done";
@@ -354,6 +357,13 @@ export function QueuePage() {
                 />
               )}
             </div>
+            {data.page?.hasMore && (
+              <div className="mt-6 flex justify-center">
+                <Button disabled={loadingMore} onClick={loadMore} variant="outline">
+                  {loadingMore ? "Loading…" : "Load more"}
+                </Button>
+              </div>
+            )}
           </section>
         </div>
       </SidebarInset>

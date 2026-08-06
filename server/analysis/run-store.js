@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
+import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
 import path from "node:path";
+import Database from "better-sqlite3";
 
 export const RUN_SCHEMA_VERSION = "pr-review-run/v1";
 export const TIMINGS_SCHEMA_VERSION = "pr-review-timings/v1";
@@ -24,7 +26,6 @@ export const FROZEN_INPUT_FILES = Object.freeze({
   diffSummaryPath: "diff-summary.json",
 });
 
-const ACTIVE_RUN_STATUSES = new Set(["queued", "running"]);
 const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "interrupted", "canceled"]);
 const TERMINAL_STAGE_STATUSES = new Set([
   "succeeded",
@@ -44,19 +45,22 @@ const END_EVENT_TYPES = new Set([
   "fail",
   "error",
 ]);
+const LEGACY_IMPORT_KEY = "legacy-json-imported";
+const MAX_WRITE_ATTEMPTS = 5;
+const STORE_FILENAME = ".run-store.sqlite";
 
 /**
- * Durable, single-process storage for local PR analysis runs.
+ * Durable storage for local PR analysis runs.
  *
- * All public methods which accept a slug or run ID validate it before resolving
- * a path. Writes to JSON documents happen through a same-directory temporary
- * file followed by rename, so readers observe either the previous complete
- * document or the next complete document.
+ * Mutable run metadata lives in SQLite. Large immutable run inputs and rendered
+ * output stay in their existing directories under reviewsDir.
  */
 export class RunStore {
   #clock;
+  #database;
   #mutations = new Map();
   #reviewsDir;
+  #statements;
 
   constructor({ reviewsDir, clock = () => new Date() }) {
     if (typeof reviewsDir !== "string" || reviewsDir.trim() === "") {
@@ -68,6 +72,82 @@ export class RunStore {
 
     this.#reviewsDir = path.resolve(reviewsDir);
     this.#clock = clock;
+    mkdirSync(this.#reviewsDir, { recursive: true, mode: 0o700 });
+    if (!lstatSync(this.#reviewsDir).isDirectory()) {
+      throw new TypeError("reviewsDir must be a directory, not a symbolic link.");
+    }
+    chmodSync(this.#reviewsDir, 0o700);
+
+    this.#database = new Database(path.join(this.#reviewsDir, STORE_FILENAME));
+    try {
+      chmodSync(this.#database.name, 0o600);
+      this.#database.pragma("busy_timeout = 5000");
+      this.#database.pragma("journal_mode = WAL");
+      this.#database.pragma("foreign_keys = ON");
+      this.#database.pragma("synchronous = NORMAL");
+      for (const suffix of ["-shm", "-wal"]) {
+        try {
+          chmodSync(`${this.#database.name}${suffix}`, 0o600);
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+        }
+      }
+      this.#database.exec(`
+        CREATE TABLE IF NOT EXISTS runs (
+          slug TEXT NOT NULL,
+          run_id TEXT NOT NULL,
+          document TEXT NOT NULL CHECK (json_valid(document)),
+          PRIMARY KEY (slug, run_id)
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS timings (
+          slug TEXT NOT NULL,
+          run_id TEXT NOT NULL,
+          document TEXT NOT NULL CHECK (json_valid(document)),
+          PRIMARY KEY (slug, run_id),
+          FOREIGN KEY (slug, run_id) REFERENCES runs (slug, run_id) ON DELETE CASCADE
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS store_metadata (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        ) STRICT;
+      `);
+      this.#statements = {
+        deleteRun: this.#database.prepare("DELETE FROM runs WHERE slug = ? AND run_id = ?"),
+        insertRun: this.#database.prepare(
+          "INSERT INTO runs (slug, run_id, document) VALUES (?, ?, ?)",
+        ),
+        insertRunIfMissing: this.#database.prepare(
+          "INSERT OR IGNORE INTO runs (slug, run_id, document) VALUES (?, ?, ?)",
+        ),
+        insertTimings: this.#database.prepare(
+          "INSERT INTO timings (slug, run_id, document) VALUES (?, ?, ?)",
+        ),
+        insertTimingsIfMissing: this.#database.prepare(
+          "INSERT OR IGNORE INTO timings (slug, run_id, document) VALUES (?, ?, ?)",
+        ),
+        readMetadata: this.#database.prepare("SELECT value FROM store_metadata WHERE key = ?"),
+        readRun: this.#database.prepare("SELECT document FROM runs WHERE slug = ? AND run_id = ?"),
+        readTimings: this.#database.prepare(
+          "SELECT document FROM timings WHERE slug = ? AND run_id = ?",
+        ),
+        scanRuns: this.#database.prepare("SELECT slug, run_id, document FROM runs"),
+        updateRun: this.#database.prepare(
+          "UPDATE runs SET document = ? WHERE slug = ? AND run_id = ? AND document = ?",
+        ),
+        updateTimings: this.#database.prepare(
+          "UPDATE timings SET document = ? WHERE slug = ? AND run_id = ? AND document = ?",
+        ),
+        writeMetadata: this.#database.prepare(
+          "INSERT OR REPLACE INTO store_metadata (key, value) VALUES (?, ?)",
+        ),
+      };
+      this.#importLegacyDocuments();
+    } catch (error) {
+      this.#database.close();
+      throw error;
+    }
   }
 
   get reviewsDir() {
@@ -80,47 +160,58 @@ export class RunStore {
     return path.join(this.#reviewsDir, slug, runId);
   }
 
+  close() {
+    if (this.#database.open) {
+      this.#database.pragma("wal_checkpoint(TRUNCATE)");
+      this.#database.close();
+    }
+  }
+
   async createRun(input) {
     const now = this.#now();
     const manifest = createRunManifest(input, now);
     const runDir = this.getRunDir(manifest.slug, manifest.runId);
-    const manifestPath = path.join(runDir, "run.json");
-    const timingsPath = path.join(runDir, "timings.json");
 
-    return this.#serialize(manifestPath, async () => {
+    return this.#serialize(runDir, async () => {
       await mkdir(runDir, { recursive: true });
-      if (await fileExists(manifestPath)) {
-        throw createStoreError(
-          "RUN_ALREADY_EXISTS",
-          `Run "${manifest.slug}/${manifest.runId}" already exists.`,
-        );
+      const timings = createTimingsDocument(manifest.runId, now);
+      const insertDocuments = this.#database.transaction(() => {
+        this.#statements.insertRun.run(manifest.slug, manifest.runId, JSON.stringify(manifest));
+        this.#statements.insertTimings.run(manifest.slug, manifest.runId, JSON.stringify(timings));
+      });
+
+      try {
+        insertDocuments.immediate();
+      } catch (error) {
+        if (["SQLITE_CONSTRAINT_PRIMARYKEY", "SQLITE_CONSTRAINT_UNIQUE"].includes(error?.code)) {
+          throw createStoreError(
+            "RUN_ALREADY_EXISTS",
+            `Run "${manifest.slug}/${manifest.runId}" already exists.`,
+          );
+        }
+        throw error;
       }
 
-      await atomicWriteJson(manifestPath, manifest);
-      await atomicWriteJson(timingsPath, createTimingsDocument(manifest.runId, now));
       return structuredClone(manifest);
     });
   }
 
   async readRun(slug, runId) {
-    const runPath = path.join(this.getRunDir(slug, runId), "run.json");
-    const manifest = await readJson(runPath);
-    assertRunDocument(manifest, { slug, runId });
-    return normalizeRunDocument(manifest);
+    this.getRunDir(slug, runId);
+    return this.#readRunRecord(slug, runId).value;
   }
 
   async readTimings(slug, runId) {
-    const timingsPath = path.join(this.getRunDir(slug, runId), "timings.json");
-    return readJson(timingsPath);
+    this.getRunDir(slug, runId);
+    return this.#readTimingsRecord(slug, runId).value;
   }
 
   async updateRun(slug, runId, patchOrUpdater) {
-    const manifestPath = path.join(this.getRunDir(slug, runId), "run.json");
+    const runDir = this.getRunDir(slug, runId);
 
-    return this.#serialize(manifestPath, async () => {
-      const stored = await readJson(manifestPath);
-      assertRunDocument(stored, { slug, runId });
-      const current = normalizeRunDocument(stored);
+    return this.#serialize(runDir, async () => {
+      const stored = this.#readRunRecord(slug, runId);
+      const current = stored.value;
 
       const requestedPatch =
         typeof patchOrUpdater === "function"
@@ -132,7 +223,18 @@ export class RunStore {
 
       assertImmutableRunFields(current, requestedPatch);
       const updated = mergeRunManifest(current, requestedPatch, this.#now());
-      await atomicWriteJson(manifestPath, updated);
+      const result = this.#statements.updateRun.run(
+        JSON.stringify(updated),
+        slug,
+        runId,
+        stored.document,
+      );
+      if (result.changes !== 1) {
+        if (!this.#statements.readRun.get(slug, runId)) {
+          throw createMissingDocumentError("Run", slug, runId);
+        }
+        throw createUpdateConflictError("Run", slug, runId);
+      }
       return structuredClone(updated);
     });
   }
@@ -141,39 +243,62 @@ export class RunStore {
     const runDir = this.getRunDir(slug, runId);
 
     return this.#serialize(runDir, async () => {
+      const manifest = await this.readRun(slug, runId);
       const reviewsRealPath = await ensureRealDirectory(this.#reviewsDir);
-      const runRealPath = await realpath(runDir);
-      assertPathContained(reviewsRealPath, runRealPath, "run");
-      const stats = await lstat(runDir);
-      if (!stats.isDirectory()) {
-        throw createStoreError(
-          "INVALID_RUN_DOCUMENT",
-          `Run "${slug}/${runId}" is not stored in a regular directory.`,
-        );
+      let stats;
+      try {
+        stats = await lstat(runDir);
+      } catch (error) {
+        if (error?.code !== "ENOENT") {
+          throw error;
+        }
       }
 
-      const manifest = await readJson(path.join(runRealPath, "run.json"));
-      assertRunDocument(manifest, { slug, runId });
-      await rm(runDir, { recursive: true });
-      return normalizeRunDocument(manifest);
+      if (stats) {
+        if (!stats.isDirectory()) {
+          throw createStoreError(
+            "INVALID_RUN_DOCUMENT",
+            `Run "${slug}/${runId}" is not stored in a regular directory.`,
+          );
+        }
+        const runRealPath = await realpath(runDir);
+        assertPathContained(reviewsRealPath, runRealPath, "run");
+        await rm(runDir, { recursive: true });
+      }
+
+      this.#statements.deleteRun.run(slug, runId);
+      return manifest;
     });
   }
 
   async recordStageEvent(slug, runId, event) {
-    const timingsPath = path.join(this.getRunDir(slug, runId), "timings.json");
+    const runDir = this.getRunDir(slug, runId);
 
-    return this.#serialize(timingsPath, async () => {
-      const timings = await readJson(timingsPath);
-      assertTimingsDocument(timings, runId);
-      const updated = applyStageEvent(timings, event, this.#now());
-      await atomicWriteJson(timingsPath, updated);
-      return structuredClone(updated);
+    return this.#serialize(runDir, async () => {
+      const eventTime = this.#now();
+      for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
+        const stored = this.#readTimingsRecord(slug, runId);
+        const updated = applyStageEvent(stored.value, event, eventTime);
+        const result = this.#statements.updateTimings.run(
+          JSON.stringify(updated),
+          slug,
+          runId,
+          stored.document,
+        );
+        if (result.changes === 1) {
+          return structuredClone(updated);
+        }
+        if (!this.#statements.readTimings.get(slug, runId)) {
+          throw createMissingDocumentError("Timings", slug, runId);
+        }
+      }
+      throw createUpdateConflictError("Timings", slug, runId);
     });
   }
 
   /**
-   * Converts work left active by an earlier local server process to interrupted.
-   * Completed runs are never changed.
+   * Converts work left running by an earlier local server process to interrupted.
+   * Queued runs remain durable so the next server can restore them.
    */
   async recoverInterruptedRuns({
     message = "The local analysis process stopped before this run completed.",
@@ -182,7 +307,7 @@ export class RunStore {
     const recovered = [];
 
     for (const manifest of manifests) {
-      if (!ACTIVE_RUN_STATUSES.has(manifest.status)) {
+      if (manifest.status !== "running") {
         continue;
       }
 
@@ -210,36 +335,14 @@ export class RunStore {
 
   async scanRuns() {
     const manifests = [];
-    const slugEntries = await readDirectoryOrEmpty(this.#reviewsDir);
-
-    for (const slugEntry of slugEntries) {
-      if (!slugEntry.isDirectory() || !isStorageId(slugEntry.name)) {
-        continue;
-      }
-
-      const slugDir = path.join(this.#reviewsDir, slugEntry.name);
-      const runEntries = await readDirectoryOrEmpty(slugDir);
-      for (const runEntry of runEntries) {
-        if (!runEntry.isDirectory() || !isStorageId(runEntry.name)) {
-          continue;
-        }
-
-        const manifestPath = path.join(slugDir, runEntry.name, "run.json");
-        try {
-          const manifest = await readJson(manifestPath);
-          assertRunDocument(manifest, {
-            slug: slugEntry.name,
-            runId: runEntry.name,
-          });
-          manifests.push(normalizeRunDocument(manifest));
-        } catch (error) {
-          if (
-            error?.code !== "ENOENT" &&
-            error?.code !== "INVALID_RUN_DOCUMENT" &&
-            !(error instanceof SyntaxError)
-          ) {
-            throw error;
-          }
+    for (const row of this.#statements.scanRuns.all()) {
+      try {
+        const manifest = JSON.parse(row.document);
+        assertRunDocument(manifest, { slug: row.slug, runId: row.run_id });
+        manifests.push(normalizeRunDocument(manifest));
+      } catch (error) {
+        if (!isInvalidPersistedDocumentError(error)) {
+          throw error;
         }
       }
     }
@@ -364,59 +467,84 @@ export class RunStore {
   }
 
   async #interruptOpenStages(slug, runId, interruptedAt, message) {
-    const timingsPath = path.join(this.getRunDir(slug, runId), "timings.json");
-    if (!(await fileExists(timingsPath))) {
+    const runDir = this.getRunDir(slug, runId);
+
+    await this.#serialize(runDir, async () => {
+      for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
+        let stored;
+        try {
+          stored = this.#readTimingsRecord(slug, runId);
+        } catch (error) {
+          if (error?.code === "ENOENT") {
+            return;
+          }
+          throw error;
+        }
+        const updated = interruptOpenStages(stored.value, interruptedAt, message);
+        if (!updated) {
+          return stored.value;
+        }
+        const result = this.#statements.updateTimings.run(
+          JSON.stringify(updated),
+          slug,
+          runId,
+          stored.document,
+        );
+        if (result.changes === 1) {
+          return updated;
+        }
+        if (!this.#statements.readTimings.get(slug, runId)) {
+          return;
+        }
+      }
+      throw createUpdateConflictError("Timings", slug, runId);
+    });
+  }
+
+  #readRunRecord(slug, runId) {
+    const row = this.#statements.readRun.get(slug, runId);
+    if (!row) {
+      throw createMissingDocumentError("Run", slug, runId);
+    }
+    const manifest = JSON.parse(row.document);
+    assertRunDocument(manifest, { slug, runId });
+    return { document: row.document, value: normalizeRunDocument(manifest) };
+  }
+
+  #readTimingsRecord(slug, runId) {
+    const row = this.#statements.readTimings.get(slug, runId);
+    if (!row) {
+      throw createMissingDocumentError("Timings", slug, runId);
+    }
+    const timings = JSON.parse(row.document);
+    assertTimingsDocument(timings, runId);
+    return { document: row.document, value: timings };
+  }
+
+  #importLegacyDocuments() {
+    if (this.#statements.readMetadata.get(LEGACY_IMPORT_KEY)) {
       return;
     }
 
-    await this.#serialize(timingsPath, async () => {
-      const timings = await readJson(timingsPath);
-      assertTimingsDocument(timings, runId);
-      let changed = false;
-      const interruptionEvents = [];
-      const stages = timings.stages.map((stage) => {
-        if (TERMINAL_STAGE_STATUSES.has(stage.status) || stage.endedAt) {
-          return stage;
+    const documents = readLegacyDocuments(this.#reviewsDir);
+    const importDocuments = this.#database.transaction(() => {
+      for (const { manifest, timings } of documents) {
+        this.#statements.insertRunIfMissing.run(
+          manifest.slug,
+          manifest.runId,
+          JSON.stringify(manifest),
+        );
+        if (timings) {
+          this.#statements.insertTimingsIfMissing.run(
+            manifest.slug,
+            manifest.runId,
+            JSON.stringify(timings),
+          );
         }
-        changed = true;
-        const error = stage.error ?? {
-          code: "RUN_INTERRUPTED",
-          message,
-        };
-        interruptionEvents.push({
-          type: "stage-finish",
-          stageId: stage.stageId,
-          label: stage.label,
-          parentStageId: stage.parentStageId,
-          attempt: stage.attempt,
-          at: interruptedAt,
-          status: "interrupted",
-          error,
-          metrics: null,
-        });
-        return {
-          ...stage,
-          endedAt: interruptedAt,
-          durationMs: durationBetween(stage.startedAt, interruptedAt),
-          status: "interrupted",
-          error,
-        };
-      });
-
-      if (!changed) {
-        return timings;
       }
-
-      const updated = {
-        ...timings,
-        updatedAt: interruptedAt,
-        events: [...timings.events, ...interruptionEvents],
-        stages,
-        totalDurationMs: calculateTotalDuration(stages),
-      };
-      await atomicWriteJson(timingsPath, updated);
-      return updated;
+      this.#statements.writeMetadata.run(LEGACY_IMPORT_KEY, "1");
     });
+    importDocuments.immediate();
   }
 
   #now() {
@@ -636,6 +764,50 @@ export function applyStageEvent(timings, event, fallbackAt = new Date().toISOStr
     totalDurationMs: calculateTotalDuration(liveStages, normalized.at),
     events: [...timings.events, normalized],
     stages: liveStages,
+  };
+}
+
+function interruptOpenStages(timings, interruptedAt, message) {
+  let changed = false;
+  const interruptionEvents = [];
+  const stages = timings.stages.map((stage) => {
+    if (TERMINAL_STAGE_STATUSES.has(stage.status) || stage.endedAt) {
+      return stage;
+    }
+    changed = true;
+    const error = stage.error ?? {
+      code: "RUN_INTERRUPTED",
+      message,
+    };
+    interruptionEvents.push({
+      type: "stage-finish",
+      stageId: stage.stageId,
+      label: stage.label,
+      parentStageId: stage.parentStageId,
+      attempt: stage.attempt,
+      at: interruptedAt,
+      status: "interrupted",
+      error,
+      metrics: null,
+    });
+    return {
+      ...stage,
+      endedAt: interruptedAt,
+      durationMs: durationBetween(stage.startedAt, interruptedAt),
+      status: "interrupted",
+      error,
+    };
+  });
+
+  if (!changed) {
+    return null;
+  }
+  return {
+    ...timings,
+    updatedAt: interruptedAt,
+    events: [...timings.events, ...interruptionEvents],
+    stages,
+    totalDurationMs: calculateTotalDuration(stages),
   };
 }
 
@@ -909,19 +1081,20 @@ async function ensureRealDirectory(directory) {
 
 function assertPathContained(root, candidate, label) {
   const relative = path.relative(root, candidate);
-  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+  if (
+    relative !== "" &&
+    relative !== ".." &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  ) {
     return;
   }
   throw createStoreError("SOURCE_PATH_ESCAPE", `Resolved ${label} escapes the reviews directory.`);
 }
 
-async function readJson(filePath) {
-  return JSON.parse(await readFile(filePath, "utf8"));
-}
-
-async function readDirectoryOrEmpty(directory) {
+function readDirectorySyncOrEmpty(directory) {
   try {
-    return await readdir(directory, { withFileTypes: true });
+    return readdirSync(directory, { withFileTypes: true });
   } catch (error) {
     if (error?.code === "ENOENT") {
       return [];
@@ -930,16 +1103,93 @@ async function readDirectoryOrEmpty(directory) {
   }
 }
 
-async function fileExists(filePath) {
+function readLegacyJson(filePath) {
   try {
-    await lstat(filePath);
-    return true;
+    if (!lstatSync(filePath).isFile()) {
+      return null;
+    }
+    return JSON.parse(readFileSync(filePath, "utf8"));
   } catch (error) {
-    if (error?.code === "ENOENT") {
-      return false;
+    if (error?.code === "ENOENT" || error instanceof SyntaxError) {
+      return null;
     }
     throw error;
   }
+}
+
+function readLegacyDocuments(reviewsDir) {
+  const documents = [];
+  for (const slugEntry of readDirectorySyncOrEmpty(reviewsDir)) {
+    if (!slugEntry.isDirectory() || !isStorageId(slugEntry.name)) {
+      continue;
+    }
+
+    const slugDir = path.join(reviewsDir, slugEntry.name);
+    for (const runEntry of readDirectorySyncOrEmpty(slugDir)) {
+      if (!runEntry.isDirectory() || !isStorageId(runEntry.name)) {
+        continue;
+      }
+
+      const runDir = path.join(slugDir, runEntry.name);
+      const legacyManifest = readLegacyJson(path.join(runDir, "run.json"));
+      if (!legacyManifest) {
+        continue;
+      }
+
+      let manifest;
+      try {
+        assertRunDocument(legacyManifest, {
+          slug: slugEntry.name,
+          runId: runEntry.name,
+        });
+        manifest = normalizeRunDocument(legacyManifest);
+      } catch (error) {
+        if (isInvalidPersistedDocumentError(error)) {
+          continue;
+        }
+        throw error;
+      }
+
+      const legacyTimings = readLegacyJson(path.join(runDir, "timings.json"));
+      let timings = null;
+      if (legacyTimings) {
+        try {
+          assertTimingsDocument(legacyTimings, manifest.runId);
+          timings = legacyTimings;
+        } catch (error) {
+          if (!isInvalidPersistedDocumentError(error)) {
+            throw error;
+          }
+        }
+      }
+      documents.push({ manifest, timings });
+    }
+  }
+  return documents;
+}
+
+function isInvalidPersistedDocumentError(error) {
+  return (
+    error instanceof SyntaxError ||
+    error instanceof TypeError ||
+    [
+      "INVALID_RUN_DOCUMENT",
+      "INVALID_SOURCE_RUN",
+      "INVALID_STORAGE_ID",
+      "INVALID_TIMINGS_DOCUMENT",
+    ].includes(error?.code)
+  );
+}
+
+function createMissingDocumentError(documentName, slug, runId) {
+  return createStoreError("ENOENT", `${documentName} for run "${slug}/${runId}" does not exist.`);
+}
+
+function createUpdateConflictError(documentName, slug, runId) {
+  return createStoreError(
+    "RUN_UPDATE_CONFLICT",
+    `${documentName} for run "${slug}/${runId}" changed during the update.`,
+  );
 }
 
 function createStoreError(code, message) {

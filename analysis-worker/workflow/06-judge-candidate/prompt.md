@@ -37,7 +37,10 @@ Audit these qualities:
   a reviewer should inspect first
 - branches connect each child to the nearest reviewer question it explains
 - branch order reflects review value rather than source location
-- explanations state what changed or matters and why, instead of narrating code
+- explanations state what changed or matters and why in plain prose, without
+  `What:` / `Why:` labels, without "review this" style directives, and with an
+  optional final `Reviewer attention:` section only when a specific check is
+  warranted
 
 ## Section cohesion
 
@@ -70,9 +73,12 @@ a setup, interaction, visual, contract, or test branch.
 
 The attached code answers how the implementation works. Explanations must
 answer what changed or is related and why it matters or belongs in that review
-position. Fail syntax narration, repeated titles, generic sequencing, or
-line-by-line summaries. Concise explanations are preferred but length and
-Markdown formatting alone never determine the verdict.
+position, as plain prose. Fail `What:` / `Why:` labeled output, "review this"
+style directives in the main explanation, syntax narration, repeated titles,
+generic sequencing, or line-by-line summaries. An optional final
+`Reviewer attention:` section is allowed only for a specific check. Concise
+explanations are preferred but length and Markdown formatting alone never
+determine the verdict.
 
 Pass when the review trees are imperfect but useful enough to help a reviewer
 understand the PR faster.

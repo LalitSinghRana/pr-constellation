@@ -11,6 +11,7 @@ const REVIEW_TREES_SCHEMA_PATH = fileURLToPath(
   new URL("../04-generate-candidate-analysis/03-create-review-trees/schema.json", import.meta.url),
 );
 const CODEX_EXEC_TIMEOUT_MS = Number(process.env.PRC_CODEX_TIMEOUT_MS || 900000);
+const MAX_PROCESS_OUTPUT_BYTES = 16 * 1024 * 1024;
 
 export function resolveCodexExecutionConfig({ env = process.env, model, reasoningEffort } = {}) {
   return {
@@ -110,6 +111,8 @@ export async function runCodexExec({
     let settled = false;
     let stdout = "";
     let stderr = "";
+    let outputBytes = 0;
+    let outputExceeded = false;
     let timedOut = false;
     const cleanup = () => {
       signal?.removeEventListener("abort", onAbort);
@@ -143,11 +146,25 @@ export async function runCodexExec({
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
+      if (outputExceeded) return;
       stdout += chunk;
+      outputBytes += Buffer.byteLength(chunk);
+      if (outputBytes > MAX_PROCESS_OUTPUT_BYTES) {
+        outputExceeded = true;
+        clearTimeout(timeoutTimer);
+        terminator.terminate();
+      }
     });
 
     child.stderr.on("data", (chunk) => {
+      if (outputExceeded) return;
       stderr += chunk;
+      outputBytes += Buffer.byteLength(chunk);
+      if (outputBytes > MAX_PROCESS_OUTPUT_BYTES) {
+        outputExceeded = true;
+        clearTimeout(timeoutTimer);
+        terminator.terminate();
+      }
     });
 
     child.on("error", (error) => {
@@ -180,6 +197,16 @@ export async function runCodexExec({
       if (timedOut) {
         rejectOnce(
           createCodexExecError(`codex exec timed out after ${CODEX_EXEC_TIMEOUT_MS}ms.`, stdout),
+        );
+        return;
+      }
+
+      if (outputExceeded) {
+        rejectOnce(
+          createCodexExecError(
+            `codex exec exceeded ${MAX_PROCESS_OUTPUT_BYTES} bytes of process output.`,
+            stdout,
+          ),
         );
         return;
       }

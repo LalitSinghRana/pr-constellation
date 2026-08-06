@@ -40,6 +40,10 @@ assert.equal(
 );
 assert.match(
   collapsed.sections.find((item) => item.id === "ui-fold-root-secondary-runtime").explanation,
+  /related review branches covering/,
+);
+assert.doesNotMatch(
+  collapsed.sections.find((item) => item.id === "ui-fold-root-secondary-runtime").explanation,
   /- What:/,
 );
 assert.match(

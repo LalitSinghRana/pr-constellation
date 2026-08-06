@@ -29,6 +29,12 @@
   --ochre-strong: #805718;
   --lilac: #9a7dc0;
   --lilac-strong: #6a4a91;
+  --diff-add: #1a7f37;
+  --diff-del: #cf222e;
+  --pr-open: var(--diff-add);
+  --pr-merged: var(--lilac-strong);
+  --pr-closed: var(--diff-del);
+  --pr-draft: oklch(0.5341 0.0078 97.4503);
   --radius: 1rem;
   --sidebar-primary: oklch(0.6171 0.1375 39.0427);
   --sidebar-primary-foreground: oklch(0.9881 0 0);
@@ -95,6 +101,12 @@
   --color-ochre-strong: var(--ochre-strong);
   --color-lilac: var(--lilac);
   --color-lilac-strong: var(--lilac-strong);
+  --color-diff-add: var(--diff-add);
+  --color-diff-del: var(--diff-del);
+  --color-pr-open: var(--pr-open);
+  --color-pr-merged: var(--pr-merged);
+  --color-pr-closed: var(--pr-closed);
+  --color-pr-draft: var(--pr-draft);
   --font-sans: Outfit, sans-serif;
   --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --radius-sm: calc(var(--radius) - 4px);
@@ -187,6 +199,12 @@
   --ochre-strong: #f1c982;
   --lilac: #af91d2;
   --lilac-strong: #d4bdf0;
+  --diff-add: #3fb950;
+  --diff-del: #f85149;
+  --pr-open: var(--diff-add);
+  --pr-merged: var(--lilac);
+  --pr-closed: var(--diff-del);
+  --pr-draft: oklch(0.7713 0.0169 99.0657);
   --font-sans: Outfit, sans-serif;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: Geist Mono, ui-monospace, monospace;

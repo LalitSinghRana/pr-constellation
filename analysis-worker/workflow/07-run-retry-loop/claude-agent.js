@@ -12,6 +12,7 @@ const REVIEW_TREES_SCHEMA_PATH = fileURLToPath(
   new URL("../04-generate-candidate-analysis/03-create-review-trees/schema.json", import.meta.url),
 );
 const DEFAULT_CLAUDE_EXEC_TIMEOUT_MS = 900_000;
+const MAX_PROCESS_OUTPUT_BYTES = 16 * 1024 * 1024;
 const UNSUPPORTED_CLAUDE_SCHEMA_KEYWORDS = new Set([
   "exclusiveMaximum",
   "exclusiveMinimum",
@@ -135,6 +136,8 @@ export async function runClaudeExec({
     let settled = false;
     let stderr = "";
     let stdout = "";
+    let outputBytes = 0;
+    let outputExceeded = false;
     let timedOut = false;
     const cleanup = () => {
       signal?.removeEventListener("abort", onAbort);
@@ -168,10 +171,24 @@ export async function runClaudeExec({
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
+      if (outputExceeded) return;
       stdout += chunk;
+      outputBytes += Buffer.byteLength(chunk);
+      if (outputBytes > MAX_PROCESS_OUTPUT_BYTES) {
+        outputExceeded = true;
+        clearTimeout(timeoutTimer);
+        terminator.terminate();
+      }
     });
     child.stderr.on("data", (chunk) => {
+      if (outputExceeded) return;
       stderr += chunk;
+      outputBytes += Buffer.byteLength(chunk);
+      if (outputBytes > MAX_PROCESS_OUTPUT_BYTES) {
+        outputExceeded = true;
+        clearTimeout(timeoutTimer);
+        terminator.terminate();
+      }
     });
 
     child.on("error", (error) => {
@@ -201,6 +218,15 @@ export async function runClaudeExec({
       }
       if (timedOut) {
         rejectOnce(createClaudeExecError(`claude --print timed out after ${timeoutMs}ms.`, stdout));
+        return;
+      }
+      if (outputExceeded) {
+        rejectOnce(
+          createClaudeExecError(
+            `claude --print exceeded ${MAX_PROCESS_OUTPUT_BYTES} bytes of process output.`,
+            stdout,
+          ),
+        );
         return;
       }
       if (code !== 0) {

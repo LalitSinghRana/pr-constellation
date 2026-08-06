@@ -5,12 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
-import { createBenchmarkRun, publishStableReview } from "../analysis-worker/review-run.js";
-import { parseGitHubPrUrl } from "../analysis-worker/workflow/02-fetch-pr/github.js";
+import { parseGitHubPrUrl } from "../../analysis-worker/workflow/02-fetch-pr/github.js";
 import { assertStorageId, RunStore } from "./run-store.js";
 
 const execFileAsync = promisify(execFile);
 const ACTIVE_STATUSES = new Set(["queued", "running"]);
+const MAX_CONCURRENT_JOBS = 2;
 const STAGE_FINISH_EVENT_TYPES = new Set([
   "end",
   "finish",
@@ -33,14 +33,16 @@ export async function createDashboardService(options) {
 }
 
 export class DashboardService {
-  #activeJob = null;
+  #activeJobs = new Set();
+  #closePromise = null;
   #closed = false;
   #configuration;
-  #drainPromise = null;
+  #executions = new Set();
   #getCodeVersion;
   #initialized = false;
   #jobs = [];
   #now;
+  #onChange;
   #projectRoot;
   #publishReview;
   #runExecutor;
@@ -50,10 +52,11 @@ export class DashboardService {
     getCodeVersion = readCodeVersion,
     configuration = null,
     now = () => new Date(),
+    onChange = () => {},
     projectRoot = process.cwd(),
-    publishReview = publishStableReview,
+    publishReview = publishDefaultReview,
     reviewsDir,
-    runExecutor = createBenchmarkRun,
+    runExecutor = runDefaultAnalysis,
     store = new RunStore({ reviewsDir }),
   }) {
     if (!reviewsDir) {
@@ -64,6 +67,7 @@ export class DashboardService {
     this.#configuration = configuration ? normalizeDashboardConfiguration(configuration) : null;
     this.#getCodeVersion = getCodeVersion;
     this.#now = now;
+    this.#onChange = onChange;
     this.#projectRoot = path.resolve(projectRoot);
     this.#publishReview = publishReview;
     this.#runExecutor = runExecutor;
@@ -81,8 +85,70 @@ export class DashboardService {
     if (!this.#configuration) {
       this.#configuration = await loadDashboardConfiguration();
     }
-    await this.#store.markStaleRunsInterrupted();
+    const interruptedRuns = await this.#store.markStaleRunsInterrupted();
+    const queuedRuns = (await this.#store.scanRuns()).filter((run) => run.status === "queued");
+    const resumedAttempts = await this.#resumeInterruptedBatchSources(interruptedRuns, queuedRuns);
+    for (const run of orderQueuedRunsForResume(queuedRuns)) {
+      try {
+        this.#jobs.push(
+          queuedJobFromManifest(
+            run,
+            this.#configuration,
+            resumedAttempts.get(runKey(run.slug, run.runId)),
+          ),
+        );
+      } catch (error) {
+        if (error?.code !== "UNSUPPORTED_STORED_CONFIGURATION") throw error;
+        await this.#store.updateRun(run.slug, run.runId, {
+          error: { code: error.code, message: error.message },
+          phase: "Failed",
+          status: "failed",
+          timestamps: { completedAt: this.#nowDate() },
+        });
+        this.#emitChange({ runId: run.runId, slug: run.slug, type: "failed" });
+      }
+    }
     this.#initialized = true;
+    this.#startDrain();
+  }
+
+  async #resumeInterruptedBatchSources(interruptedRuns, queuedRuns) {
+    const neededSources = new Set(
+      queuedRuns
+        .filter((run) => run.metrics?.batchId && run.sourceRunId)
+        .map((run) => runKey(run.slug, run.sourceRunId)),
+    );
+    const resumedAttempts = new Map();
+
+    for (const source of interruptedRuns) {
+      const key = runKey(source.slug, source.runId);
+      if (!neededSources.has(key)) continue;
+      try {
+        await this.#store.resolveFrozenSource({
+          slug: source.slug,
+          sourceRunId: source.runId,
+        });
+        continue;
+      } catch (error) {
+        if (!isUnavailableFrozenSourceError(error)) throw error;
+      }
+
+      const timings = await this.#store.readTimings(source.slug, source.runId);
+      resumedAttempts.set(key, stageAttemptOffsets(timings));
+      queuedRuns.push(
+        await this.#store.updateRun(source.slug, source.runId, {
+          error: null,
+          phase: null,
+          status: "queued",
+          timestamps: {
+            completedAt: null,
+            startedAt: null,
+          },
+        }),
+      );
+    }
+
+    return resumedAttempts;
   }
 
   async enqueueBatch({
@@ -217,30 +283,43 @@ export class DashboardService {
   async snapshot() {
     await this.initialize();
     const dashboard = await this.#store.scanDashboard();
-    const pullRequests = dashboard.pullRequests.map((pr) => ({
-      ...pr,
-      runs: pr.runs.map((run) => ({
-        ...run,
-        ...run.timestamps,
-        currentStage: run.phase,
-      })),
-    }));
+    const pullRequests = dashboard.pullRequests.map((pr) => {
+      let includedTerminalTimings = false;
+      return {
+        ...pr,
+        runCount: pr.runs.length,
+        runs: pr.runs.map((run) => {
+          const terminal = !ACTIVE_STATUSES.has(run.status);
+          const includeTimings = run.status === "running" || (terminal && !includedTerminalTimings);
+          if (terminal) includedTerminalTimings = true;
+          const { events: _events, ...timings } = run.timings ?? {};
+          return {
+            ...run,
+            ...run.timestamps,
+            currentStage: run.phase,
+            timings: includeTimings ? timings : null,
+          };
+        }),
+      };
+    });
+    const { pullRequests: _storedPullRequests, ...dashboardMetadata } = dashboard;
 
+    const activeRunIds = [...this.#activeJobs].map((job) => job.runId);
     return {
-      ...dashboard,
+      ...dashboardMetadata,
       configuration: structuredClone(this.#configuration),
       prs: pullRequests,
-      pullRequests,
       queue: {
-        activeRunId: this.#activeJob?.runId || null,
+        activeRunId: activeRunIds[0] || null,
+        activeRunIds,
         queuedRunIds: this.#jobs.map((job) => job.runId),
       },
     };
   }
 
   async waitForIdle() {
-    while (this.#drainPromise) {
-      await this.#drainPromise;
+    while (this.#executions.size > 0) {
+      await Promise.all(this.#executions);
     }
   }
 
@@ -248,7 +327,7 @@ export class DashboardService {
     await this.initialize();
     assertStorageId(batchId, "batchId");
 
-    const activeJob = this.#activeJob?.batchId === batchId ? this.#activeJob : null;
+    const activeJobs = [...this.#activeJobs].filter((job) => job.batchId === batchId);
     const queuedJobs = this.#jobs.filter((job) => job.batchId === batchId);
     this.#jobs = this.#jobs.filter((job) => job.batchId !== batchId);
 
@@ -257,7 +336,7 @@ export class DashboardService {
     );
     const targets = uniqueJobs([
       ...queuedJobs,
-      ...(activeJob ? [activeJob] : []),
+      ...activeJobs,
       ...storedActiveRuns.map((run) => ({
         batchId,
         runId: run.runId,
@@ -272,7 +351,9 @@ export class DashboardService {
     }
 
     const message = `Analysis batch "${batchId}" was canceled by the user.`;
-    activeJob?.abortController?.abort(createAbortError(message));
+    for (const job of activeJobs) {
+      job.abortController?.abort(createAbortError(message));
+    }
     const canceledTargets = (
       await Promise.all(
         targets.map(async (job) => ({
@@ -290,10 +371,12 @@ export class DashboardService {
       );
     }
 
+    const activeRunIds = activeJobs.map((job) => job.runId);
     return {
       batchId,
       canceled: true,
-      activeRunId: activeJob?.runId || null,
+      activeRunId: activeRunIds[0] || null,
+      activeRunIds,
       queuedRunIds: queuedJobs.map((job) => job.runId),
       canceledRunIds: canceledRuns.map((run) => run.runId),
       canceledRunCount: canceledRuns.length,
@@ -326,8 +409,7 @@ export class DashboardService {
       };
     }
 
-    const activeJob =
-      this.#activeJob?.slug === slug && this.#activeJob?.runId === runId ? this.#activeJob : null;
+    const activeJob = [...this.#activeJobs].find((job) => job.slug === slug && job.runId === runId);
     const queuedJob = this.#jobs.find((job) => job.slug === slug && job.runId === runId);
     if (!ACTIVE_STATUSES.has(manifest.status) || (!activeJob && !queuedJob)) {
       throw createCancellationTargetNotFound(`Run "${slug}/${runId}" is not queued or running.`);
@@ -371,6 +453,7 @@ export class DashboardService {
     }
     this.#assertHistoryRunCanBeDeleted(manifest);
     await this.#store.deleteRun(slug, runId);
+    this.#emitChange({ runId, slug, type: "deleted" });
     return {
       batchId: manifest.metrics?.batchId || null,
       deleted: true,
@@ -397,6 +480,7 @@ export class DashboardService {
     await Promise.all(
       manifests.map((manifest) => this.#store.deleteRun(manifest.slug, manifest.runId)),
     );
+    this.#emitChange({ batchId, type: "deleted" });
     return {
       batchId,
       deleted: true,
@@ -407,20 +491,26 @@ export class DashboardService {
   }
 
   close() {
+    if (this.#closePromise) return this.#closePromise;
     this.#closed = true;
-    this.#activeJob?.abortController?.abort(createAbortError("The dashboard service was closed."));
+    this.#jobs = [];
+    for (const job of this.#activeJobs) {
+      job.abortController?.abort(createAbortError("The dashboard service was closed."));
+    }
+    this.#closePromise = this.waitForIdle().finally(() => this.#store.close?.());
+    return this.#closePromise;
   }
 
   #assertHistoryRunCanBeDeleted(manifest) {
     const queued = this.#jobs.some(
       (job) => job.slug === manifest.slug && job.runId === manifest.runId,
     );
-    const active =
-      this.#activeJob?.slug === manifest.slug && this.#activeJob?.runId === manifest.runId;
-    const usedByActiveOrQueuedRun = [
-      ...(this.#activeJob ? [this.#activeJob] : []),
-      ...this.#jobs,
-    ].some((job) => job.slug === manifest.slug && job.sourceRunId === manifest.runId);
+    const active = [...this.#activeJobs].some(
+      (job) => job.slug === manifest.slug && job.runId === manifest.runId,
+    );
+    const usedByActiveOrQueuedRun = [...this.#activeJobs, ...this.#jobs].some(
+      (job) => job.slug === manifest.slug && job.sourceRunId === manifest.runId,
+    );
     if (ACTIVE_STATUSES.has(manifest.status) || active || queued || usedByActiveOrQueuedRun) {
       throw createHistoryTargetActive(
         `Run "${manifest.slug}/${manifest.runId}" is queued, running, or supplying frozen input to queued work. Cancel or finish that work before deleting its history.`,
@@ -429,33 +519,26 @@ export class DashboardService {
   }
 
   #startDrain() {
-    if (this.#drainPromise) {
-      return;
-    }
+    while (!this.#closed && this.#activeJobs.size < MAX_CONCURRENT_JOBS) {
+      const activeSlugs = new Set([...this.#activeJobs].map((job) => job.slug));
+      const jobIndex = this.#jobs.findIndex((job) => !activeSlugs.has(job.slug));
+      if (jobIndex < 0) return;
 
-    this.#drainPromise = this.#drainQueue()
-      .catch((error) => {
-        console.error("Dashboard analysis queue failed:", error);
-      })
-      .finally(() => {
-        this.#drainPromise = null;
-        if (this.#jobs.length > 0 && !this.#closed) {
-          this.#startDrain();
-        }
-      });
-  }
-
-  async #drainQueue() {
-    while (this.#jobs.length > 0 && !this.#closed) {
-      const job = this.#jobs.shift();
+      const [job] = this.#jobs.splice(jobIndex, 1);
       job.abortController = new AbortController();
       job.pendingEventWrites = new Set();
-      this.#activeJob = job;
-      try {
-        await this.#executeJob(job);
-      } finally {
-        this.#activeJob = null;
-      }
+      this.#activeJobs.add(job);
+      let execution;
+      execution = this.#executeJob(job)
+        .catch((error) => {
+          console.error("Dashboard analysis job failed:", error);
+        })
+        .finally(() => {
+          this.#activeJobs.delete(job);
+          this.#executions.delete(execution);
+          this.#startDrain();
+        });
+      this.#executions.add(execution);
     }
   }
 
@@ -482,17 +565,18 @@ export class DashboardService {
     };
 
     const recordEvent = async (event) => {
-      const canceledFinish = signal.aborted && isStageFinishEvent(event);
+      const resumedEvent = eventForResumedJob(job, event);
+      const canceledFinish = signal.aborted && isStageFinishEvent(resumedEvent);
       if (signal.aborted && !canceledFinish) {
         return;
       }
       const cancellationEvent = canceledFinish
         ? {
-            ...event,
-            error: cancellationEventError(event.error),
+            ...resumedEvent,
+            error: cancellationEventError(resumedEvent.error),
             status: "canceled",
           }
-        : event;
+        : resumedEvent;
       const normalizedEvent =
         cancellationEvent.stageId !== "run.total" && !cancellationEvent.parentStageId
           ? { ...cancellationEvent, parentStageId: "run.total" }
@@ -507,6 +591,7 @@ export class DashboardService {
       } else if (normalizedEvent.type === "stage-finish") {
         await this.#updateLiveMetrics(job, normalizedEvent);
       }
+      this.#emitChange({ runId: job.runId, slug: job.slug, type: "progress" });
     };
 
     try {
@@ -530,12 +615,16 @@ export class DashboardService {
       });
       throwIfAborted(signal);
       await trackPendingWrite(
-        this.#store.recordStageEvent(job.slug, job.runId, {
-          at: startedAt.toISOString(),
-          label: "Total analysis run",
-          stageId: "run.total",
-          type: "stage-start",
-        }),
+        this.#store.recordStageEvent(
+          job.slug,
+          job.runId,
+          eventForResumedJob(job, {
+            at: startedAt.toISOString(),
+            label: "Total analysis run",
+            stageId: "run.total",
+            type: "stage-start",
+          }),
+        ),
       );
       totalStageStarted = true;
       throwIfAborted(signal);
@@ -580,13 +669,17 @@ export class DashboardService {
       throwIfAborted(signal);
 
       await trackPendingWrite(
-        this.#store.recordStageEvent(job.slug, job.runId, {
-          at: completedAt.toISOString(),
-          metrics: { elapsedMs },
-          stageId: "run.total",
-          status: "completed",
-          type: "stage-finish",
-        }),
+        this.#store.recordStageEvent(
+          job.slug,
+          job.runId,
+          eventForResumedJob(job, {
+            at: completedAt.toISOString(),
+            metrics: { elapsedMs },
+            stageId: "run.total",
+            status: "completed",
+            type: "stage-finish",
+          }),
+        ),
       );
       throwIfAborted(signal);
       await this.#store.updateRun(job.slug, job.runId, (current) => {
@@ -631,6 +724,7 @@ export class DashboardService {
           stableHtmlPath: result.stableHtmlPath,
         });
       }
+      this.#emitChange({ runId: job.runId, slug: job.slug, type: "succeeded" });
     } catch (error) {
       const inputFingerprint = await tryReadInputFingerprint(runDir);
       const usage = normalizeTokenUsage(error?.usage || completedResult?.usage);
@@ -651,14 +745,18 @@ export class DashboardService {
 
       if (totalStageStarted) {
         await trackPendingWrite(
-          this.#store.recordStageEvent(job.slug, job.runId, {
-            at: completedAt.toISOString(),
-            error: errorDetails,
-            metrics: { elapsedMs },
-            stageId: "run.total",
-            status: canceled ? "canceled" : "failed",
-            type: "stage-finish",
-          }),
+          this.#store.recordStageEvent(
+            job.slug,
+            job.runId,
+            eventForResumedJob(job, {
+              at: completedAt.toISOString(),
+              error: errorDetails,
+              metrics: { elapsedMs },
+              stageId: "run.total",
+              status: canceled ? "canceled" : "failed",
+              type: "stage-finish",
+            }),
+          ),
         );
       }
       await this.#store.updateRun(job.slug, job.runId, (current) => {
@@ -683,6 +781,11 @@ export class DashboardService {
             completedAt,
           },
         };
+      });
+      this.#emitChange({
+        runId: job.runId,
+        slug: job.slug,
+        type: canceled ? "canceled" : "failed",
       });
     }
   }
@@ -711,6 +814,7 @@ export class DashboardService {
         },
       };
     });
+    if (transitioned) this.#emitChange({ runId: job.runId, slug: job.slug, type: "canceled" });
     return transitioned ? updated : null;
   }
 
@@ -925,6 +1029,7 @@ export class DashboardService {
       slug: parsed.slug,
       sourceRunId,
     });
+    this.#emitChange({ runId, slug: parsed.slug, type: "queued" });
     return manifest;
   }
 
@@ -997,6 +1102,24 @@ export class DashboardService {
     }
     return date;
   }
+
+  #emitChange(change) {
+    try {
+      this.#onChange(change);
+    } catch (error) {
+      console.error("Dashboard change listener failed:", error);
+    }
+  }
+}
+
+async function runDefaultAnalysis(options) {
+  const { createBenchmarkRun } = await import("../../analysis-worker/review-run.js");
+  return createBenchmarkRun(options);
+}
+
+async function publishDefaultReview(options) {
+  const { publishStableReview } = await import("../../analysis-worker/review-run.js");
+  return publishStableReview(options);
 }
 
 export async function readCodeVersion({ cwd = process.cwd() } = {}) {
@@ -1411,6 +1534,115 @@ function uniqueJobs(jobs) {
     seen.add(key);
     return true;
   });
+}
+
+function compareQueuedRunsOldestFirst(left, right) {
+  const leftBatchId = normalizeOptionalName(left.metrics?.batchId);
+  const rightBatchId = normalizeOptionalName(right.metrics?.batchId);
+  const leftBatchIndex = Number(left.metrics?.batchIndex);
+  const rightBatchIndex = Number(right.metrics?.batchIndex);
+  if (
+    left.slug === right.slug &&
+    leftBatchId &&
+    leftBatchId === rightBatchId &&
+    Number.isFinite(leftBatchIndex) &&
+    Number.isFinite(rightBatchIndex) &&
+    leftBatchIndex !== rightBatchIndex
+  ) {
+    return leftBatchIndex - rightBatchIndex;
+  }
+  return (
+    new Date(left.timestamps.queuedAt || left.timestamps.createdAt).getTime() -
+      new Date(right.timestamps.queuedAt || right.timestamps.createdAt).getTime() ||
+    left.runId.localeCompare(right.runId)
+  );
+}
+
+function orderQueuedRunsForResume(runs) {
+  const byId = new Map(runs.map((run) => [runKey(run.slug, run.runId), run]));
+  const ordered = [];
+  const added = new Set();
+
+  const addWithSource = (run) => {
+    const key = runKey(run.slug, run.runId);
+    if (added.has(key)) return;
+    added.add(key);
+    const source = run.sourceRunId ? byId.get(runKey(run.slug, run.sourceRunId)) : null;
+    if (source) addWithSource(source);
+    ordered.push(run);
+  };
+
+  for (const run of [...runs].sort(compareQueuedRunsOldestFirst)) addWithSource(run);
+  return ordered;
+}
+
+function queuedJobFromManifest(run, configuration, attemptOffsets) {
+  const storedModel = normalizeOptionalName(run.metrics?.model);
+  if (!configuration.models.includes(storedModel)) {
+    throw createUnsupportedStoredConfiguration(
+      run,
+      `model "${storedModel || "(missing)"}" is no longer configured`,
+    );
+  }
+  const model = storedModel;
+  const efforts = configuration.modelReasoningEfforts[model] || configuration.reasoningEfforts;
+  const storedEffort = normalizeOptionalName(run.metrics?.reasoningEffort);
+  if (!efforts.includes(storedEffort)) {
+    throw createUnsupportedStoredConfiguration(
+      run,
+      `reasoning effort "${storedEffort || "(missing)"}" is not supported by "${model}"`,
+    );
+  }
+  const configuredProvider = configuration.modelProviders[model] || inferModelProvider(model);
+  const storedProviderValue = normalizeOptionalName(run.metrics?.provider);
+  const storedProvider = normalizeModelProvider(storedProviderValue);
+  if (storedProviderValue && !storedProvider) {
+    throw createUnsupportedStoredConfiguration(
+      run,
+      `provider "${storedProviderValue}" is not supported`,
+    );
+  }
+  if (storedProvider && storedProvider !== configuredProvider) {
+    throw createUnsupportedStoredConfiguration(
+      run,
+      `provider "${storedProvider}" does not match "${configuredProvider}" for "${model}"`,
+    );
+  }
+
+  return {
+    attemptOffsets,
+    batchId: normalizeOptionalName(run.metrics?.batchId),
+    model,
+    prUrl: run.url,
+    provider: configuredProvider,
+    reasoningEffort: storedEffort,
+    runId: run.runId,
+    slug: run.slug,
+    sourceRunId: run.sourceRunId,
+  };
+}
+
+function createUnsupportedStoredConfiguration(run, reason) {
+  const error = new Error(`Queued run "${run.slug}/${run.runId}" cannot resume: ${reason}.`);
+  error.code = "UNSUPPORTED_STORED_CONFIGURATION";
+  return error;
+}
+
+function runKey(slug, runId) {
+  return `${slug}\0${runId}`;
+}
+
+function stageAttemptOffsets(timings) {
+  const offsets = new Map();
+  for (const stage of timings.stages) {
+    offsets.set(stage.stageId, Math.max(offsets.get(stage.stageId) || 0, stage.attempt));
+  }
+  return offsets;
+}
+
+function eventForResumedJob(job, event) {
+  const offset = job.attemptOffsets?.get(event.stageId) || 0;
+  return offset ? { ...event, attempt: (event.attempt || 1) + offset } : event;
 }
 
 function compareFrozenSourceCandidates(left, right) {

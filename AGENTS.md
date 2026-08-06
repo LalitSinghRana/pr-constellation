@@ -327,7 +327,25 @@ Do not impose Bulletproof React's TypeScript, feature folder, TanStack Query,
 Zustand, React Hook Form, or Zod choices on this plain-JavaScript application.
 Adopt its ownership and dependency-boundary principles, not its sample stack.
 
-### 2.2 Keep components pure and meaningful
+### 2.2 Prefer Tailwind and theme tokens for UI styling
+
+**Impact: HIGH**
+
+- Style React UI with Tailwind utility classes in JSX. Prefer that over new
+  hand-written CSS rules for component look and feel.
+- Prefer colors, radii, shadows, spacing, and type sizes from
+  `client/src/theme.css` and Tailwind presets (`text-base`, `text-lg`,
+  `text-muted-foreground`, `bg-card`, `border-border`, semantic tokens such as
+  `text-diff-add`) over one-off values like `text-[15px]`, raw hex colors, or
+  ad-hoc `color-mix` literals in CSS.
+- Add a new theme token when a semantic color is reused (for example PR state or
+  diff add/delete). Do not sprinkle the same hex across components.
+- Keep CSS modules or `styles.css` for cases Tailwind cannot express cleanly,
+  such as third-party library hooks (React Flow edges, Shiki token variables)
+  or deep markdown descendant rules that would be unreadable as long class
+  strings. Do not use that exception for ordinary layout, color, or typography.
+
+### 2.3 Keep components pure and meaningful
 
 **Impact: CRITICAL**
 
@@ -344,7 +362,7 @@ Adopt its ownership and dependency-boundary principles, not its sample stack.
 - Keep props minimal and explicit. Pass the data or callback the child needs,
   not an entire service object or page state by convenience.
 
-### 2.3 Split components at real boundaries
+### 2.4 Split components at real boundaries
 
 **Impact: HIGH**
 
@@ -357,7 +375,7 @@ Pages should make screen structure and route-level states obvious. They may
 coordinate feature hooks and compose major sections, but should not accumulate
 low-level DOM behavior, unrelated transformations, or duplicated request logic.
 
-### 2.4 Write hooks for stateful behavior
+### 2.5 Write hooks for stateful behavior
 
 **Impact: CRITICAL**
 
@@ -372,7 +390,7 @@ low-level DOM behavior, unrelated transformations, or duplicated request logic.
 - Clean up timers, subscriptions, observers, and in-flight work. Setup and
   cleanup must remain correct when Strict Mode repeats them.
 
-### 2.5 Keep state minimal and close
+### 2.6 Keep state minimal and close
 
 **Impact: CRITICAL**
 
@@ -391,7 +409,7 @@ low-level DOM behavior, unrelated transformations, or duplicated request logic.
 - Never mutate state or props. Preserve object identity for unchanged data when
   it matters to consumers.
 
-### 2.6 Use effects only to synchronize external systems
+### 2.7 Use effects only to synchronize external systems
 
 **Impact: CRITICAL**
 
@@ -406,7 +424,7 @@ low-level DOM behavior, unrelated transformations, or duplicated request logic.
   change or the component unmounts. Use `AbortController` when the API supports
   cancellation.
 
-### 2.7 Handle page data explicitly
+### 2.8 Handle page data explicitly
 
 **Impact: HIGH**
 
@@ -418,7 +436,7 @@ low-level DOM behavior, unrelated transformations, or duplicated request logic.
   parsing, error semantics, and caching/invalidation behavior.
 - Do not store request-specific data in mutable module globals or browser globals.
 
-### 2.8 Preserve accessibility through primitives
+### 2.9 Preserve accessibility through primitives
 
 **Impact: CRITICAL**
 
@@ -431,7 +449,7 @@ low-level DOM behavior, unrelated transformations, or duplicated request logic.
 - Ensure loading, empty, error, disabled, and destructive states remain
   understandable without color alone. Respect reduced-motion preferences.
 
-### 2.9 Optimize in impact order
+### 2.10 Optimize in impact order
 
 **Impact: HIGH**
 
@@ -452,7 +470,7 @@ low-level DOM behavior, unrelated transformations, or duplicated request logic.
 Do not wrap simple expressions or cheap components in `useMemo`, `useCallback`,
 or `memo` by default. Correct ownership and data flow come before memoization.
 
-### 2.10 Verify the user's experience
+### 2.11 Verify the user's experience
 
 **Impact: HIGH**
 

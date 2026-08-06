@@ -98,17 +98,25 @@ and non-root sections. Classify types, tests, stories, and snapshots by actual
 review value rather than file kind: a primary contract can be `primary/type`,
 a test can be `secondary/test`, and a routine snapshot can be `skim/snapshot`.
 
-## Explanations: What and Why
+## Explanations
 
-The attached code already tells the reviewer **how** the change was implemented.
-Every `explanation` must add context that code cannot provide:
+The attached code already shows **how** the change was implemented. Every
+`explanation` must describe what is going on that the code alone does not make
+obvious: the behavior, contract, consequence, responsibility, or review
+relationship the item represents, and why that matters to the PR.
 
-- **What** behavior, contract, reviewer question, consequence, or responsibility
-  the item represents.
-- **Why** the change exists, why it matters to the PR, or why the reviewer should
-  inspect it at that point in the tree.
+Write plain Markdown prose (short paragraphs or bullets). Do **not**:
 
-Apply this distinction at every level:
+- label bullets or paragraphs with `What:` / `Why:`
+- tell the reviewer to "review this", "pay attention", "inspect next", or use
+  similar directive language in the main explanation
+
+If a specific check, risk, or verification deserves an explicit call-out, add a
+final section that starts exactly with `Reviewer attention:` followed by that
+guidance. Keep that section optional and rare; most explanations need only the
+main description.
+
+Apply this at every level:
 
 - A Review Stack explanation says why its files form one coherent review unit.
 - A file explanation says what responsibility changed and why that file matters.
@@ -122,6 +130,6 @@ describe control flow already visible in the diff. Mention implementation detail
 only when needed to explain impact, intent, risk, or rationale.
 
 Prefer concise explanations while preserving the context needed for a review
-decision. Use Markdown bullets for multiple distinct reasons, effects,
-constraints, or reviewer checks. Never omit useful context merely to reach a
-length target, and never treat formatting alone as a quality failure.
+decision. Use Markdown bullets for multiple distinct reasons, effects, or
+constraints. Never omit useful context merely to reach a length target, and
+never treat formatting alone as a quality failure.
