@@ -167,7 +167,7 @@ export function normalizeSettings(value = {}) {
 }
 
 let inboxStorePromise;
-function getInboxStore() {
+export function getInboxStore() {
   inboxStorePromise ??= createInboxStore({
     databasePath,
     legacyQueuePath: queuePath,

@@ -1,0 +1,3 @@
+SELECT slug, pr_url, owner, repo, number, head_sha, body, created_at, updated_at
+FROM review_drafts
+WHERE slug = ?;

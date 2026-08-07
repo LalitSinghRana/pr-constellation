@@ -3,6 +3,7 @@
 @import "../theme.css";
 
 @source "./review-tree-app.jsx";
+@source "./review-draft-panel.jsx";
 @source "../components/ui/**/*.{js,jsx}";
 @source "../lib/**/*.{js,jsx}";
 

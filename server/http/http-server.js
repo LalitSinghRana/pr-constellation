@@ -10,6 +10,7 @@ import {
   syncQueue,
 } from "../inbox/inbox-service.js";
 import { createSyncScheduler } from "../inbox/sync-scheduler.js";
+import { handleReviewDraftApiRequest } from "../review/review-draft-api.js";
 import {
   clientDistRoot,
   clientRoot,
@@ -105,6 +106,7 @@ export async function startServer({
     handleApiRequest(request, response, { dashboardService, eventHub, scheduler })
       .then(async (handled) => {
         if (handled) return;
+        if (await handleReviewDraftApiRequest(request, response)) return;
         let dashboardHandled = true;
         await dashboardApi(request, response, () => {
           dashboardHandled = false;
