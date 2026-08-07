@@ -112,17 +112,19 @@ assert.ok(
 );
 assert.ok(!("relations" in treeData.files[0].sectionTree));
 
-const [treeAppSource, webStyles] = await Promise.all([
+const [treeAppSource, treeLayoutSource, webStyles] = await Promise.all([
   readFile(new URL("../src/review/review-tree-app.jsx", import.meta.url), "utf8"),
+  readFile(new URL("../src/review/review-tree/layout.js", import.meta.url), "utf8"),
   readFile(new URL("../src/review/styles.css", import.meta.url), "utf8"),
 ]);
-assert.match(treeAppSource, /nodesDraggable=\{false\}/);
-assert.match(treeAppSource, /reviewBranch: React\.memo\(ReviewBranch\)/);
-assert.match(treeAppSource, /filter\(\(\{ type \}\) => type === "reviewSection"\)/);
-assert.match(treeAppSource, /foldSectionTree\(file, \{ expandedGroupIds \}\)/);
-assert.match(treeAppSource, /value="source"/);
-assert.match(treeAppSource, /ariaLabel="Review tree map"/);
-assert.match(treeAppSource, /pointerEvents: "auto"/);
+const reviewTreeSource = `${treeAppSource}\n${treeLayoutSource}`;
+assert.match(reviewTreeSource, /nodesDraggable=\{false\}/);
+assert.match(reviewTreeSource, /reviewBranch: React\.memo\(ReviewBranch\)/);
+assert.match(reviewTreeSource, /filter\(\(\{ type \}\) => type === "reviewSection"\)/);
+assert.match(reviewTreeSource, /foldSectionTree\(file, \{ expandedGroupIds \}\)/);
+assert.match(reviewTreeSource, /value="source"/);
+assert.match(reviewTreeSource, /ariaLabel="Review tree map"/);
+assert.match(reviewTreeSource, /pointerEvents: "auto"/);
 assert.match(treeAppSource, /text-base leading-relaxed/);
 assert.match(treeAppSource, /bg-diff-add\/15/);
 assert.match(treeAppSource, /text-pr-open/);
