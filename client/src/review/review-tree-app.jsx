@@ -29,6 +29,7 @@ import {
   UserRound,
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import { Badge } from "../components/ui/badge.jsx";
@@ -45,6 +46,8 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.jsx";
 import { cn } from "../lib/utils.js";
 import { buildChunkDiffData } from "./diff-view-model.js";
+import { lineKey, lineTargetFromGutter } from "./review-comment-model.js";
+import { InlineCommentComposer, ReviewDraftProvider } from "./review-draft-panel.jsx";
 import { foldSectionTree, normalizeSectionTree } from "./section-tree-model.js";
 
 const FILE_NODE_GAP_X = 160;
@@ -78,6 +81,15 @@ const FILE_TREE_TARGET_HANDLE = "file-tree-target";
 const INITIAL_COLOR_MODE = document.documentElement.classList.contains("dark") ? "dark" : "light";
 const REVIEW_STEP_BUTTON_CLASS =
   "review-step-button absolute z-[12] -translate-y-1/2 border-[color-mix(in_oklab,var(--primary)_38%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_12%,var(--background))] text-primary shadow-xs enabled:hover:border-[color-mix(in_oklab,var(--primary)_54%,var(--border))] enabled:hover:bg-[color-mix(in_oklab,var(--primary)_20%,var(--background))] enabled:hover:text-primary motion-reduce:transition-none";
+const REVIEW_DIFF_GUTTER_CLASS =
+  "cursor-pointer relative select-none hover:bg-primary/12 hover:text-primary";
+const REVIEW_DIFF_GUTTER_HAS_COMMENT_CLASS = "text-primary font-bold";
+const REVIEW_DIFF_GUTTER_ACTIVE_CLASS = "bg-primary/18 text-primary font-bold";
+const REVIEW_LINE_COMMENT_MARKER_CLASS =
+  "absolute top-1/2 right-px size-2 border-0 p-0 rounded-full -translate-y-1/2 bg-primary cursor-pointer shadow-[0_0_0_2px_color-mix(in_oklab,var(--card)_80%,transparent)]";
+const REVIEW_LINE_COMMENT_MARKER_GITHUB_CLASS =
+  "bg-[color-mix(in_oklab,var(--primary)_55%,white)]";
+const REVIEW_INLINE_COMPOSER_ANCHOR_CLASS = "fixed z-[200] pointer-events-auto";
 const REVIEW_NAVIGATION_CONTROL_SELECTOR = [
   "a",
   "button",
@@ -126,6 +138,7 @@ const edgeTypes = {
 
 function App() {
   const review = useMemo(readReviewData, []);
+  const reviewSlug = useMemo(readReviewSlug, []);
   const treeData = useMemo(readTreeData, []);
   const hasTree = Boolean(
     (treeData?.files || []).some((file) => sectionTreeSections(file).length > 0),
@@ -200,33 +213,50 @@ function App() {
   );
 
   return (
-    <div className="review-shell fixed inset-0 grid h-dvh w-screen min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden bg-background">
-      <ReviewHeader review={review} />
-      <main className="review-main grid min-h-0 overflow-hidden">
-        {hasTree ? (
-          <section
-            className="review-tree-panel size-full min-h-0 overflow-hidden rounded-none border-0 bg-card shadow-none"
-            aria-label="PR review tree"
-          >
-            <ReactFlowProvider>
-              <ReviewTreeCanvas
-                activeStackId={activeStackId}
-                tree={tree}
-                onActiveStackChange={setActiveStackId}
-                onFileViewModeChange={setFileViewMode}
-                onMeasuredHeightsChange={handleMeasuredHeightsChange}
-                onToggleReviewGroup={toggleReviewGroup}
-                stacks={stacks}
-              />
-            </ReactFlowProvider>
-          </section>
-        ) : (
-          <section className="empty-panel grid size-full min-h-0 place-items-center overflow-hidden rounded-none border-0 bg-card text-sm text-muted-foreground shadow-none">
-            Review tree is not available for this run.
-          </section>
-        )}
-      </main>
-    </div>
+    <ReviewDraftProvider reviewSlug={reviewSlug}>
+      {(draft) => (
+        <div className="review-shell fixed inset-0 grid h-dvh w-screen min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden bg-background">
+          <ReviewHeader review={review} />
+          <main className="review-main grid min-h-0 overflow-hidden">
+            {hasTree ? (
+              <section
+                className="review-tree-panel size-full min-h-0 overflow-hidden rounded-none border-0 bg-card shadow-none"
+                aria-label="PR review tree"
+              >
+                <ReactFlowProvider>
+                  <ReviewTreeCanvas
+                    activeStackId={activeStackId}
+                    commentIndex={draft.commentIndex}
+                    draftComment={{
+                      activeEntry: draft.activeCommentEntry,
+                      body: draft.composerBody,
+                      cancelComposer: draft.cancelComposer,
+                      headStale: draft.headStale,
+                      pendingTarget: draft.pendingTarget,
+                      saveComment: () =>
+                        draft.saveComment().catch((saveError) => draft.setError(saveError.message)),
+                      setBody: draft.setComposerBody,
+                    }}
+                    headStale={draft.headStale}
+                    onLineComment={draft.openComposer}
+                    tree={tree}
+                    onActiveStackChange={setActiveStackId}
+                    onFileViewModeChange={setFileViewMode}
+                    onMeasuredHeightsChange={handleMeasuredHeightsChange}
+                    onToggleReviewGroup={toggleReviewGroup}
+                    stacks={stacks}
+                  />
+                </ReactFlowProvider>
+              </section>
+            ) : (
+              <section className="empty-panel grid size-full min-h-0 place-items-center overflow-hidden rounded-none border-0 bg-card text-sm text-muted-foreground shadow-none">
+                Review tree is not available for this run.
+              </section>
+            )}
+          </main>
+        </div>
+      )}
+    </ReviewDraftProvider>
   );
 }
 
@@ -304,6 +334,10 @@ function ReviewHeader({ review }) {
 
 function ReviewTreeCanvas({
   activeStackId,
+  commentIndex,
+  draftComment,
+  headStale,
+  onLineComment,
   tree,
   onActiveStackChange,
   onFileViewModeChange,
@@ -508,9 +542,30 @@ function ReviewTreeCanvas({
         };
       }
 
+      if (node.type === "reviewSection") {
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            commentIndex,
+            draftComment,
+            headStale,
+            onLineComment,
+          },
+        };
+      }
+
       return node;
     });
-  }, [tree.nodes, handleToggleReviewGroup, onFileViewModeChange]);
+  }, [
+    commentIndex,
+    draftComment,
+    headStale,
+    onLineComment,
+    tree.nodes,
+    handleToggleReviewGroup,
+    onFileViewModeChange,
+  ]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Tree changes intentionally refresh the matching React Flow DOM node.
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1016,7 +1071,13 @@ function ReviewSectionNode({ data }) {
             key={`${data.reviewSection.id}-${chunk.lines[0]?.id}-${chunk.lines.at(-1)?.id}`}
           >
             <UnchangedLinesGap nextChunk={chunk} prevChunk={chunks[chunkIndex - 1]} />
-            <DiffChunkView chunk={chunk} />
+            <DiffChunkView
+              chunk={chunk}
+              commentIndex={data.commentIndex}
+              draftComment={data.draftComment}
+              headStale={data.headStale}
+              onLineComment={data.onLineComment}
+            />
           </React.Fragment>
         ))}
       </div>
@@ -1153,12 +1214,13 @@ function unchangedLineGap(prevChunk, nextChunk) {
   return Math.max(0, nextLine.oldLine - prevLine.oldLine - 1);
 }
 
-function DiffChunkView({ chunk }) {
+function DiffChunkView({ chunk, commentIndex, draftComment, headStale, onLineComment }) {
   const { data, realNewLineNumbers, realOldLineNumbers, registerHighlighter } = useMemo(
     () => buildChunkDiffData(chunk),
     [chunk],
   );
   const containerRef = useRef(null);
+  const [composerLayout, setComposerLayout] = useState(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1167,38 +1229,173 @@ function DiffChunkView({ chunk }) {
       return undefined;
     }
 
-    const applyRealLineNumbers = () => {
-      container.querySelectorAll("[data-line-old-num]").forEach((el) => {
-        const real = realOldLineNumbers[Number(el.getAttribute("data-line-old-num")) - 1];
+    const abort = new AbortController();
+    let decorating = false;
 
-        // Idempotency check matters here: this mutates text inside the subtree the
-        // MutationObserver below watches, and a no-op guard is what keeps that from
-        // re-triggering itself forever.
-        if (real != null && el.textContent !== String(real)) {
-          el.textContent = String(real);
-        }
-      });
+    const decorateGutters = () => {
+      if (decorating) {
+        return;
+      }
+      decorating = true;
+      try {
+        const decorateSide = (attributeName, side, realLineNumbers) => {
+          container.querySelectorAll(`[${attributeName}]`).forEach((el) => {
+            const index = Number(el.getAttribute(attributeName)) - 1;
+            const real = realLineNumbers[index];
 
-      container.querySelectorAll("[data-line-new-num]").forEach((el) => {
-        const real = realNewLineNumbers[Number(el.getAttribute("data-line-new-num")) - 1];
+            if (real == null) {
+              return;
+            }
 
-        if (real != null && el.textContent !== String(real)) {
-          el.textContent = String(real);
-        }
-      });
+            const lineLabel = String(real);
+            if (!el.dataset.reviewLineLabel) {
+              el.dataset.reviewLineLabel = lineLabel;
+            }
+            const labelNode = [...el.childNodes].find(
+              (node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim(),
+            );
+            if (labelNode) {
+              if (labelNode.textContent.trim() !== lineLabel) {
+                labelNode.textContent = lineLabel;
+              }
+            } else if (![...el.childNodes].some((node) => node.nodeType === Node.TEXT_NODE)) {
+              el.insertBefore(document.createTextNode(lineLabel), el.firstChild);
+            }
+
+            el.dataset.reviewLine = lineLabel;
+            el.dataset.reviewSide = side;
+            el.dataset.reviewPath = chunk.file;
+            el.dataset.reviewGutter = "true";
+            el.classList.add(...REVIEW_DIFF_GUTTER_CLASS.split(/\s+/));
+
+            const row = el.closest("tr") || el.closest(".diff-line") || el.parentElement;
+            if (row) {
+              row.dataset.reviewDiffLine = "true";
+            }
+
+            syncGutterCommentMarker(el, {
+              commentIndex,
+              line: real,
+              path: chunk.file,
+              side,
+            });
+          });
+        };
+
+        decorateSide("data-line-old-num", "LEFT", realOldLineNumbers);
+        decorateSide("data-line-new-num", "RIGHT", realNewLineNumbers);
+      } finally {
+        decorating = false;
+      }
     };
 
-    // DiffView defers rendering its rows until after mount (avoids an SSR hydration
-    // mismatch), so the gutter spans this patches don't exist on the first paint.
-    applyRealLineNumbers();
-    const observer = new MutationObserver(applyRealLineNumbers);
+    decorateGutters();
+    const openLineCommentFromEvent = (event) => {
+      if (headStale || !onLineComment) {
+        return;
+      }
+      const gutter = event.target.closest("[data-review-gutter]");
+      if (!gutter || !container.contains(gutter)) {
+        return;
+      }
+      const target = lineTargetFromGutter(gutter);
+      if (!target) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      onLineComment(target);
+    };
+    container.addEventListener("click", openLineCommentFromEvent, { signal: abort.signal });
+    const observer = new MutationObserver(decorateGutters);
     observer.observe(container, { characterData: true, childList: true, subtree: true });
 
-    return () => observer.disconnect();
-  }, [realNewLineNumbers, realOldLineNumbers]);
+    return () => {
+      abort.abort();
+      observer.disconnect();
+    };
+  }, [chunk.file, commentIndex, headStale, onLineComment, realNewLineNumbers, realOldLineNumbers]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const target = draftComment?.pendingTarget;
+
+    if (!container || !target || target.path !== chunk.file) {
+      clearActiveDiffLine(container);
+      setComposerLayout(null);
+      return undefined;
+    }
+
+    let frame = 0;
+    const syncComposerLayout = () => {
+      const gutter = [...container.querySelectorAll("[data-review-gutter]")].find(
+        (element) =>
+          element.dataset.reviewLine === String(target.line) &&
+          element.dataset.reviewSide === target.side,
+      );
+      if (!gutter) {
+        clearActiveDiffLine(container);
+        setComposerLayout(null);
+        return;
+      }
+
+      const row =
+        gutter.closest("[data-review-diff-line]") ||
+        gutter.closest("tr") ||
+        gutter.closest(".diff-line") ||
+        gutter.parentElement;
+      if (!row) {
+        clearActiveDiffLine(container);
+        setComposerLayout(null);
+        return;
+      }
+
+      clearActiveDiffLine(container);
+      row.dataset.reviewDiffLineActive = "true";
+      row.querySelectorAll("[data-review-gutter]").forEach((activeGutter) => {
+        activeGutter.classList.add(...REVIEW_DIFF_GUTTER_ACTIVE_CLASS.split(/\s+/));
+      });
+      setComposerLayout(measureFixedComposer(row));
+    };
+
+    const tick = () => {
+      syncComposerLayout();
+      frame = window.requestAnimationFrame(tick);
+    };
+    tick();
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      clearActiveDiffLine(container);
+      setComposerLayout(null);
+    };
+  }, [chunk.file, draftComment?.pendingTarget]);
+
+  const handleChunkClick = useCallback(
+    (event) => {
+      if (headStale || !onLineComment) {
+        return;
+      }
+      const container = containerRef.current;
+      const gutter = event.target.closest("[data-review-gutter]");
+      if (!gutter || !container?.contains(gutter)) {
+        return;
+      }
+      const target = lineTargetFromGutter(gutter);
+      if (!target) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      onLineComment(target);
+    },
+    [headStale, onLineComment],
+  );
+  const target = draftComment?.pendingTarget;
+  const showComposer = Boolean(composerLayout && target?.path === chunk.file);
 
   return (
-    <div ref={containerRef}>
+    <div className="relative" onClickCapture={handleChunkClick} ref={containerRef}>
       <DiffView
         className="review-section-code"
         data={data}
@@ -1209,8 +1406,104 @@ function DiffChunkView({ chunk }) {
         diffViewWrap={false}
         registerHighlighter={registerHighlighter}
       />
+      {showComposer
+        ? createPortal(
+            <div
+              className={REVIEW_INLINE_COMPOSER_ANCHOR_CLASS}
+              style={{
+                left: `${composerLayout.left}px`,
+                top: `${composerLayout.top}px`,
+                width: `${composerLayout.width}px`,
+              }}
+            >
+              <InlineCommentComposer
+                activeEntry={draftComment.activeEntry}
+                body={draftComment.body}
+                headStale={draftComment.headStale}
+                onBodyChange={draftComment.setBody}
+                onCancel={draftComment.cancelComposer}
+                onSave={draftComment.saveComment}
+                target={target}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
+}
+
+function syncGutterCommentMarker(gutter, { commentIndex, line, path, side }) {
+  const entry = commentIndex?.get(lineKey({ line, path, side }));
+  const existing = gutter.querySelector("[data-review-comment-marker]");
+  const hasCommentClasses = REVIEW_DIFF_GUTTER_HAS_COMMENT_CLASS.split(/\s+/);
+
+  if (!entry) {
+    gutter.classList.remove(...hasCommentClasses);
+    existing?.remove();
+    return;
+  }
+
+  gutter.classList.add(...hasCommentClasses);
+  const kind = entry.githubThread ? "github" : "draft";
+  const label = entry.githubThread ? "Open GitHub comment thread" : "Open draft comment";
+  const githubClasses = REVIEW_LINE_COMMENT_MARKER_GITHUB_CLASS.split(/\s+/);
+
+  if (existing) {
+    existing.dataset.thread = kind;
+    existing.setAttribute("aria-label", label);
+    if (kind === "github") {
+      existing.classList.add(...githubClasses);
+    } else {
+      existing.classList.remove(...githubClasses);
+    }
+    return;
+  }
+
+  const marker = document.createElement("button");
+  marker.type = "button";
+  marker.className = REVIEW_LINE_COMMENT_MARKER_CLASS;
+  if (kind === "github") {
+    marker.classList.add(...githubClasses);
+  }
+  marker.dataset.reviewCommentMarker = "true";
+  marker.dataset.thread = kind;
+  marker.setAttribute("aria-label", label);
+  marker.tabIndex = 0;
+  gutter.appendChild(marker);
+}
+
+function clearActiveDiffLine(container) {
+  if (!container) {
+    return;
+  }
+  const activeClasses = REVIEW_DIFF_GUTTER_ACTIVE_CLASS.split(/\s+/);
+  container.querySelectorAll("[data-review-diff-line-active]").forEach((element) => {
+    delete element.dataset.reviewDiffLineActive;
+    element.querySelectorAll("[data-review-gutter]").forEach((gutter) => {
+      gutter.classList.remove(...activeClasses);
+    });
+  });
+}
+
+function measureFixedComposer(row) {
+  const rowRect = row.getBoundingClientRect();
+  const width = Math.min(
+    360,
+    Math.max(280, Math.min(rowRect.width || 360, window.innerWidth - 24)),
+  );
+  const left = Math.min(
+    Math.max(12, rowRect.left + 56),
+    Math.max(12, window.innerWidth - width - 12),
+  );
+  const estimatedHeight = 220;
+  const below = rowRect.bottom + 8;
+  const top =
+    below + estimatedHeight > window.innerHeight - 12
+      ? Math.max(12, rowRect.top - estimatedHeight - 8)
+      : Math.max(12, below);
+
+  return { left, top, width };
 }
 
 function buildReviewTree(
@@ -1756,6 +2049,11 @@ function usePersistentStringSet(storageKey) {
   }, [storageKey, values]);
 
   return [values, setValues];
+}
+
+function readReviewSlug() {
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  return parts[0] === "reviews" && parts[1] ? parts[1] : "";
 }
 
 function readReviewData() {

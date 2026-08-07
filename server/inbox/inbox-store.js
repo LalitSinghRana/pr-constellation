@@ -2,6 +2,37 @@ import { chmod, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { lifecycleForQueueItem } from "../../shared/queue-policy.js";
+import {
+  activeQueueCountRows,
+  countQueueItems,
+  deleteQueueItem,
+  queueCounts,
+  queueItemsByIdsSql,
+  queueItemsSelectSql,
+  readAppMetadata,
+  readSettingsDocument,
+  readSyncDocument,
+  schema as inboxSchema,
+  selectQueueItemIds,
+  upsertAppMetadata,
+  upsertQueueItem,
+  upsertSettings,
+  upsertSyncState,
+} from "./inbox-sql.js";
+import {
+  addReplyToCommentId,
+  deleteDraft,
+  deleteDraftComment,
+  draftExists,
+  insertDraft,
+  insertDraftComment,
+  readDraft,
+  readDraftComments,
+  schema as reviewDraftSchema,
+  tableInfoReviewDraftComments,
+  updateDraftBody,
+  updateDraftComment,
+} from "../review/review-draft-sql.js";
 
 const defaultQueueState = Object.freeze({
   version: 2,
@@ -52,36 +83,16 @@ export class InboxStore {
     this.#database.pragma("foreign_keys = ON");
     this.#database.pragma("busy_timeout = 5000");
     this.#database.pragma("synchronous = NORMAL");
-    this.#database.exec(`
-      CREATE TABLE IF NOT EXISTS app_metadata (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      ) STRICT;
+    this.#database.exec(inboxSchema);
+    this.#database.exec(reviewDraftSchema);
+    this.#migrateReviewDraftComments();
+  }
 
-      CREATE TABLE IF NOT EXISTS settings (
-        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-        document TEXT NOT NULL CHECK (json_valid(document))
-      ) STRICT;
-
-      CREATE TABLE IF NOT EXISTS sync_state (
-        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-        document TEXT NOT NULL CHECK (json_valid(document))
-      ) STRICT;
-
-      CREATE TABLE IF NOT EXISTS queue_items (
-        id TEXT PRIMARY KEY,
-        version TEXT NOT NULL,
-        done_version TEXT,
-        updated_at TEXT NOT NULL,
-        repository TEXT NOT NULL,
-        record TEXT NOT NULL CHECK (json_valid(record))
-      ) STRICT;
-
-      CREATE INDEX IF NOT EXISTS queue_items_active
-        ON queue_items(done_version, version, updated_at DESC);
-      CREATE INDEX IF NOT EXISTS queue_items_repository
-        ON queue_items(repository, updated_at DESC);
-    `);
+  #migrateReviewDraftComments() {
+    const columns = this.#database.prepare(tableInfoReviewDraftComments).all();
+    if (!columns.some((column) => column.name === "reply_to_comment_id")) {
+      this.#database.exec(addReplyToCommentId);
+    }
   }
 
   async importLegacyFiles({
@@ -104,7 +115,7 @@ export class InboxStore {
         this.#writeSettings(normalizeSettings(legacySettings));
       }
       this.#database
-        .prepare("INSERT OR REPLACE INTO app_metadata(key, value) VALUES (?, ?)")
+        .prepare(upsertAppMetadata)
         .run("legacy-json-imported", "1");
     });
     importLegacy.immediate();
@@ -121,29 +132,14 @@ export class InboxStore {
   }
 
   readQueueState({ view = "all", limit, offset = 0 } = {}) {
-    const where = {
-      active: "WHERE done_version IS NULL OR done_version <> version",
-      done: "WHERE done_version = version",
-      all: "",
-    }[view];
-    if (where === undefined) throw new TypeError(`Unsupported queue view "${view}".`);
-
     const boundedLimit = limit == null ? null : normalizeLimit(limit);
     const boundedOffset = normalizeOffset(offset);
-    const sql = `
-      SELECT id, record
-      FROM queue_items
-      ${where}
-      ORDER BY updated_at DESC, id
-      ${boundedLimit == null ? "" : "LIMIT ? OFFSET ?"}
-    `;
+    const sql = queueItemsSelectSql(view, { paged: boundedLimit != null });
     const rows =
       boundedLimit == null
         ? this.#database.prepare(sql).all()
         : this.#database.prepare(sql).all(boundedLimit, boundedOffset);
-    const sync = this.#database
-      .prepare("SELECT document FROM sync_state WHERE singleton = 1")
-      .get();
+    const sync = this.#database.prepare(readSyncDocument).get();
     return {
       version: 2,
       sync: sync ? JSON.parse(sync.document) : structuredClone(defaultQueueState.sync),
@@ -152,38 +148,12 @@ export class InboxStore {
   }
 
   queueCounts() {
-    const row = this.#database
-      .prepare(`
-        SELECT
-          count(*) AS total,
-          count(*) FILTER (WHERE done_version = version) AS done,
-          count(*) FILTER (WHERE done_version IS NULL OR done_version <> version) AS active
-        FROM queue_items
-      `)
-      .get();
+    const row = this.#database.prepare(queueCounts).get();
     return { active: row.active, done: row.done, total: row.total };
   }
 
   activeQueueCounts() {
-    const rows = this.#database
-      .prepare(`
-        SELECT
-          COALESCE(json_extract(record, '$.item.kind'), '') AS kind,
-          COALESCE(json_extract(record, '$.item.state'), '') AS state,
-          COALESCE(json_extract(record, '$.item.draft'), 0) AS draft,
-          COALESCE(json_extract(record, '$.item.authored'), 0) AS authored,
-          COALESCE(json_extract(record, '$.item.reviewed'), 0) AS reviewed,
-          COALESCE(json_extract(record, '$.item.latestReviewState'), '') AS latest_review_state,
-          EXISTS (
-            SELECT 1
-            FROM json_each(queue_items.record, '$.item.signals') AS signal
-            WHERE json_extract(signal.value, '$.kind') <> 'team-covered'
-          ) AS has_attention_signal
-        FROM queue_items
-        WHERE (done_version IS NULL OR done_version <> version)
-          AND json_type(record, '$.item') = 'object'
-      `)
-      .all();
+    const rows = this.#database.prepare(activeQueueCountRows).all();
     const counts = { reviewed: 0, new: 0, approved: 0, merged: 0, mine: 0, other: 0, nonpr: 0 };
     for (const row of rows) {
       if (row.kind === "notification") {
@@ -237,34 +207,136 @@ export class InboxStore {
     this.#database.close();
   }
 
+  readReviewDraft(slug) {
+    const draft = this.#database.prepare(readDraft).get(slug);
+    if (!draft) return null;
+    const comments = this.#database.prepare(readDraftComments).all(slug);
+    return {
+      body: draft.body,
+      comments: comments.map((comment) => ({
+        body: comment.body,
+        createdAt: comment.created_at,
+        id: comment.id,
+        line: comment.line,
+        path: comment.path,
+        replyToCommentId: comment.reply_to_comment_id ?? null,
+        side: comment.side,
+        updatedAt: comment.updated_at,
+      })),
+      createdAt: draft.created_at,
+      headSha: draft.head_sha,
+      number: draft.number,
+      owner: draft.owner,
+      prUrl: draft.pr_url,
+      repo: draft.repo,
+      slug: draft.slug,
+      updatedAt: draft.updated_at,
+    };
+  }
+
+  ensureReviewDraft(context, { now = new Date().toISOString() } = {}) {
+    const existing = this.readReviewDraft(context.slug);
+    if (existing) {
+      if (existing.headSha !== context.headSha) {
+        const error = new Error("Review draft is tied to an older commit.");
+        error.code = "HEAD_STALE";
+        throw error;
+      }
+      return existing;
+    }
+    this.#database
+      .prepare(insertDraft)
+      .run(
+        context.slug,
+        context.prUrl,
+        context.owner,
+        context.repo,
+        Number(context.number),
+        context.headSha,
+        now,
+        now,
+      );
+    return this.readReviewDraft(context.slug);
+  }
+
+  updateReviewDraftBody(slug, body, { now = new Date().toISOString() } = {}) {
+    const result = this.#database
+      .prepare(updateDraftBody)
+      .run(String(body || ""), now, slug);
+    if (result.changes === 0) {
+      throw new Error("Review draft not found.");
+    }
+    return this.readReviewDraft(slug);
+  }
+
+  addReviewDraftComment(slug, comment, { now = new Date().toISOString() } = {}) {
+    const insert = this.#database.transaction(() => {
+      if (!this.#database.prepare(draftExists).get(slug)) {
+        throw new Error("Review draft not found.");
+      }
+      this.#database
+        .prepare(insertDraftComment)
+        .run(
+          comment.id,
+          slug,
+          comment.path,
+          comment.line,
+          comment.side,
+          comment.body,
+          comment.replyToCommentId ?? null,
+          now,
+          now,
+        );
+      return this.readReviewDraft(slug);
+    });
+    return insert.immediate();
+  }
+
+  updateReviewDraftComment(slug, commentId, body, { now = new Date().toISOString() } = {}) {
+    const result = this.#database
+      .prepare(updateDraftComment)
+      .run(String(body || ""), now, slug, commentId);
+    if (result.changes === 0) {
+      throw new Error("Draft comment not found.");
+    }
+    return this.readReviewDraft(slug);
+  }
+
+  deleteReviewDraftComment(slug, commentId) {
+    const result = this.#database
+      .prepare(deleteDraftComment)
+      .run(slug, commentId);
+    if (result.changes === 0) {
+      throw new Error("Draft comment not found.");
+    }
+    return this.readReviewDraft(slug);
+  }
+
+  deleteReviewDraft(slug) {
+    this.#database.prepare(deleteDraft).run(slug);
+  }
+
   #metadata(key) {
-    return this.#database.prepare("SELECT value FROM app_metadata WHERE key = ?").get(key)?.value;
+    return this.#database.prepare(readAppMetadata).get(key)?.value;
   }
 
   #queueItemCount() {
-    return this.#database.prepare("SELECT count(*) AS count FROM queue_items").get().count;
+    return this.#database.prepare(countQueueItems).get().count;
   }
 
   #readSettingsDocument() {
-    const row = this.#database.prepare("SELECT document FROM settings WHERE singleton = 1").get();
+    const row = this.#database.prepare(readSettingsDocument).get();
     return row ? JSON.parse(row.document) : null;
   }
 
   #writeSettings(value) {
-    this.#database
-      .prepare("INSERT OR REPLACE INTO settings(singleton, document) VALUES (1, ?)")
-      .run(JSON.stringify(value));
+    this.#database.prepare(upsertSettings).run(JSON.stringify(value));
   }
 
   #readSelectedQueueState(ids) {
     if (ids.length === 0) return this.readQueueState({ limit: 0 });
-    const placeholders = ids.map(() => "?").join(", ");
-    const rows = this.#database
-      .prepare(`SELECT id, record FROM queue_items WHERE id IN (${placeholders})`)
-      .all(...ids);
-    const sync = this.#database
-      .prepare("SELECT document FROM sync_state WHERE singleton = 1")
-      .get();
+    const rows = this.#database.prepare(queueItemsByIdsSql(ids.length)).all(...ids);
+    const sync = this.#database.prepare(readSyncDocument).get();
     return {
       version: 2,
       sync: sync ? JSON.parse(sync.document) : structuredClone(defaultQueueState.sync),
@@ -274,8 +346,8 @@ export class InboxStore {
 
   #replaceQueueState(state) {
     const nextIds = new Set(Object.keys(state.items ?? {}));
-    const deleteRecord = this.#database.prepare("DELETE FROM queue_items WHERE id = ?");
-    for (const { id } of this.#database.prepare("SELECT id FROM queue_items").all()) {
+    const deleteRecord = this.#database.prepare(deleteQueueItem);
+    for (const { id } of this.#database.prepare(selectQueueItemIds).all()) {
       if (!nextIds.has(id)) deleteRecord.run(id);
     }
     this.#writeQueueRecords(state.items ?? {});
@@ -283,17 +355,7 @@ export class InboxStore {
   }
 
   #writeQueueRecords(records) {
-    const write = this.#database.prepare(`
-      INSERT INTO queue_items(id, version, done_version, updated_at, repository, record)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        version = excluded.version,
-        done_version = excluded.done_version,
-        updated_at = excluded.updated_at,
-        repository = excluded.repository,
-        record = excluded.record
-      WHERE queue_items.record <> excluded.record
-    `);
+    const write = this.#database.prepare(upsertQueueItem);
     for (const [id, record] of Object.entries(records)) {
       const item = record?.item ?? {};
       write.run(
@@ -313,7 +375,7 @@ export class InboxStore {
 
   #writeSync(sync) {
     this.#database
-      .prepare("INSERT OR REPLACE INTO sync_state(singleton, document) VALUES (1, ?)")
+      .prepare(upsertSyncState)
       .run(JSON.stringify(sync ?? defaultQueueState.sync));
   }
 }
