@@ -3,12 +3,12 @@ import path from "node:path";
 import { parseGitHubPrUrl } from "../../analysis-worker/workflow/02-fetch-pr/github.js";
 import { reviewsDir } from "../runtime-config.js";
 
-export async function loadReviewContext(slug) {
+export async function loadReviewContext(slug, { reviewRoot = reviewsDir } = {}) {
   if (typeof slug !== "string" || !/^[\w-]+$/.test(slug) || slug.length > 200) {
     throw new Error("A valid review slug is required.");
   }
 
-  const slugDir = path.join(reviewsDir, slug);
+  const slugDir = path.join(reviewRoot, slug);
   const entries = await readdir(slugDir, { withFileTypes: true }).catch((error) => {
     if (error?.code === "ENOENT") {
       throw new Error("Review not found.");
@@ -34,7 +34,7 @@ export async function loadReviewContext(slug) {
       return {
         headSha,
         metadata,
-        number: parsed.number,
+        number: Number(parsed.number),
         owner: parsed.owner,
         prUrl,
         repo: parsed.repo,
