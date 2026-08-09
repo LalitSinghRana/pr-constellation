@@ -8,7 +8,10 @@ import {
 import { fetchPullRequestConversation } from "../review/github-review-client.js";
 import { databasePath, queuePath, settingsPath } from "../runtime-config.js";
 import { getGitHubNotifications } from "./github-notifications.js";
-import { sortPullRequestsBySize } from "./inbox-service/analysis-queue.js";
+import {
+  automaticallyQueueNewAnalyses,
+  sortPullRequestsBySize,
+} from "./inbox-service/analysis-queue.js";
 import { createInboxApi } from "./inbox-service/api.js";
 import {
   apiMutationRejection,
@@ -1078,7 +1081,7 @@ async function refreshNotificationItems(items, pullRequestNotifications, touched
   return warnings;
 }
 
-export async function syncNotifications(now = new Date()) {
+export async function syncNotifications(now = new Date(), { dashboardService } = {}) {
   const startedAt = now.toISOString();
   const initialState = await readQueueState();
   const previousSync = new Date(
@@ -1129,16 +1132,29 @@ export async function syncNotifications(now = new Date()) {
     },
     { ids: entries.map((item) => item.id), updateSync: true },
   );
-  const conversationCache = await cacheReviewConversations(entries);
+  const queueState = await readQueueState();
+  const [conversationCache, automaticAnalysis] = await Promise.all([
+    cacheReviewConversations(entries),
+    dashboardService
+      ? automaticallyQueueNewAnalyses(inboxFromQueue(queueState).items, dashboardService)
+      : { runs: [], warnings: [] },
+  ]);
   return {
     ...summary,
+    autoQueued: automaticAnalysis.runs.length,
     notModified: false,
     pollIntervalSeconds: notifications.pollIntervalSeconds,
-    warnings: [...new Set([...summary.warnings, ...conversationCache.warnings])],
+    warnings: [
+      ...new Set([
+        ...summary.warnings,
+        ...conversationCache.warnings,
+        ...automaticAnalysis.warnings,
+      ]),
+    ],
   };
 }
 
-export async function syncQueue(now = new Date()) {
+export async function syncQueue(now = new Date(), { dashboardService } = {}) {
   const startedAt = now.toISOString();
   const [initialState, saved] = await Promise.all([readQueueState(), readSettings()]);
   const username = saved.username || initialState.sync.username || (await getDetectedUser());
@@ -1244,14 +1260,25 @@ export async function syncQueue(now = new Date()) {
         notificationsResult.status === "fulfilled" ? notificationsResult.value : undefined,
     }).then(attachQueueState),
   ]);
+  const automaticAnalysis = dashboardService
+    ? await automaticallyQueueNewAnalyses(inbox.items, dashboardService)
+    : { runs: [], warnings: [] };
   return {
     ...summary,
     active: inbox.items.filter((item) => !item.done).length,
+    autoQueued: automaticAnalysis.runs.length,
     pollIntervalSeconds:
       notificationsResult.status === "fulfilled"
         ? notificationsResult.value.pollIntervalSeconds
         : initialState.sync.notificationPollIntervalSeconds,
-    warnings: [...new Set([...summary.warnings, ...conversationCache.warnings, ...inbox.warnings])],
+    warnings: [
+      ...new Set([
+        ...summary.warnings,
+        ...conversationCache.warnings,
+        ...inbox.warnings,
+        ...automaticAnalysis.warnings,
+      ]),
+    ],
   };
 }
 

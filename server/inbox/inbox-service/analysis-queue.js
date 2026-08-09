@@ -57,3 +57,22 @@ export async function enqueueMissingAnalyses(values, dashboardService) {
   }
   return runs;
 }
+
+export async function automaticallyQueueNewAnalyses(items, dashboardService) {
+  try {
+    return {
+      runs: await enqueueMissingAnalyses(
+        items.filter((item) => item.lifecycle === "new" && !item.done),
+        dashboardService,
+      ),
+      warnings: [],
+    };
+  } catch {
+    return {
+      runs: [],
+      warnings: [
+        "New PRs could not be queued for AI analysis; the next background sync will retry.",
+      ],
+    };
+  }
+}
