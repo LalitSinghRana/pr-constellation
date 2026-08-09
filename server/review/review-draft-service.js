@@ -10,11 +10,16 @@ import { loadReviewContext } from "./review-context.js";
 
 export async function getReviewConversation(slug) {
   const context = await loadReviewContext(slug);
-  return fetchPullRequestConversation({
+  const store = await getInboxStore();
+  const cached = store.readReviewConversation(context);
+  if (cached) return cached;
+
+  const conversation = await fetchPullRequestConversation({
     number: context.number,
     owner: context.owner,
     repo: context.repo,
   });
+  return store.saveReviewConversation({ ...context, conversation });
 }
 
 export async function getReviewDraftSnapshot(slug) {

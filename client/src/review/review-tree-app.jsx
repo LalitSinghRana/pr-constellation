@@ -14,12 +14,12 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import {
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  Check,
   CircleDot,
   CircleX,
   FileCode2,
@@ -74,7 +74,6 @@ import {
 import {
   readReviewData,
   readReviewSlug,
-  readConversationData,
   readTreeData,
   usePersistentStringSet,
 } from "./review-tree/state.js";
@@ -286,13 +285,10 @@ function ReviewHeader({ activeTab, onTabChange, review }) {
 }
 
 function PullRequestConversation({ review, reviewSlug }) {
-  const initialConversation = useMemo(readConversationData, []);
-  const [conversation, setConversation] = useState(initialConversation);
+  const [conversation, setConversation] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (initialConversation) return;
-
     const controller = new AbortController();
     fetch(`/api/reviews/${encodeURIComponent(reviewSlug)}/conversation`, {
       signal: controller.signal,
@@ -306,7 +302,7 @@ function PullRequestConversation({ review, reviewSlug }) {
         if (loadError.name !== "AbortError") setError(loadError.message);
       });
     return () => controller.abort();
-  }, [initialConversation, reviewSlug]);
+  }, [reviewSlug]);
 
   if (error) return <p className="m-auto text-sm text-destructive">{error}</p>;
   if (!conversation)

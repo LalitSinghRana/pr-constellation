@@ -39,11 +39,6 @@ index 0000000..1111111 100644
 `,
       "utf8",
     ),
-    writeFile(
-      path.join(runDir, "conversation.json"),
-      `${JSON.stringify({ threads: [], timeline: [{ body: "Cached comment" }] })}\n`,
-      "utf8",
-    ),
   ]);
 
   const result = await renderExistingRun({ runDir });
@@ -53,10 +48,8 @@ index 0000000..1111111 100644
   ]);
 
   assert.equal(result.stableHtmlPath, path.join(slugDir, "index.html"));
-  assert.equal(result.conversationPath, path.join(runDir, "conversation.json"));
   assert.equal(stableHtml, runHtml);
   assert.match(stableHtml, /Hosting check/);
-  assert.match(stableHtml, /Cached comment/);
 } finally {
   await rm(reviewsDir, { force: true, recursive: true });
 }

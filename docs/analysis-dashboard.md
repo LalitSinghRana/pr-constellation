@@ -33,11 +33,10 @@ pnpm dev
 ## Persistence
 
 Mutable run metadata, timings, and queued work are stored in
-`.reviews/.run-store.sqlite`. Immutable diff, analysis, conversation snapshot, and generated HTML files
-stay in each run directory. The stable `.reviews/<review-slug>/index.html` points to the latest successful
-result.
+`.reviews/.run-store.sqlite`. Immutable diff, analysis, and generated HTML files stay in each run
+directory. The stable `.reviews/<review-slug>/index.html` points to the latest successful result.
 Legacy `run.json` and `timings.json` files are imported once and preserved.
 
 Inbox state is stored separately at
-`~/.config/pr-review-cockpit/cockpit.sqlite3`. GitHub's read flag does not change local read or Done
-state.
+`~/.config/pr-review-cockpit/cockpit.sqlite3`, including cached GitHub PR conversations. GitHub's read
+flag does not change local read or Done state.

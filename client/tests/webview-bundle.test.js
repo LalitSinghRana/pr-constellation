@@ -56,19 +56,6 @@ const html = await renderDiffHtml({
       },
     ],
   },
-  conversation: {
-    threads: [],
-    timeline: [
-      {
-        actor: "octo",
-        body: "Cached conversation",
-        createdAt: "2026-08-09T12:01:00Z",
-        id: 1,
-        kind: "comment",
-        type: "IssueComment",
-      },
-    ],
-  },
   diff: `diff --git a/src/example.js b/src/example.js
 index 0000000..1111111 100644
 --- a/src/example.js
@@ -110,10 +97,8 @@ for (const marker of [
 
 const treeData = extractJsonScript(html, "pr-analysis-data");
 const reviewData = extractJsonScript(html, "pr-review-data");
-const conversationData = extractJsonScript(html, "pr-conversation-data");
 assert.equal(reviewData.body, "## Description\n\nReview the change.");
 assert.equal(reviewData.authorAvatarUrl, "https://example.com/check.png");
-assert.equal(conversationData.timeline[0].body, "Cached conversation");
 assert.equal(treeData.schemaVersion, "pr-review-analysis/v1");
 assert.equal(treeData.reviewStacks[0].fileTree.branches.length, 0);
 assert.equal(treeData.files[0].sectionTree.branches[0].order, 0);
@@ -150,8 +135,6 @@ assert.match(treeAppSource, /const \[activeTab, setActiveTab\] = useState\("conv
 assert.match(treeAppSource, /value="conversation"/);
 assert.match(treeAppSource, /showReviewSheet=\{activeTab === "trees"\}/);
 assert.match(treeAppSource, /function conversationIcon/);
-assert.match(treeAppSource, /const initialConversation = useMemo\(readConversationData, \[\]\)/);
-assert.match(treeAppSource, /if \(initialConversation\) return;/);
 assert.match(treeAppSource, /item\.state === "APPROVED"\) return Check/);
 assert.match(treeAppSource, /item\.state === "COMMENTED"\) return MessageSquare/);
 assert.match(treeAppSource, /<Timeline/);

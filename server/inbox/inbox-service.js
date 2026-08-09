@@ -5,6 +5,7 @@ import {
   LIFECYCLE_SCORES,
   lifecycleForQueueItem,
 } from "../../shared/queue-policy.js";
+import { fetchPullRequestConversation } from "../review/github-review-client.js";
 import { databasePath, queuePath, settingsPath } from "../runtime-config.js";
 import { getGitHubNotifications } from "./github-notifications.js";
 import { sortPullRequestsBySize } from "./inbox-service/analysis-queue.js";
@@ -803,6 +804,49 @@ async function mapLimited(values, limit, callback) {
   return results;
 }
 
+export async function cacheReviewConversations(
+  items,
+  { fetchConversation = fetchPullRequestConversation, store } = {},
+) {
+  const candidates = new Map();
+  for (const item of items) {
+    const coordinates = conversationCoordinates(item);
+    if (coordinates) {
+      candidates.set(`${coordinates.owner}/${coordinates.repo}#${coordinates.number}`, coordinates);
+    }
+  }
+
+  const conversationStore = store ?? (await getInboxStore());
+  const outcomes = await mapLimited([...candidates.values()], 3, async (coordinates) => {
+    try {
+      const conversation = await fetchConversation(coordinates);
+      conversationStore.saveReviewConversation({ ...coordinates, conversation });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  return {
+    cached: outcomes.filter(Boolean).length,
+    warnings: outcomes.some((cached) => !cached)
+      ? ["Some pull request conversations could not be cached."]
+      : [],
+  };
+}
+
+function conversationCoordinates(item) {
+  if (item?.kind === "notification" || !Number.isInteger(item?.number)) return null;
+  const [owner, repo, ...rest] = String(item.repository || "").split("/");
+  return owner && repo && rest.length === 0 ? { number: item.number, owner, repo } : null;
+}
+
+function activeQueueItems(state) {
+  return Object.entries(state.items)
+    .filter(([, record]) => record?.version && record.doneVersion !== record.version)
+    .map(([id, record]) => queueItemFromRecord(id, record))
+    .filter((item) => item && item.kind !== "notification");
+}
+
 export function prFromNotification(thread) {
   if (thread.subject?.type !== "PullRequest" || !thread.subject.url) return null;
 
@@ -1085,11 +1129,12 @@ export async function syncNotifications(now = new Date()) {
     },
     { ids: entries.map((item) => item.id), updateSync: true },
   );
+  const conversationCache = await cacheReviewConversations(entries);
   return {
     ...summary,
     notModified: false,
     pollIntervalSeconds: notifications.pollIntervalSeconds,
-    warnings: summary.warnings,
+    warnings: [...new Set([...summary.warnings, ...conversationCache.warnings])],
   };
 }
 
@@ -1188,16 +1233,17 @@ export async function syncQueue(now = new Date()) {
   });
 
   const queueState = await readQueueState();
-  const inbox = await attachQueueState(
-    await collectInbox({
+  const [conversationCache, inbox] = await Promise.all([
+    cacheReviewConversations(activeQueueItems(queueState)),
+    collectInbox({
       username,
       teammates: saved.people,
       teams: saved.teams,
       queueState,
       notificationData:
         notificationsResult.status === "fulfilled" ? notificationsResult.value : undefined,
-    }),
-  );
+    }).then(attachQueueState),
+  ]);
   return {
     ...summary,
     active: inbox.items.filter((item) => !item.done).length,
@@ -1205,7 +1251,7 @@ export async function syncQueue(now = new Date()) {
       notificationsResult.status === "fulfilled"
         ? notificationsResult.value.pollIntervalSeconds
         : initialState.sync.notificationPollIntervalSeconds,
-    warnings: [...new Set([...summary.warnings, ...inbox.warnings])],
+    warnings: [...new Set([...summary.warnings, ...conversationCache.warnings, ...inbox.warnings])],
   };
 }
 
