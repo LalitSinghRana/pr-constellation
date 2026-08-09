@@ -32,13 +32,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 }
 
 async function runOneShotSync() {
-  const { createDashboardService } = await import("./analysis/dashboard-service.js");
-  const { projectRoot, reviewsDir } = await import("./runtime-config.js");
-  const dashboardService = await createDashboardService({ projectRoot, reviewsDir });
   try {
-    return await syncQueue(new Date(), { dashboardService });
+    return await syncQueue(new Date());
   } finally {
-    await dashboardService.close();
     await closeInboxStore();
   }
 }

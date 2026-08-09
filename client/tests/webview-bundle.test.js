@@ -66,9 +66,11 @@ index 0000000..1111111 100644
 `,
   pr: {
     additions: 1,
-    author: { login: "check" },
+    author: { avatarUrl: "https://example.com/check.png", login: "check" },
     baseRefName: "main",
+    body: "## Description\n\nReview the change.",
     changedFiles: 1,
+    createdAt: "2026-08-09T12:00:00Z",
     deletions: 1,
     headRefName: "branch",
     number: 1,
@@ -94,6 +96,9 @@ for (const marker of [
 }
 
 const treeData = extractJsonScript(html, "pr-analysis-data");
+const reviewData = extractJsonScript(html, "pr-review-data");
+assert.equal(reviewData.body, "## Description\n\nReview the change.");
+assert.equal(reviewData.authorAvatarUrl, "https://example.com/check.png");
 assert.equal(treeData.schemaVersion, "pr-review-analysis/v1");
 assert.equal(treeData.reviewStacks[0].fileTree.branches.length, 0);
 assert.equal(treeData.files[0].sectionTree.branches[0].order, 0);
@@ -112,24 +117,44 @@ assert.ok(
 );
 assert.ok(!("relations" in treeData.files[0].sectionTree));
 
-const [treeAppSource, webStyles] = await Promise.all([
+const [treeAppSource, treeLayoutSource, webStyles] = await Promise.all([
   readFile(new URL("../src/review/review-tree-app.jsx", import.meta.url), "utf8"),
+  readFile(new URL("../src/review/review-tree/layout.js", import.meta.url), "utf8"),
   readFile(new URL("../src/review/styles.css", import.meta.url), "utf8"),
 ]);
-assert.match(treeAppSource, /nodesDraggable=\{false\}/);
-assert.match(treeAppSource, /reviewBranch: React\.memo\(ReviewBranch\)/);
-assert.match(treeAppSource, /filter\(\(\{ type \}\) => type === "reviewSection"\)/);
-assert.match(treeAppSource, /foldSectionTree\(file, \{ expandedGroupIds \}\)/);
-assert.match(treeAppSource, /value="source"/);
-assert.match(treeAppSource, /ariaLabel="Review tree map"/);
-assert.match(treeAppSource, /pointerEvents: "auto"/);
+const reviewTreeSource = `${treeAppSource}\n${treeLayoutSource}`;
+assert.match(reviewTreeSource, /nodesDraggable=\{false\}/);
+assert.match(reviewTreeSource, /reviewBranch: React\.memo\(ReviewBranch\)/);
+assert.match(reviewTreeSource, /filter\(\(\{ type \}\) => type === "reviewSection"\)/);
+assert.match(reviewTreeSource, /foldSectionTree\(file, \{ expandedGroupIds \}\)/);
+assert.match(reviewTreeSource, /value="source"/);
+assert.match(reviewTreeSource, /ariaLabel="Review tree map"/);
+assert.match(reviewTreeSource, /pointerEvents: "auto"/);
 assert.match(treeAppSource, /text-base leading-relaxed/);
-assert.match(treeAppSource, /bg-diff-add\/15/);
+assert.match(treeAppSource, /const \[activeTab, setActiveTab\] = useState\("conversation"\)/);
+assert.match(treeAppSource, /value="conversation"/);
+assert.match(treeAppSource, /showReviewSheet=\{activeTab === "trees"\}/);
+assert.match(treeAppSource, /function conversationIcon/);
+assert.match(treeAppSource, /item\.state === "APPROVED"\) return Check/);
+assert.match(treeAppSource, /item\.state === "COMMENTED"\) return MessageSquare/);
+assert.match(treeAppSource, /<Timeline/);
+assert.match(treeAppSource, /unstyled/);
+assert.match(webStyles, /\.conversation-timeline-connector/);
+assert.match(treeAppSource, /remarkPlugins=\{\[remarkGfm, remarkAlert\]\}/);
+assert.match(
+  treeAppSource,
+  /rehypePlugins=\{\[rehypeRaw, \[rehypeSanitize, githubMarkdownSanitizeSchema\]\]\}/,
+);
+assert.match(treeAppSource, /MIN_TREE_ZOOM/);
+assert.match(treeAppSource, /if \(item\.kind === "description"\) return 0;/);
+assert.match(treeAppSource, /FILE_TREE_TARGET_HANDLE/);
 assert.match(treeAppSource, /text-pr-open/);
 assert.doesNotMatch(treeAppSource, /What \/ Why/);
 assert.doesNotMatch(treeAppSource, /formatExplanationForHover/);
 assert.doesNotMatch(treeAppSource, /state-badge/);
 assert.doesNotMatch(treeAppSource, /text-\[15px\]/);
+assert.doesNotMatch(treeAppSource, /formatTimelineTimestamp/);
+assert.doesNotMatch(treeAppSource, /View on GitHub/);
 assert.match(webStyles, /\.review-branch-hit-path/);
 assert.match(webStyles, /\.review-tree-map/);
 assert.doesNotMatch(webStyles, /\.change-pill\.is-add/);

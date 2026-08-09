@@ -3,22 +3,10 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { lifecycleForQueueItem } from "../../shared/queue-policy.js";
 import {
-  activeQueueCountRows,
-  countQueueItems,
-  deleteQueueItem,
-  queueCounts,
-  queueItemsByIdsSql,
-  queueItemsSelectSql,
-  readAppMetadata,
-  readSettingsDocument,
-  readSyncDocument,
-  schema as inboxSchema,
-  selectQueueItemIds,
-  upsertAppMetadata,
-  upsertQueueItem,
-  upsertSettings,
-  upsertSyncState,
-} from "./inbox-sql.js";
+  readConversation,
+  schema as reviewConversationSchema,
+  upsertConversation,
+} from "../review/review-conversation-sql.js";
 import {
   addReplyToCommentId,
   deleteDraft,
@@ -33,6 +21,23 @@ import {
   updateDraftBody,
   updateDraftComment,
 } from "../review/review-draft-sql.js";
+import {
+  activeQueueCountRows,
+  countQueueItems,
+  deleteQueueItem,
+  schema as inboxSchema,
+  queueCounts,
+  queueItemsByIdsSql,
+  queueItemsSelectSql,
+  readAppMetadata,
+  readSettingsDocument,
+  readSyncDocument,
+  selectQueueItemIds,
+  upsertAppMetadata,
+  upsertQueueItem,
+  upsertSettings,
+  upsertSyncState,
+} from "./inbox-sql.js";
 
 const defaultQueueState = Object.freeze({
   version: 2,
@@ -85,6 +90,7 @@ export class InboxStore {
     this.#database.pragma("synchronous = NORMAL");
     this.#database.exec(inboxSchema);
     this.#database.exec(reviewDraftSchema);
+    this.#database.exec(reviewConversationSchema);
     this.#migrateReviewDraftComments();
   }
 
@@ -114,9 +120,7 @@ export class InboxStore {
       if (legacySettings && !this.#readSettingsDocument()) {
         this.#writeSettings(normalizeSettings(legacySettings));
       }
-      this.#database
-        .prepare(upsertAppMetadata)
-        .run("legacy-json-imported", "1");
+      this.#database.prepare(upsertAppMetadata).run("legacy-json-imported", "1");
     });
     importLegacy.immediate();
   }
@@ -260,9 +264,7 @@ export class InboxStore {
   }
 
   updateReviewDraftBody(slug, body, { now = new Date().toISOString() } = {}) {
-    const result = this.#database
-      .prepare(updateDraftBody)
-      .run(String(body || ""), now, slug);
+    const result = this.#database.prepare(updateDraftBody).run(String(body || ""), now, slug);
     if (result.changes === 0) {
       throw new Error("Review draft not found.");
     }
@@ -303,9 +305,7 @@ export class InboxStore {
   }
 
   deleteReviewDraftComment(slug, commentId) {
-    const result = this.#database
-      .prepare(deleteDraftComment)
-      .run(slug, commentId);
+    const result = this.#database.prepare(deleteDraftComment).run(slug, commentId);
     if (result.changes === 0) {
       throw new Error("Draft comment not found.");
     }
@@ -314,6 +314,40 @@ export class InboxStore {
 
   deleteReviewDraft(slug) {
     this.#database.prepare(deleteDraft).run(slug);
+  }
+
+  readReviewConversation({ number, owner, repo }) {
+    const coordinates = normalizePullRequestCoordinates({ number, owner, repo });
+    const row = this.#database
+      .prepare(readConversation)
+      .get(coordinates.owner, coordinates.repo, coordinates.number);
+    return row ? JSON.parse(row.document) : null;
+  }
+
+  saveReviewConversation({
+    conversation,
+    number,
+    owner,
+    repo,
+    fetchedAt = new Date().toISOString(),
+  }) {
+    const coordinates = normalizePullRequestCoordinates({ number, owner, repo });
+    if (!isConversationDocument(conversation)) {
+      throw new TypeError("conversation must contain timeline and threads arrays.");
+    }
+    if (typeof fetchedAt !== "string" || Number.isNaN(new Date(fetchedAt).getTime())) {
+      throw new TypeError("fetchedAt must be an ISO timestamp.");
+    }
+    this.#database
+      .prepare(upsertConversation)
+      .run(
+        coordinates.owner,
+        coordinates.repo,
+        coordinates.number,
+        fetchedAt,
+        JSON.stringify(conversation),
+      );
+    return structuredClone(conversation);
   }
 
   #metadata(key) {
@@ -374,9 +408,7 @@ export class InboxStore {
   }
 
   #writeSync(sync) {
-    this.#database
-      .prepare(upsertSyncState)
-      .run(JSON.stringify(sync ?? defaultQueueState.sync));
+    this.#database.prepare(upsertSyncState).run(JSON.stringify(sync ?? defaultQueueState.sync));
   }
 }
 
@@ -399,6 +431,28 @@ function normalizeOffset(value) {
     throw new TypeError("offset must be a non-negative integer.");
   }
   return value;
+}
+
+function normalizePullRequestCoordinates({ number, owner, repo }) {
+  if (typeof owner !== "string" || !owner.trim()) {
+    throw new TypeError("owner must be a non-empty string.");
+  }
+  if (typeof repo !== "string" || !repo.trim()) {
+    throw new TypeError("repo must be a non-empty string.");
+  }
+  if (!Number.isInteger(number) || number < 1) {
+    throw new TypeError("number must be a positive integer.");
+  }
+  return { number, owner: owner.trim(), repo: repo.trim() };
+}
+
+function isConversationDocument(value) {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    Array.isArray(value.timeline) &&
+    Array.isArray(value.threads)
+  );
 }
 
 async function readOptionalJson(filePath) {

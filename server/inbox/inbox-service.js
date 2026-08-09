@@ -5,27 +5,26 @@ import {
   LIFECYCLE_SCORES,
   lifecycleForQueueItem,
 } from "../../shared/queue-policy.js";
-import {
-  cockpitOrigin,
-  databasePath,
-  host,
-  port,
-  queuePath,
-  settingsPath,
-} from "../runtime-config.js";
+import { fetchPullRequestConversation } from "../review/github-review-client.js";
+import { databasePath, queuePath, settingsPath } from "../runtime-config.js";
 import { getGitHubNotifications } from "./github-notifications.js";
+import { sortPullRequestsBySize } from "./inbox-service/analysis-queue.js";
+import { createInboxApi } from "./inbox-service/api.js";
+import {
+  apiMutationRejection,
+  requestHostRejection,
+  sendJson,
+} from "./inbox-service/http-guards.js";
 import { createInboxStore } from "./inbox-store.js";
 
 const exec = promisify(execFile);
-const runtimeUrl = new URL(cockpitOrigin);
-const localhostOrigin = port === 80 ? "http://localhost" : `http://localhost:${port}`;
-const allowedOrigins = new Set([runtimeUrl.origin, localhostOrigin]);
-const allowedHosts = new Set([runtimeUrl.host, new URL(localhostOrigin).host]);
 const searchFields =
   "author,commentsCount,createdAt,id,isDraft,labels,number,repository,state,title,updatedAt,url";
 const repositoryFields = "author,createdAt,id,isDraft,number,state,title,updatedAt,url";
 const hour = 60 * 60 * 1_000;
 const day = 24 * hour;
+
+export { sortPullRequestsBySize };
 
 export const trackedRepositories = Object.freeze([
   "PicnicSupermarket/picnic-store-config",
@@ -805,6 +804,49 @@ async function mapLimited(values, limit, callback) {
   return results;
 }
 
+export async function cacheReviewConversations(
+  items,
+  { fetchConversation = fetchPullRequestConversation, store } = {},
+) {
+  const candidates = new Map();
+  for (const item of items) {
+    const coordinates = conversationCoordinates(item);
+    if (coordinates) {
+      candidates.set(`${coordinates.owner}/${coordinates.repo}#${coordinates.number}`, coordinates);
+    }
+  }
+
+  const conversationStore = store ?? (await getInboxStore());
+  const outcomes = await mapLimited([...candidates.values()], 3, async (coordinates) => {
+    try {
+      const conversation = await fetchConversation(coordinates);
+      conversationStore.saveReviewConversation({ ...coordinates, conversation });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  return {
+    cached: outcomes.filter(Boolean).length,
+    warnings: outcomes.some((cached) => !cached)
+      ? ["Some pull request conversations could not be cached."]
+      : [],
+  };
+}
+
+function conversationCoordinates(item) {
+  if (item?.kind === "notification" || !Number.isInteger(item?.number)) return null;
+  const [owner, repo, ...rest] = String(item.repository || "").split("/");
+  return owner && repo && rest.length === 0 ? { number: item.number, owner, repo } : null;
+}
+
+function activeQueueItems(state) {
+  return Object.entries(state.items)
+    .filter(([, record]) => record?.version && record.doneVersion !== record.version)
+    .map(([id, record]) => queueItemFromRecord(id, record))
+    .filter((item) => item && item.kind !== "notification");
+}
+
 export function prFromNotification(thread) {
   if (thread.subject?.type !== "PullRequest" || !thread.subject.url) return null;
 
@@ -1036,7 +1078,7 @@ async function refreshNotificationItems(items, pullRequestNotifications, touched
   return warnings;
 }
 
-export async function syncNotifications(now = new Date(), { dashboardService } = {}) {
+export async function syncNotifications(now = new Date()) {
   const startedAt = now.toISOString();
   const initialState = await readQueueState();
   const previousSync = new Date(
@@ -1087,20 +1129,16 @@ export async function syncNotifications(now = new Date(), { dashboardService } =
     },
     { ids: entries.map((item) => item.id), updateSync: true },
   );
-  const inbox = inboxFromQueue(await readQueueState());
-  const automaticAnalysis = dashboardService
-    ? await automaticallyQueueNewAnalyses(inbox.items, dashboardService)
-    : { runs: [], warnings: [] };
+  const conversationCache = await cacheReviewConversations(entries);
   return {
     ...summary,
-    autoQueued: automaticAnalysis.runs.length,
     notModified: false,
     pollIntervalSeconds: notifications.pollIntervalSeconds,
-    warnings: [...new Set([...summary.warnings, ...automaticAnalysis.warnings])],
+    warnings: [...new Set([...summary.warnings, ...conversationCache.warnings])],
   };
 }
 
-export async function syncQueue(now = new Date(), { dashboardService } = {}) {
+export async function syncQueue(now = new Date()) {
   const startedAt = now.toISOString();
   const [initialState, saved] = await Promise.all([readQueueState(), readSettings()]);
   const username = saved.username || initialState.sync.username || (await getDetectedUser());
@@ -1195,28 +1233,25 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
   });
 
   const queueState = await readQueueState();
-  const inbox = await attachQueueState(
-    await collectInbox({
+  const [conversationCache, inbox] = await Promise.all([
+    cacheReviewConversations(activeQueueItems(queueState)),
+    collectInbox({
       username,
       teammates: saved.people,
       teams: saved.teams,
       queueState,
       notificationData:
         notificationsResult.status === "fulfilled" ? notificationsResult.value : undefined,
-    }),
-  );
-  const automaticAnalysis = dashboardService
-    ? await automaticallyQueueNewAnalyses(inbox.items, dashboardService)
-    : { runs: [], warnings: [] };
+    }).then(attachQueueState),
+  ]);
   return {
     ...summary,
     active: inbox.items.filter((item) => !item.done).length,
-    autoQueued: automaticAnalysis.runs.length,
     pollIntervalSeconds:
       notificationsResult.status === "fulfilled"
         ? notificationsResult.value.pollIntervalSeconds
         : initialState.sync.notificationPollIntervalSeconds,
-    warnings: [...new Set([...summary.warnings, ...inbox.warnings, ...automaticAnalysis.warnings])],
+    warnings: [...new Set([...summary.warnings, ...conversationCache.warnings, ...inbox.warnings])],
   };
 }
 
@@ -1447,22 +1482,6 @@ export async function collectInbox({
   };
 }
 
-function secureHeaders(contentType) {
-  return {
-    "Content-Type": contentType,
-    "Cache-Control": "no-store",
-    "Content-Security-Policy":
-      "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'",
-    "Referrer-Policy": "no-referrer",
-    "X-Content-Type-Options": "nosniff",
-  };
-}
-
-function sendJson(response, status, value) {
-  response.writeHead(status, secureHeaders("application/json; charset=utf-8"));
-  response.end(JSON.stringify(value));
-}
-
 export function rejectUntrustedApiMutation(request, response, pathname) {
   const rejection = apiMutationRejection(request, pathname);
   if (!rejection) return false;
@@ -1477,318 +1496,20 @@ export function rejectUntrustedRequestHost(request, response) {
   return true;
 }
 
-export function requestHostRejection(request) {
-  if (allowedHosts.has(String(request.headers.host ?? "").toLowerCase())) return null;
-  return { status: 421, error: "This server accepts only local cockpit hostnames." };
-}
+export { apiMutationRejection, requestHostRejection } from "./inbox-service/http-guards.js";
 
-export function apiMutationRejection(request, pathname) {
-  if (
-    !pathname.startsWith("/api/") ||
-    !["DELETE", "PATCH", "POST", "PUT"].includes(request.method)
-  ) {
-    return null;
-  }
-  const origin = request.headers.origin;
-  const fetchSite = request.headers["sec-fetch-site"];
-  if ((origin && !allowedOrigins.has(origin)) || fetchSite === "cross-site") {
-    return { status: 403, error: "Cross-origin API mutations are not allowed." };
-  }
-  if (
-    ["PATCH", "POST", "PUT"].includes(request.method) &&
-    !String(request.headers["content-type"] ?? "")
-      .toLowerCase()
-      .startsWith("application/json")
-  ) {
-    return { status: 415, error: "Expected an application/json request." };
-  }
-  return null;
-}
-
-function normalizeAnalysisCandidate(value) {
-  const url = new URL(value?.url);
-  const match = url.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)\/?$/);
-  if (url.protocol !== "https:" || url.hostname !== "github.com" || !match) {
-    throw new Error("A valid GitHub pull request URL is required.");
-  }
-  return {
-    url: `https://github.com/${match[1]}/${match[2]}/pull/${match[3]}`,
-    title: typeof value.title === "string" ? value.title.slice(0, 500) : "",
-    additions: Number.isInteger(value.additions) ? value.additions : null,
-    deletions: Number.isInteger(value.deletions) ? value.deletions : null,
-    changedFiles: Number.isInteger(value.changedFiles) ? value.changedFiles : null,
-    headSha: typeof value.headSha === "string" ? value.headSha : "",
-  };
-}
-
-function changedLineCount(value) {
-  return Number.isInteger(value.additions) && Number.isInteger(value.deletions)
-    ? value.additions + value.deletions
-    : Number.MAX_SAFE_INTEGER;
-}
-
-export function sortPullRequestsBySize(values) {
-  return [...values].sort(
-    (left, right) =>
-      changedLineCount(left) - changedLineCount(right) ||
-      (left.changedFiles ?? Number.MAX_SAFE_INTEGER) -
-        (right.changedFiles ?? Number.MAX_SAFE_INTEGER) ||
-      left.url.localeCompare(right.url),
-  );
-}
-
-function alreadyAnalyzed(dashboard, candidate) {
-  const pullRequest = (dashboard.prs ?? dashboard.pullRequests ?? []).find(
-    (item) => item.url === candidate.url,
-  );
-  return pullRequest?.runs?.some(
-    (run) =>
-      ["queued", "running"].includes(run.status) ||
-      (run.status === "succeeded" && (!candidate.headSha || run.headSha === candidate.headSha)),
-  );
-}
-
-async function enqueueMissingAnalyses(values, dashboardService) {
-  const candidates = sortPullRequestsBySize(values.slice(0, 100).map(normalizeAnalysisCandidate));
-  const dashboard = await dashboardService.snapshot();
-  const runs = [];
-  for (const candidate of candidates) {
-    if (alreadyAnalyzed(dashboard, candidate)) continue;
-    const run = await dashboardService.enqueue({
-      prUrl: candidate.url,
-      refresh: true,
-      title: candidate.title,
-    });
-    runs.push(run);
-  }
-  return runs;
-}
-
-async function automaticallyQueueNewAnalyses(items, dashboardService) {
-  try {
-    return {
-      runs: await enqueueMissingAnalyses(
-        items.filter((item) => item.lifecycle === "new" && !item.done),
-        dashboardService,
-      ),
-      warnings: [],
-    };
-  } catch {
-    return {
-      runs: [],
-      warnings: [
-        "New PRs could not be queued for AI analysis; the next background sync will retry.",
-      ],
-    };
-  }
-}
-
-async function readRequestJson(request) {
-  let body = "";
-  for await (const chunk of request) {
-    body += chunk;
-    if (Buffer.byteLength(body) > 64 * 1024) throw new Error("Request too large");
-  }
-  return JSON.parse(body || "{}");
-}
-
-export async function handleApiRequest(
-  request,
-  response,
-  { dashboardService, eventHub, scheduler },
-) {
-  const url = new URL(request.url, `http://${request.headers.host ?? host}`);
-
-  if (url.pathname === "/api/analyses" && request.method === "GET") {
-    try {
-      sendJson(response, 200, await dashboardService.snapshot());
-    } catch (error) {
-      sendJson(response, 502, { error: error.message });
-    }
-    return true;
-  }
-
-  if (url.pathname === "/api/analyses" && request.method === "POST") {
-    try {
-      const body = await readRequestJson(request);
-      const candidate = normalizeAnalysisCandidate(body);
-      const run = await dashboardService.enqueue({
-        model: typeof body.model === "string" ? body.model.trim() : undefined,
-        prUrl: candidate.url,
-        reasoningEffort:
-          typeof body.reasoningEffort === "string" ? body.reasoningEffort.trim() : undefined,
-        refresh: true,
-        title: candidate.title,
-      });
-      eventHub.publish("analysis", { runId: run.runId });
-      sendJson(response, 202, { run, runs: [run] });
-    } catch (error) {
-      sendJson(response, 400, { error: error.message });
-    }
-    return true;
-  }
-
-  if (url.pathname === "/api/analyses/queue" && request.method === "POST") {
-    try {
-      const body = await readRequestJson(request);
-      const runs = await enqueueMissingAnalyses(
-        Array.isArray(body.pullRequests) ? body.pullRequests : [],
-        dashboardService,
-      );
-      eventHub.publish("analysis", { queued: runs.length });
-      sendJson(response, 202, { runs });
-    } catch (error) {
-      sendJson(response, 400, { error: error.message });
-    }
-    return true;
-  }
-
-  if (url.pathname === "/api/settings" && request.method === "GET") {
-    response.writeHead(200, secureHeaders("application/json; charset=utf-8"));
-    response.end(JSON.stringify(await readSettings()));
-    return true;
-  }
-
-  if (url.pathname === "/api/settings" && request.method === "PUT") {
-    try {
-      const settings = await saveSettings(await readRequestJson(request));
-      eventHub.publish("settings");
-      response.writeHead(200, secureHeaders("application/json; charset=utf-8"));
-      response.end(JSON.stringify(settings));
-    } catch {
-      response.writeHead(400, secureHeaders("application/json; charset=utf-8"));
-      response.end(JSON.stringify({ error: "Settings could not be saved." }));
-    }
-    return true;
-  }
-
-  if (url.pathname === "/api/inbox/items" && request.method === "PUT") {
-    try {
-      const body = await readRequestJson(request);
-      const mutations = ["done", "read"].filter((field) => typeof body[field] === "boolean");
-      const ids = Array.isArray(body.ids) ? [...new Set(body.ids)] : null;
-      const bulkDone = Boolean(
-        ids?.length &&
-          ids.length === body.ids.length &&
-          ids.length <= 100 &&
-          ids.every((id) => typeof id === "string" && id && id.length <= 200) &&
-          body.id === undefined &&
-          body.done === true &&
-          mutations.length === 1,
-      );
-      if (
-        !bulkDone &&
-        (typeof body.id !== "string" || !body.id || body.id.length > 200 || mutations.length !== 1)
-      ) {
-        throw new Error("One tracked queue item update is required.");
-      }
-      const targetIds = ids ?? [body.id];
-      const result = await mutateQueueState(
-        (state) =>
-          bulkDone
-            ? setQueueItemsDone(state, ids)
-            : mutations[0] === "done"
-              ? setQueueItemDone(state, body.id, body.done)
-              : setQueueItemRead(state, body.id, body.read),
-        { ids: targetIds },
-      );
-      if (!result) throw new Error("That queue item is not tracked.");
-      if (body.done) {
-        const state = await readQueueState();
-        const doneIds = targetIds;
-        const threadIds = new Set(
-          doneIds.flatMap((id) => {
-            const stored = state.items[id]?.item?.notificationThreadId;
-            const threadId =
-              /^notification:(\d+)$/.exec(id)?.[1] ?? validNotificationThreadId(stored);
-            return threadId ? [threadId] : [];
-          }),
-        );
-        try {
-          if (threadIds.size < doneIds.length) {
-            for (const { pr } of (await getNotifications()).pullRequests) {
-              if (doneIds.includes(prKey(pr)) && pr.notificationThreadId) {
-                threadIds.add(pr.notificationThreadId);
-              }
-            }
-          }
-          const outcomes = await Promise.allSettled([...threadIds].map(markGitHubNotificationDone));
-          if (outcomes.some(({ status }) => status === "rejected")) {
-            throw new Error("GitHub notification update failed");
-          }
-        } catch {
-          result.warning = "Saved locally, but GitHub could not mark the notification done.";
-        }
-      }
-      eventHub.publish("inbox", { ids: targetIds });
-      sendJson(response, 200, result);
-    } catch (error) {
-      sendJson(response, 400, { error: error.message });
-    }
-    return true;
-  }
-
-  if (url.pathname === "/api/inbox/sync" && request.method === "POST") {
-    try {
-      const result = await scheduler.runFullSync();
-      sendJson(response, 200, result);
-    } catch (error) {
-      sendJson(response, 502, {
-        error:
-          error?.code === "ENOENT"
-            ? "GitHub CLI is not installed."
-            : "GitHub could not be reached. Run `gh auth status` and try again.",
-      });
-    }
-    return true;
-  }
-
-  if (url.pathname === "/api/inbox/notifications/sync" && request.method === "POST") {
-    try {
-      const result = await scheduler.runNotificationSync();
-      sendJson(response, 200, result);
-    } catch (error) {
-      sendJson(response, 502, {
-        error:
-          error?.code === "ENOENT"
-            ? "GitHub CLI is not installed."
-            : "GitHub notifications could not be refreshed.",
-      });
-    }
-    return true;
-  }
-
-  if (request.method === "GET" && url.pathname === "/api/inbox") {
-    try {
-      const view = url.searchParams.get("view") === "done" ? "done" : "active";
-      const offsetValue = Number.parseInt(url.searchParams.get("offset") ?? "0", 10);
-      const offset = Number.isInteger(offsetValue) && offsetValue >= 0 ? offsetValue : 0;
-      const limit = view === "done" ? 200 : 1_000;
-      const queueState = await readQueueState({ limit, offset, view });
-      const saved = await readSettings();
-      const inbox = inboxFromQueue(queueState, saved.username || queueState.sync.username);
-      const store = await getInboxStore();
-      const totals = store.queueCounts();
-      response.writeHead(200, secureHeaders("application/json; charset=utf-8"));
-      response.end(
-        JSON.stringify({
-          ...inbox,
-          counts: { ...store.activeQueueCounts(), done: totals.done },
-          page: {
-            hasMore: offset + Object.keys(queueState.items).length < totals[view],
-            limit,
-            nextOffset: offset + Object.keys(queueState.items).length,
-            offset,
-            total: totals[view],
-            view,
-          },
-        }),
-      );
-    } catch {
-      sendJson(response, 500, { error: "The local queue could not be loaded." });
-    }
-    return true;
-  }
-
-  return false;
-}
+export const handleApiRequest = createInboxApi({
+  getInboxStore,
+  getNotifications,
+  inboxFromQueue,
+  markGitHubNotificationDone,
+  mutateQueueState,
+  prKey,
+  readQueueState,
+  readSettings,
+  saveSettings,
+  setQueueItemDone,
+  setQueueItemRead,
+  setQueueItemsDone,
+  validNotificationThreadId,
+});

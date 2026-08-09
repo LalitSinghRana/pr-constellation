@@ -29,6 +29,50 @@ const reviewThreadsQuery = `
   }
 `;
 
+const pullRequestConversationQuery = `
+  query($owner: String!, $name: String!, $number: Int!, $threadCursor: String, $timelineCursor: String) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        timelineItems(first: 100, after: $timelineCursor) {
+          pageInfo { endCursor hasNextPage }
+          nodes {
+            __typename
+            ... on IssueComment { databaseId body createdAt url author { login avatarUrl } }
+            ... on PullRequestReview { databaseId body state submittedAt url author { login avatarUrl } }
+            ... on PullRequestCommit { commit { oid message authoredDate url author { user { login avatarUrl } } } }
+            ... on MergedEvent { createdAt actor { login avatarUrl } }
+            ... on ClosedEvent { createdAt actor { login avatarUrl } }
+            ... on ReopenedEvent { createdAt actor { login avatarUrl } }
+            ... on ReadyForReviewEvent { createdAt actor { login avatarUrl } }
+            ... on HeadRefForcePushedEvent { createdAt actor { login avatarUrl } }
+            ... on ReviewRequestedEvent {
+              createdAt
+              actor { login avatarUrl }
+              requestedReviewer {
+                ... on User { login }
+                ... on Team { name }
+              }
+            }
+            ... on CrossReferencedEvent { createdAt actor { login avatarUrl } }
+          }
+        }
+        reviewThreads(first: 100, after: $threadCursor) {
+          pageInfo { endCursor hasNextPage }
+          nodes {
+            isResolved
+            isOutdated
+            path
+            line
+            comments(first: 100) {
+              nodes { databaseId body createdAt url author { login avatarUrl } }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 export async function checkGitHubWriteAccess({ runGh = runGhJson } = {}) {
   try {
     const { stdout } = await runGh(["auth", "status"], { parseJson: false });
@@ -77,6 +121,61 @@ export async function fetchReviewThreads({ number, owner, repo, runGh = runGhJso
   return {
     headSha: pullRequest?.headRefOid || null,
     threads: (pullRequest?.reviewThreads?.nodes || []).map(normalizeReviewThread),
+  };
+}
+
+export async function fetchPullRequestConversation({
+  number,
+  owner,
+  repo,
+  runGh = runGhJson,
+} = {}) {
+  const timeline = new Map();
+  const threads = new Map();
+  let threadCursor = null;
+  let timelineCursor = null;
+
+  // ponytail: cap at 1,000 items per connection; add an explicit load-more UI if a PR reaches it.
+  for (let page = 0; page < 10; page += 1) {
+    const response = await runGh([
+      "api",
+      "graphql",
+      "-f",
+      `query=${pullRequestConversationQuery}`,
+      "-f",
+      `owner=${owner}`,
+      "-f",
+      `name=${repo}`,
+      "-F",
+      `number=${number}`,
+      ...(threadCursor ? ["-f", `threadCursor=${threadCursor}`] : []),
+      ...(timelineCursor ? ["-f", `timelineCursor=${timelineCursor}`] : []),
+    ]);
+    const pullRequest = response?.data?.repository?.pullRequest;
+    for (const item of pullRequest?.timelineItems?.nodes || []) {
+      const normalized = normalizeConversationItem(item);
+      if (normalized)
+        timeline.set(`${normalized.type}:${normalized.id}:${normalized.createdAt}`, normalized);
+    }
+    for (const thread of pullRequest?.reviewThreads?.nodes || []) {
+      const normalized = normalizeConversationThread(thread);
+      threads.set(
+        `${normalized.path}:${normalized.line}:${normalized.comments[0]?.id}`,
+        normalized,
+      );
+    }
+    timelineCursor = pullRequest?.timelineItems?.pageInfo?.hasNextPage
+      ? pullRequest.timelineItems.pageInfo.endCursor
+      : null;
+    threadCursor = pullRequest?.reviewThreads?.pageInfo?.hasNextPage
+      ? pullRequest.reviewThreads.pageInfo.endCursor
+      : null;
+    if (!timelineCursor && !threadCursor) break;
+  }
+
+  return {
+    timeline: [...timeline.values()],
+    threads: [...threads.values()],
   };
 }
 
@@ -257,6 +356,65 @@ function normalizeReviewThread(thread) {
     line: thread?.line ?? null,
     path: thread?.path || "",
     startLine: thread?.startLine ?? null,
+  };
+}
+
+function normalizeConversationItem(item) {
+  const actor = item?.author || item?.actor || item?.commit?.author?.user;
+  const base = {
+    actor: actor?.login || "GitHub",
+    avatarUrl: actor?.avatarUrl || "",
+    createdAt: item?.createdAt || item?.submittedAt || item?.commit?.authoredDate || "",
+    type: item?.__typename || "",
+    url: item?.url || item?.commit?.url || "",
+  };
+
+  if (item?.__typename === "IssueComment") {
+    return { ...base, body: item.body || "", id: item.databaseId || null, kind: "comment" };
+  }
+  if (item?.__typename === "PullRequestReview") {
+    return {
+      ...base,
+      body: item.body || "",
+      id: item.databaseId || null,
+      kind: "review",
+      state: item.state || "COMMENTED",
+    };
+  }
+  if (item?.__typename === "PullRequestCommit") {
+    return {
+      ...base,
+      body: item.commit?.message || "",
+      id: item.commit?.oid || null,
+      kind: "commit",
+    };
+  }
+  if (item?.__typename?.endsWith("Event")) {
+    return {
+      ...base,
+      body: "",
+      id: null,
+      kind: "event",
+      requestedReviewer: item.requestedReviewer?.login || item.requestedReviewer?.name || "",
+    };
+  }
+  return null;
+}
+
+function normalizeConversationThread(thread) {
+  return {
+    comments: (thread?.comments?.nodes || []).map((comment) => ({
+      actor: comment?.author?.login || "GitHub",
+      avatarUrl: comment?.author?.avatarUrl || "",
+      body: comment?.body || "",
+      createdAt: comment?.createdAt || "",
+      id: comment?.databaseId || null,
+      url: comment?.url || "",
+    })),
+    isOutdated: Boolean(thread?.isOutdated),
+    isResolved: Boolean(thread?.isResolved),
+    line: thread?.line ?? null,
+    path: thread?.path || "",
   };
 }
 

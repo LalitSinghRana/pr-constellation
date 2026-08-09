@@ -2,13 +2,15 @@ import { cockpitOrigin } from "../runtime-config.js";
 import {
   addReviewDraftComment,
   deleteReviewDraftComment,
+  getReviewConversation,
   getReviewDraftSnapshot,
   submitReviewDraft,
   updateReviewDraftBody,
   updateReviewDraftComment,
 } from "./review-draft-service.js";
 
-const reviewSlugPattern = /^\/api\/reviews\/([^/]+)\/draft(?:\/comments(?:\/([^/]+))?|\/submit)?$/;
+const reviewSlugPattern =
+  /^\/api\/reviews\/([^/]+)\/(?:conversation|draft(?:\/comments(?:\/([^/]+))?|\/submit)?)$/;
 
 export async function handleReviewDraftApiRequest(request, response) {
   const url = new URL(request.url, cockpitOrigin);
@@ -18,9 +20,15 @@ export async function handleReviewDraftApiRequest(request, response) {
   const slug = decodeURIComponent(match[1]);
   const commentId = match[2] ? decodeURIComponent(match[2]) : null;
   const commentsPath = url.pathname.endsWith("/comments") || Boolean(commentId);
+  const conversationPath = url.pathname === `/api/reviews/${slug}/conversation`;
   const submitPath = url.pathname.endsWith("/submit");
 
   try {
+    if (request.method === "GET" && conversationPath) {
+      sendJson(response, 200, await getReviewConversation(slug));
+      return true;
+    }
+
     if (request.method === "GET" && url.pathname === `/api/reviews/${slug}/draft`) {
       sendJson(response, 200, await getReviewDraftSnapshot(slug));
       return true;

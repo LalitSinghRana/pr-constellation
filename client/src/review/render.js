@@ -313,8 +313,11 @@ function buildReviewData({ pr }) {
   return {
     additions: pr.additions ?? null,
     authorLogin: pr.author?.login || "",
+    authorAvatarUrl: pr.author?.avatarUrl || "",
     baseRefName: pr.baseRefName || "",
+    body: pr.body || "",
     changedFiles: pr.changedFiles ?? null,
+    createdAt: pr.createdAt || "",
     deletions: pr.deletions ?? null,
     headRefName: pr.headRefName || "",
     number: pr.number ?? null,

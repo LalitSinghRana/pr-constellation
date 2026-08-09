@@ -5,7 +5,6 @@ import {
   BaseEdge,
   getSmoothStepPath,
   Handle,
-  MarkerType,
   MiniMap,
   Position,
   ReactFlow,
@@ -15,23 +14,37 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import {
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  CircleDot,
+  CircleX,
   FileCode2,
   FileDiff,
+  FileText,
   FolderTree,
   GitBranch,
+  GitCommitHorizontal,
+  GitMerge,
   GitPullRequest,
+  GitPullRequestArrow,
   Layers3,
-  UserRound,
+  MessageSquare,
+  RotateCcw,
+  UserRoundPlus,
 } from "lucide-react";
+import { Timeline } from "primereact/timeline";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
+import remarkGfm from "remark-gfm";
+import { remarkAlert } from "remark-github-blockquote-alert";
 import { Badge } from "../components/ui/badge.jsx";
 import { Button } from "../components/ui/button.jsx";
 import { Collapsible, CollapsibleTrigger } from "../components/ui/collapsible.jsx";
@@ -46,38 +59,28 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.jsx";
 import { cn } from "../lib/utils.js";
 import { buildChunkDiffData } from "./diff-view-model.js";
+import { githubMarkdownSanitizeSchema } from "./github-markdown.js";
 import { lineKey, lineTargetFromGutter } from "./review-comment-model.js";
 import { InlineCommentComposer, ReviewDraftProvider } from "./review-draft-panel.jsx";
-import { foldSectionTree, normalizeSectionTree } from "./section-tree-model.js";
+import {
+  buildReviewTree,
+  FALLBACK_TREE_VIEWPORT,
+  FILE_TREE_SOURCE_HANDLE,
+  FILE_TREE_TARGET_HANDLE,
+  MIN_TREE_ZOOM,
+  sectionTreeSections,
+  VIEWPORT_PADDING_Y,
+} from "./review-tree/layout.js";
+import {
+  readReviewData,
+  readReviewSlug,
+  readTreeData,
+  usePersistentStringSet,
+} from "./review-tree/state.js";
 
-const FILE_NODE_GAP_X = 160;
-const FILE_NODE_PADDING = 32;
-const FILE_NODE_PADDING_TOP = 72;
-const FILE_NODE_MIN_HEIGHT = 180;
-const FILE_NODE_STACK_GAP_Y = 56;
-const REVIEW_SECTION_CODE_CHARACTER_COLUMNS = 120;
-const REVIEW_SECTION_CODE_CHARACTER_WIDTH = 7;
-const REVIEW_SECTION_GUTTER_WIDTH = 102;
-const REVIEW_SECTION_HORIZONTAL_PADDING = 18;
-const REVIEW_SECTION_WIDTH =
-  REVIEW_SECTION_CODE_CHARACTER_COLUMNS * REVIEW_SECTION_CODE_CHARACTER_WIDTH +
-  REVIEW_SECTION_GUTTER_WIDTH +
-  REVIEW_SECTION_HORIZONTAL_PADDING;
-const REVIEW_SECTION_HEADER_HEIGHT = 42;
-const REVIEW_GROUP_HEIGHT = 118;
-const REVIEW_GROUP_WIDTH = 520;
-const SECTION_TREE_LAYER_GAP_Y = 110;
-const SECTION_TREE_SIBLING_GAP_X = 72;
-const MIN_TREE_ZOOM = 0.18;
 const REVIEW_CAMERA_DURATION = 220;
 const REVIEW_CAMERA_PADDING_X = 80;
 const REVIEW_STEP_MAX_ZOOM = 1.25;
-const FILE_TREE_LAYER_GAP_Y = FILE_NODE_STACK_GAP_Y * 3;
-const FILE_TREE_SIBLING_GAP_X = FILE_NODE_GAP_X;
-const VIEWPORT_PADDING_Y = 176;
-const FALLBACK_TREE_VIEWPORT = { x: 72, y: 52, zoom: 0.86 };
-const FILE_TREE_SOURCE_HANDLE = "file-tree-source";
-const FILE_TREE_TARGET_HANDLE = "file-tree-target";
 const INITIAL_COLOR_MODE = document.documentElement.classList.contains("dark") ? "dark" : "light";
 const REVIEW_STEP_BUTTON_CLASS =
   "review-step-button absolute z-[12] -translate-y-1/2 border-[color-mix(in_oklab,var(--primary)_38%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_12%,var(--background))] text-primary shadow-xs enabled:hover:border-[color-mix(in_oklab,var(--primary)_54%,var(--border))] enabled:hover:bg-[color-mix(in_oklab,var(--primary)_20%,var(--background))] enabled:hover:text-primary motion-reduce:transition-none";
@@ -87,8 +90,7 @@ const REVIEW_DIFF_GUTTER_HAS_COMMENT_CLASS = "text-primary font-bold";
 const REVIEW_DIFF_GUTTER_ACTIVE_CLASS = "bg-primary/18 text-primary font-bold";
 const REVIEW_LINE_COMMENT_MARKER_CLASS =
   "absolute top-1/2 right-px size-2 border-0 p-0 rounded-full -translate-y-1/2 bg-primary cursor-pointer shadow-[0_0_0_2px_color-mix(in_oklab,var(--card)_80%,transparent)]";
-const REVIEW_LINE_COMMENT_MARKER_GITHUB_CLASS =
-  "bg-[color-mix(in_oklab,var(--primary)_55%,white)]";
+const REVIEW_LINE_COMMENT_MARKER_GITHUB_CLASS = "bg-[color-mix(in_oklab,var(--primary)_55%,white)]";
 const REVIEW_INLINE_COMPOSER_ANCHOR_CLASS = "fixed z-[200] pointer-events-auto";
 const REVIEW_NAVIGATION_CONTROL_SELECTOR = [
   "a",
@@ -108,24 +110,6 @@ const REVIEW_NAVIGATION_CONTROL_SELECTOR = [
   "[role=tab]",
   "[role=textbox]",
 ].join(", ");
-const FILE_REVIEW_PRIORITY = new Map([
-  ["primary", 0],
-  ["secondary", 1],
-  ["skim", 2],
-]);
-const FILE_CHANGE_KIND_PRIORITY = new Map([
-  ["runtime", 0],
-  ["test", 1],
-  ["storybook", 2],
-  ["type", 3],
-  ["config", 4],
-  ["dependency", 5],
-  ["docs", 6],
-  ["snapshot", 7],
-  ["generated", 8],
-  ["formatting", 9],
-  ["imports", 10],
-]);
 
 const nodeTypes = {
   reviewGroup: React.memo(ReviewGroupNode),
@@ -154,6 +138,7 @@ function App() {
     usePersistentStringSet(sourceOrderViewStorageKey);
   const stacks = treeData?.reviewStacks || [];
   const [activeStackId, setActiveStackId] = useState(() => stacks[0]?.id ?? null);
+  const [activeTab, setActiveTab] = useState("conversation");
   // First-pass layout uses the estimated reviewSectionHeight() formula; once
   // ReviewTreeCanvas measures real rendered heights that drift from the estimate,
   // this re-runs layout with real numbers. Rendered node ids and content are
@@ -213,12 +198,14 @@ function App() {
   );
 
   return (
-    <ReviewDraftProvider reviewSlug={reviewSlug}>
+    <ReviewDraftProvider reviewSlug={reviewSlug} showReviewSheet={activeTab === "trees"}>
       {(draft) => (
         <div className="review-shell fixed inset-0 grid h-dvh w-screen min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden bg-background">
-          <ReviewHeader review={review} />
+          <ReviewHeader activeTab={activeTab} onTabChange={setActiveTab} review={review} />
           <main className="review-main grid min-h-0 overflow-hidden">
-            {hasTree ? (
+            {activeTab === "conversation" ? (
+              <PullRequestConversation review={review} reviewSlug={reviewSlug} />
+            ) : hasTree ? (
               <section
                 className="review-tree-panel size-full min-h-0 overflow-hidden rounded-none border-0 bg-card shadow-none"
                 aria-label="PR review tree"
@@ -260,7 +247,7 @@ function App() {
   );
 }
 
-function ReviewHeader({ review }) {
+function ReviewHeader({ activeTab, onTabChange, review }) {
   return (
     <header className="review-header sticky top-0 z-20 border-b border-border bg-[color-mix(in_oklab,var(--card)_92%,var(--background))] px-5 py-3 shadow-xs backdrop-blur-[20px] max-[980px]:px-3 max-[980px]:py-2.5">
       <div className="review-header-main grid grid-cols-[minmax(0,1fr)_auto] items-center justify-between gap-3.5 max-[980px]:grid-cols-1 max-[980px]:gap-2">
@@ -286,50 +273,220 @@ function ReviewHeader({ review }) {
             <a href={review.url}>{review.title || "Untitled pull request"}</a>
           </h1>
         </div>
-        <div className="review-meta flex min-w-0 max-w-[min(44vw,520px)] flex-[0_1_auto] flex-wrap justify-end gap-2 max-[980px]:max-w-full max-[980px]:justify-start">
-          <Badge
-            className="meta-chip branch-chip min-w-0 max-w-[min(27vw,255px)] font-mono"
-            title="Base and head branches"
-            variant="outline"
-          >
-            <GitBranch aria-hidden="true" size={14} />
-            <span className="branch-name is-base min-w-0 max-w-[82px] flex-[0_1_auto] truncate">
-              {review.baseRefName || "base"}
-            </span>
-            <span
-              aria-hidden="true"
-              className="branch-arrow flex-none font-extrabold text-muted-foreground"
-            >
-              &lt;-
-            </span>
-            <span className="branch-name is-head min-w-0 max-w-[138px] flex-1 truncate">
-              {review.headRefName || "head"}
-            </span>
-          </Badge>
-          <Badge
-            className="meta-chip author-chip min-w-0 max-w-[150px]"
-            title="Author"
-            variant="outline"
-          >
-            <UserRound aria-hidden="true" size={14} />
-            <span className="author-name min-w-0 truncate">{review.authorLogin || "unknown"}</span>
-          </Badge>
-          <Badge
-            className="change-pill min-w-0 border-transparent bg-diff-add/15 font-mono text-diff-add"
-            variant="outline"
-          >
-            +{review.additions ?? 0}
-          </Badge>
-          <Badge
-            className="change-pill min-w-0 border-transparent bg-diff-del/15 font-mono text-diff-del"
-            variant="outline"
-          >
-            -{review.deletions ?? 0}
-          </Badge>
-        </div>
+        <Tabs onValueChange={onTabChange} value={activeTab}>
+          <TabsList aria-label="Review content">
+            <TabsTrigger value="conversation">Conversation</TabsTrigger>
+            <TabsTrigger value="trees">Review trees</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
     </header>
   );
+}
+
+function PullRequestConversation({ review, reviewSlug }) {
+  const [conversation, setConversation] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/reviews/${encodeURIComponent(reviewSlug)}/conversation`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Conversation could not be loaded.");
+        setConversation(payload);
+      })
+      .catch((loadError) => {
+        if (loadError.name !== "AbortError") setError(loadError.message);
+      });
+    return () => controller.abort();
+  }, [reviewSlug]);
+
+  if (error) return <p className="m-auto text-sm text-destructive">{error}</p>;
+  if (!conversation)
+    return <p className="m-auto text-sm text-muted-foreground">Loading conversation…</p>;
+
+  const timeline = [
+    ...(review.body.trim()
+      ? [
+          {
+            actor: review.authorLogin || "Author",
+            avatarUrl: review.authorAvatarUrl,
+            body: review.body,
+            createdAt: review.createdAt,
+            kind: "description",
+            type: "PullRequest",
+            url: review.url,
+          },
+        ]
+      : []),
+    ...conversation.timeline,
+    ...conversation.threads.map((thread) => ({
+      actor: thread.comments[0]?.actor || "GitHub",
+      avatarUrl: thread.comments[0]?.avatarUrl || "",
+      createdAt: thread.comments[0]?.createdAt || "",
+      kind: "thread",
+      thread,
+      type: "PullRequestReviewThread",
+    })),
+  ].sort((left, right) => timelineTimestamp(left) - timelineTimestamp(right));
+
+  return (
+    <section
+      aria-label="Pull request conversation"
+      className="flex min-h-0 min-w-0 items-start justify-center overflow-auto bg-card px-5 py-6 max-[980px]:px-3"
+    >
+      {timeline.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No conversation yet.</p>
+      ) : (
+        <Timeline
+          className="conversation-timeline w-full min-w-0 max-w-5xl"
+          content={(item) => <ConversationItem item={item} />}
+          marker={(item) => {
+            const Icon = conversationIcon(item);
+            return (
+              <span
+                className={cn(
+                  "grid size-6 shrink-0 place-items-center rounded-full border-2 border-background",
+                  conversationIconClass(item),
+                )}
+              >
+                <Icon aria-hidden size={13} strokeWidth={2.5} />
+              </span>
+            );
+          }}
+          pt={{
+            connector: { className: "conversation-timeline-connector" },
+            content: { className: "conversation-timeline-content" },
+            event: { className: "conversation-timeline-event" },
+            opposite: { className: "conversation-timeline-opposite" },
+            separator: { className: "conversation-timeline-separator" },
+          }}
+          unstyled
+          value={timeline}
+        />
+      )}
+    </section>
+  );
+}
+
+function ConversationItem({ item }) {
+  const label = conversationLabel(item);
+  const isContent =
+    ["comment", "description", "thread"].includes(item.kind) ||
+    (item.kind === "review" && Boolean(item.body.trim()));
+  return (
+    <article
+      className={cn(
+        "relative min-w-0 text-sm",
+        isContent ? "rounded-lg border bg-background p-4" : "flex items-center py-1.5",
+      )}
+    >
+      <p
+        className={cn(
+          "min-w-0 font-semibold text-muted-foreground",
+          isContent ? "text-xs" : "truncate",
+        )}
+      >
+        {item.actor} {label}
+      </p>
+      {item.kind === "thread" ? <ConversationThread thread={item.thread} /> : null}
+      {isContent && item.body ? <ConversationMarkdown body={item.body} /> : null}
+    </article>
+  );
+}
+
+function ConversationThread({ thread }) {
+  return (
+    <div className="mt-3 grid gap-3">
+      <p className="font-mono text-xs text-muted-foreground">
+        {thread.path}:{thread.line}
+        {thread.isResolved ? " · resolved" : ""}
+        {thread.isOutdated ? " · outdated" : ""}
+      </p>
+      {thread.comments.map((comment) => (
+        <div className="border-t pt-3" key={comment.id || comment.createdAt}>
+          <p className="text-xs font-semibold text-muted-foreground">{comment.actor}</p>
+          <ConversationMarkdown body={comment.body} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ConversationMarkdown({ body }) {
+  return (
+    <div className="conversation-markdown mt-3 min-w-0 break-words leading-6">
+      <ReactMarkdown
+        components={{ table: MarkdownTable }}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, githubMarkdownSanitizeSchema]]}
+        remarkPlugins={[remarkGfm, remarkAlert]}
+      >
+        {body}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function MarkdownTable({ children }) {
+  return (
+    <div className="my-3 overflow-x-auto rounded-md border border-border">
+      <table className="conversation-markdown-table">{children}</table>
+    </div>
+  );
+}
+
+function conversationLabel(item) {
+  if (item.kind === "description") return "opened this pull request";
+  if (item.kind === "review") return `submitted ${item.state.toLowerCase().replaceAll("_", " ")}`;
+  if (item.kind === "thread") return "reviewed a file";
+  if (item.kind === "commit") return `pushed ${item.body.split("\n", 1)[0] || "a commit"}`;
+  if (item.type === "ReviewRequestedEvent")
+    return `requested review from ${item.requestedReviewer || "a reviewer"}`;
+  if (item.kind === "event")
+    return String(item.type)
+      .replace(/Event$/, "")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .toLowerCase();
+  return "commented";
+}
+
+function conversationIcon(item) {
+  if (item.kind === "description") return GitPullRequest;
+  if (item.kind === "comment" || item.kind === "thread") return MessageSquare;
+  if (item.kind === "review" && item.state === "APPROVED") return Check;
+  if (item.kind === "review" && item.state === "COMMENTED") return MessageSquare;
+  if (item.kind === "review") return FileText;
+  if (item.kind === "commit") return GitCommitHorizontal;
+  if (item.type === "ReviewRequestedEvent") return UserRoundPlus;
+  if (item.type === "MergedEvent") return GitMerge;
+  if (item.type === "ClosedEvent") return CircleX;
+  if (item.type === "HeadRefForcePushedEvent") return RotateCcw;
+  if (item.type === "CrossReferencedEvent") return GitPullRequestArrow;
+  return CircleDot;
+}
+
+function conversationIconClass(item) {
+  if (item.type === "MergedEvent") return "bg-pr-merged text-background";
+  if (item.type === "ClosedEvent") return "bg-pr-closed text-background";
+  if (item.kind === "description") return "bg-pr-open text-background";
+  if (item.kind === "review" && item.state === "APPROVED") return "bg-pr-open text-background";
+  if (
+    item.kind === "comment" ||
+    item.kind === "thread" ||
+    (item.kind === "review" && item.state === "COMMENTED")
+  )
+    return "bg-background text-muted-foreground";
+  if (item.kind === "review") return "bg-primary text-primary-foreground";
+  return "bg-muted text-muted-foreground";
+}
+
+function timelineTimestamp(item) {
+  if (item.kind === "description") return 0;
+  const value = new Date(item.createdAt).getTime();
+  return Number.isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
 }
 
 function ReviewTreeCanvas({
@@ -1504,572 +1661,6 @@ function measureFixedComposer(row) {
       : Math.max(12, below);
 
   return { left, top, width };
-}
-
-function buildReviewTree(
-  analysis,
-  {
-    activeStackId = null,
-    expandedGroupIds = new Set(),
-    sourceOrderViewIds = new Set(),
-    measuredHeights = null,
-  } = {},
-) {
-  const nodes = [];
-  const edges = [];
-  const fileNodes = [];
-  const activeStack = activeStackId
-    ? (analysis?.reviewStacks || []).find((stack) => stack.id === activeStackId)
-    : null;
-  const fileTreeBranches = activeStack?.fileTree?.branches || [];
-  const fileSpecs = buildFileNodeSpecs(analysis, {
-    activeStackId,
-    expandedGroupIds,
-    sourceOrderViewIds,
-    measuredHeights,
-  });
-
-  for (const spec of fileSpecs) {
-    const { file, reviewSections, sectionTree, nodeHeight, nodeId, nodeWidth, viewMode, x, y } =
-      spec;
-    if (reviewSections.length === 0) {
-      continue;
-    }
-
-    const layout = spec.layout;
-
-    nodes.push({
-      id: nodeId,
-      data: { file, viewMode },
-      draggable: false,
-      initialHeight: nodeHeight,
-      initialWidth: nodeWidth,
-      position: { x, y },
-      selectable: false,
-      style: { height: nodeHeight, pointerEvents: "none", width: nodeWidth },
-      zIndex: 2,
-      type: "fileNode",
-    });
-    fileNodes.push({
-      branchCount: sectionTree.branches.length,
-      height: nodeHeight,
-      reviewSectionCount: reviewSections.length,
-      changeKind: file.changeKind,
-      reviewPriority: file.reviewPriority,
-      width: nodeWidth,
-      x,
-      y,
-    });
-
-    for (const item of layout.sections) {
-      nodes.push({
-        id: reviewSectionId(file, item.section.id),
-        data: {
-          file,
-          reviewSection: item.section,
-        },
-        draggable: false,
-        extent: "parent",
-        initialHeight: item.height,
-        initialWidth: reviewSectionWidth(item.section),
-        parentId: nodeId,
-        position: {
-          x: FILE_NODE_PADDING + item.x,
-          y: FILE_NODE_PADDING_TOP + item.y,
-        },
-        selectable: false,
-        style: { pointerEvents: "auto", width: reviewSectionWidth(item.section) },
-        type: item.section.reviewGroup ? "reviewGroup" : "reviewSection",
-        zIndex: 4,
-      });
-    }
-
-    const reviewSectionById = new Map(
-      reviewSections.map((reviewSection) => [reviewSection.id, reviewSection]),
-    );
-    const validReviewSectionIds = new Set(reviewSectionById.keys());
-    for (const branch of sectionTree.branches) {
-      if (
-        !validReviewSectionIds.has(branch.parentId) ||
-        !validReviewSectionIds.has(branch.childId)
-      ) {
-        continue;
-      }
-
-      edges.push({
-        id: `${file.id}:${branch.parentId}->${branch.childId}`,
-        className: "section-tree-edge",
-        data: {
-          explanation: branch.explanation || "",
-          sourceTitle: reviewSectionById.get(branch.parentId)?.title || branch.parentId,
-          targetTitle: reviewSectionById.get(branch.childId)?.title || branch.childId,
-        },
-        markerEnd: {
-          color: "var(--section-tree-color)",
-          height: 12,
-          type: MarkerType.ArrowClosed,
-          width: 12,
-        },
-        source: reviewSectionId(file, branch.parentId),
-        style: {
-          stroke: "var(--section-tree-color)",
-          strokeLinecap: "round",
-          strokeOpacity: 0.8,
-          strokeWidth: 2.5,
-        },
-        target: reviewSectionId(file, branch.childId),
-        type: "reviewBranch",
-        zIndex: 4,
-      });
-    }
-  }
-
-  const fileSpecById = new Map(fileSpecs.map((spec) => [spec.file.id, spec]));
-  for (const branch of fileTreeBranches) {
-    const sourceSpec = fileSpecById.get(branch.parentId);
-    const targetSpec = fileSpecById.get(branch.childId);
-    if (!sourceSpec || !targetSpec) {
-      continue;
-    }
-
-    edges.push({
-      id: `file-tree:${branch.parentId}->${branch.childId}`,
-      className: "file-tree-edge",
-      data: {
-        explanation: branch.explanation || "",
-        sourceTitle: sourceSpec.file.path || branch.parentId,
-        targetTitle: targetSpec.file.path || branch.childId,
-      },
-      markerEnd: {
-        color: "var(--file-tree-color)",
-        height: 16,
-        type: MarkerType.ArrowClosed,
-        width: 16,
-      },
-      source: sourceSpec.nodeId,
-      sourceHandle: FILE_TREE_SOURCE_HANDLE,
-      style: {
-        stroke: "var(--file-tree-color)",
-        strokeLinecap: "round",
-        strokeOpacity: 0.75,
-        strokeWidth: 5,
-      },
-      target: targetSpec.nodeId,
-      targetHandle: FILE_TREE_TARGET_HANDLE,
-      type: "reviewBranch",
-      zIndex: 3,
-    });
-  }
-
-  return {
-    defaultViewport: defaultViewportForFileNodes(fileNodes),
-    edges,
-    groupIds: fileSpecs.flatMap((spec) => spec.sectionTree.groupIds || []),
-    nodes,
-  };
-}
-
-function buildFileNodeSpecs(
-  analysis,
-  {
-    activeStackId = null,
-    expandedGroupIds = new Set(),
-    sourceOrderViewIds = new Set(),
-    measuredHeights = null,
-  } = {},
-) {
-  const activeStack = activeStackId
-    ? (analysis?.reviewStacks || []).find((stack) => stack.id === activeStackId)
-    : null;
-  const activeFileIds = activeStack ? new Set(activeStack.fileIds || []) : null;
-  const fileLayouts = (analysis?.files || [])
-    .filter((file) => sectionTreeSections(file).length > 0)
-    .filter((file) => !activeFileIds || activeFileIds.has(file.id))
-    .map((file) =>
-      buildFileLayout(file, {
-        expandedGroupIds,
-        getReviewSectionHeight: measuredHeights
-          ? (node) =>
-              measuredHeights.get(reviewSectionId(file, node.id)) ?? reviewSectionHeight(node)
-          : reviewSectionHeight,
-        viewMode: sourceOrderViewIds.has(file.id) ? "source" : "tree",
-      }),
-    );
-
-  return layoutFileNodesByFileTree(fileLayouts, activeStack?.fileTree?.branches || []);
-}
-
-function layoutFileNodesByFileTree(fileLayouts, branches) {
-  const items = fileLayouts.map((fileLayout, order) => ({
-    fileLayout,
-    height: fileLayout.nodeHeight,
-    order,
-    width: fileLayout.nodeWidth,
-  }));
-  const layout = layoutTreeTopToBottom({
-    branches,
-    getId: (item) => item.fileLayout.file.id,
-    items,
-    layerGap: FILE_TREE_LAYER_GAP_Y,
-    siblingGap: FILE_TREE_SIBLING_GAP_X,
-  });
-
-  return layout.placements.map(({ item, x, y }) => ({ ...item.fileLayout, x, y }));
-}
-
-function buildFileLayout(
-  file,
-  {
-    expandedGroupIds = new Set(),
-    getReviewSectionHeight = reviewSectionHeight,
-    viewMode = "tree",
-  } = {},
-) {
-  const sectionTree =
-    viewMode === "source"
-      ? buildSourceOrderSectionTree(file)
-      : foldSectionTree(file, { expandedGroupIds });
-  const reviewSections = sectionTree.sections;
-  const layout = layoutReviewSections(reviewSections, sectionTree.branches, getReviewSectionHeight);
-
-  return {
-    file,
-    layout,
-    reviewSections,
-    sectionTree,
-    nodeHeight: Math.max(
-      FILE_NODE_MIN_HEIGHT,
-      FILE_NODE_PADDING_TOP + layout.height + FILE_NODE_PADDING,
-    ),
-    nodeId: fileNodeId(file),
-    nodeWidth: FILE_NODE_PADDING * 2 + layout.width,
-    viewMode,
-  };
-}
-
-function buildSourceOrderSectionTree(file) {
-  return {
-    branches: [],
-    groupIds: [],
-    sections: [
-      {
-        id: "source-order-view",
-        title: "Source-order diff",
-        reviewPriority: file.reviewPriority,
-        changeKind: file.changeKind,
-        explanation:
-          "Every changed hunk stays together in source order for top-to-bottom file context, instead of the Section Tree grouping.",
-        changedLineIds: file.changedLineIds || [],
-        codeChunks: file.sourceCodeChunks || [],
-        sourceOrderView: true,
-      },
-    ],
-  };
-}
-
-function layoutTreeTopToBottom({ branches, getId, items, layerGap, siblingGap }) {
-  if (items.length === 0) {
-    return { height: 0, placements: [], width: 0 };
-  }
-
-  const itemById = new Map(items.map((item) => [getId(item), item]));
-  const childrenById = new Map(items.map((item) => [getId(item), []]));
-  const incomingIds = new Set();
-  const reviewOrderById = new Map();
-
-  for (const branch of branches) {
-    if (
-      branch.parentId === branch.childId ||
-      !itemById.has(branch.parentId) ||
-      !itemById.has(branch.childId) ||
-      incomingIds.has(branch.childId)
-    ) {
-      continue;
-    }
-
-    childrenById.get(branch.parentId).push(branch.childId);
-    incomingIds.add(branch.childId);
-    if (Number.isInteger(branch.order)) {
-      reviewOrderById.set(branch.childId, branch.order);
-    }
-  }
-
-  for (const children of childrenById.values()) {
-    children.sort((leftId, rightId) => {
-      return (
-        (reviewOrderById.get(leftId) ?? itemById.get(leftId).order) -
-        (reviewOrderById.get(rightId) ?? itemById.get(rightId).order)
-      );
-    });
-  }
-
-  const roots = items
-    .filter((item) => !incomingIds.has(getId(item)))
-    .sort((left, right) => left.order - right.order);
-  const orderedRoots =
-    roots.length > 0 ? roots : items.slice().sort((left, right) => left.order - right.order);
-  const depthById = new Map();
-  const measuredById = new Map();
-
-  function assignDepth(itemId, depth, ancestry = new Set()) {
-    if (ancestry.has(itemId)) {
-      return;
-    }
-
-    const knownDepth = depthById.get(itemId);
-    if (knownDepth !== undefined && knownDepth <= depth) {
-      return;
-    }
-
-    depthById.set(itemId, depth);
-    const nextAncestry = new Set(ancestry);
-    nextAncestry.add(itemId);
-
-    for (const childId of childrenById.get(itemId) || []) {
-      assignDepth(childId, depth + 1, nextAncestry);
-    }
-  }
-
-  for (const root of orderedRoots) {
-    assignDepth(getId(root), 0);
-  }
-
-  for (const item of items) {
-    if (!depthById.has(getId(item))) {
-      orderedRoots.push(item);
-      assignDepth(getId(item), 0);
-    }
-  }
-
-  function measure(itemId, ancestry = new Set()) {
-    if (measuredById.has(itemId)) {
-      return measuredById.get(itemId);
-    }
-
-    const item = itemById.get(itemId);
-    if (!item || ancestry.has(itemId)) {
-      return { childrenWidth: 0, subtreeWidth: item?.width || 0 };
-    }
-
-    const nextAncestry = new Set(ancestry);
-    nextAncestry.add(itemId);
-    const childMeasurements = (childrenById.get(itemId) || []).map((childId) => ({
-      id: childId,
-      measurement: measure(childId, nextAncestry),
-    }));
-    const childrenWidth = childMeasurements.reduce((total, child, index) => {
-      return total + child.measurement.subtreeWidth + (index > 0 ? siblingGap : 0);
-    }, 0);
-    const measurement = {
-      childMeasurements,
-      childrenWidth,
-      subtreeWidth: Math.max(item.width, childrenWidth),
-    };
-
-    measuredById.set(itemId, measurement);
-    return measurement;
-  }
-
-  const maxHeightByDepth = new Map();
-  for (const item of items) {
-    const depth = depthById.get(getId(item)) || 0;
-    maxHeightByDepth.set(depth, Math.max(maxHeightByDepth.get(depth) || 0, item.height));
-  }
-
-  const rowYByDepth = new Map();
-  let cursorY = 0;
-  for (const depth of [...maxHeightByDepth.keys()].sort((left, right) => left - right)) {
-    rowYByDepth.set(depth, cursorY);
-    cursorY += (maxHeightByDepth.get(depth) || 0) + layerGap;
-  }
-
-  const placements = [];
-  const placedIds = new Set();
-
-  function place(itemId, left) {
-    if (placedIds.has(itemId)) {
-      return;
-    }
-
-    const item = itemById.get(itemId);
-    const measurement = measure(itemId);
-    const depth = depthById.get(itemId) || 0;
-    placedIds.add(itemId);
-    placements.push({
-      item,
-      x: left + (measurement.subtreeWidth - item.width) / 2,
-      y: rowYByDepth.get(depth) || 0,
-    });
-
-    let childLeft = left + (measurement.subtreeWidth - measurement.childrenWidth) / 2;
-    for (const child of measurement.childMeasurements || []) {
-      place(child.id, childLeft);
-      childLeft += child.measurement.subtreeWidth + siblingGap;
-    }
-  }
-
-  let cursorX = 0;
-  for (const root of orderedRoots) {
-    const rootId = getId(root);
-    if (placedIds.has(rootId)) {
-      continue;
-    }
-    const measurement = measure(rootId);
-    place(rootId, cursorX);
-    cursorX += measurement.subtreeWidth + siblingGap;
-  }
-
-  const width = Math.max(0, cursorX - siblingGap);
-  const height = placements.reduce((maximum, placement) => {
-    return Math.max(maximum, placement.y + placement.item.height);
-  }, 0);
-
-  return { height, placements, width };
-}
-
-function defaultViewportForFileNodes(fileNodes) {
-  const primaryFileNode = fileNodes.reduce((best, fileNode) => {
-    if (!best) {
-      return fileNode;
-    }
-    const reviewPriorityDifference =
-      fileReviewPriority(fileNode.reviewPriority) - fileReviewPriority(best.reviewPriority);
-    if (reviewPriorityDifference !== 0) {
-      return reviewPriorityDifference < 0 ? fileNode : best;
-    }
-    const changeKindDifference =
-      fileChangeKindPriority(fileNode.changeKind) - fileChangeKindPriority(best.changeKind);
-    if (changeKindDifference !== 0) {
-      return changeKindDifference < 0 ? fileNode : best;
-    }
-    if (fileNode.branchCount !== best.branchCount) {
-      return fileNode.branchCount > best.branchCount ? fileNode : best;
-    }
-    return fileNode.reviewSectionCount > best.reviewSectionCount ? fileNode : best;
-  }, null);
-
-  if (!primaryFileNode) {
-    return FALLBACK_TREE_VIEWPORT;
-  }
-
-  const preferredZoom = primaryFileNode.width > 1800 ? 0.82 : 0.92;
-  const nodeFitZoom = Math.max(280, window.innerWidth - 32) / REVIEW_SECTION_WIDTH;
-  const zoom = Math.max(MIN_TREE_ZOOM, Math.min(preferredZoom, nodeFitZoom));
-  const primaryCenterX = primaryFileNode.x + primaryFileNode.width / 2;
-  return {
-    x: Math.round(window.innerWidth / 2 - primaryCenterX * zoom),
-    y: Math.round(VIEWPORT_PADDING_Y - primaryFileNode.y * zoom),
-    zoom,
-  };
-}
-
-function fileReviewPriority(reviewPriority) {
-  return FILE_REVIEW_PRIORITY.get(reviewPriority) ?? FILE_REVIEW_PRIORITY.size;
-}
-
-function fileChangeKindPriority(changeKind) {
-  return FILE_CHANGE_KIND_PRIORITY.get(changeKind) ?? FILE_CHANGE_KIND_PRIORITY.size;
-}
-
-function layoutReviewSections(
-  reviewSections,
-  branches,
-  getReviewSectionHeight = reviewSectionHeight,
-) {
-  const items = reviewSections.map((section, order) => ({
-    height: getReviewSectionHeight(section),
-    section,
-    order,
-    width: reviewSectionWidth(section),
-  }));
-  const layout = layoutTreeTopToBottom({
-    branches,
-    getId: (item) => item.section.id,
-    items,
-    layerGap: SECTION_TREE_LAYER_GAP_Y,
-    siblingGap: SECTION_TREE_SIBLING_GAP_X,
-  });
-
-  return {
-    height: layout.height,
-    sections: layout.placements.map(({ item, x, y }) => ({
-      height: item.height,
-      section: item.section,
-      x,
-      y,
-    })),
-    width: Math.max(REVIEW_SECTION_WIDTH, layout.width),
-  };
-}
-
-function reviewSectionHeight(reviewSection) {
-  if (reviewSection.reviewGroup) {
-    return REVIEW_GROUP_HEIGHT;
-  }
-
-  const lineCount = (reviewSection.codeChunks || []).reduce(
-    (total, chunk) => total + (chunk.lines || []).length,
-    0,
-  );
-  return Math.max(120, REVIEW_SECTION_HEADER_HEIGHT + lineCount * 18 + 2);
-}
-
-function reviewSectionWidth(reviewSection) {
-  return reviewSection.reviewGroup ? REVIEW_GROUP_WIDTH : REVIEW_SECTION_WIDTH;
-}
-
-function reviewSectionId(file, reviewSectionIdValue) {
-  return `${file.id}:${reviewSectionIdValue}`;
-}
-
-function fileNodeId(file) {
-  return `file:${file.id}`;
-}
-
-function sectionTreeSections(file) {
-  return normalizeSectionTree(file).sections;
-}
-
-function usePersistentStringSet(storageKey) {
-  const [values, setValues] = useState(() => {
-    try {
-      const stored = JSON.parse(window.localStorage.getItem(storageKey) || "[]");
-      return new Set(Array.isArray(stored) ? stored : []);
-    } catch {
-      return new Set();
-    }
-  });
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify([...values]));
-    } catch {
-      // Persistence is optional when the review runs in a restricted browser.
-    }
-  }, [storageKey, values]);
-
-  return [values, setValues];
-}
-
-function readReviewSlug() {
-  const parts = window.location.pathname.split("/").filter(Boolean);
-  return parts[0] === "reviews" && parts[1] ? parts[1] : "";
-}
-
-function readReviewData() {
-  return readJsonScript("pr-review-data", {});
-}
-
-function readTreeData() {
-  return readJsonScript("pr-analysis-data", null);
-}
-
-function readJsonScript(id, fallback) {
-  const target = document.getElementById(id);
-  if (!target) {
-    return fallback;
-  }
-  return JSON.parse(target.textContent);
 }
 
 const root = createRoot(document.getElementById("pr-review-root"));

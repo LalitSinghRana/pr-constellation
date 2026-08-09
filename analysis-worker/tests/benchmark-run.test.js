@@ -68,7 +68,6 @@ const judgeFixtureResult = {
   summary: "The fixture candidate is valid.",
   findings: [],
 };
-
 try {
   await mkdir(sourceRunDir, { recursive: true });
   await Promise.all([

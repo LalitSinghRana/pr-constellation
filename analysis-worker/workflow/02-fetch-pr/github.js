@@ -237,6 +237,7 @@ function fetchMetadata({ executeGh, label, onEvent, parentStageId, prUrl, signal
             "body",
             "changedFiles",
             "commits",
+            "createdAt",
             "deletions",
             "files",
             "headRefName",

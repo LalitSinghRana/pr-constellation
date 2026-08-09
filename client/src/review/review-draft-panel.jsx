@@ -19,7 +19,7 @@ const reviewEvents = [
   { event: "REQUEST_CHANGES", label: "Request changes" },
 ];
 
-export function ReviewDraftProvider({ children, reviewSlug }) {
+export function ReviewDraftProvider({ children, reviewSlug, showReviewSheet = true }) {
   const [snapshot, setSnapshot] = useState(null);
   const [loading, setLoading] = useState(Boolean(reviewSlug));
   const [error, setError] = useState("");
@@ -206,19 +206,21 @@ export function ReviewDraftProvider({ children, reviewSlug }) {
   return (
     <>
       {children(value)}
-      <ReviewDraftSheet
-        canWrite={canWrite}
-        draftComments={draftComments}
-        error={error}
-        headStale={headStale}
-        loading={loading}
-        onDeleteComment={deleteComment}
-        onSubmitReview={submitReview}
-        onSummaryChange={setSummaryBody}
-        submitting={submitting}
-        summaryBody={summaryBody}
-        threads={threads}
-      />
+      {showReviewSheet ? (
+        <ReviewDraftSheet
+          canWrite={canWrite}
+          draftComments={draftComments}
+          error={error}
+          headStale={headStale}
+          loading={loading}
+          onDeleteComment={deleteComment}
+          onSubmitReview={submitReview}
+          onSummaryChange={setSummaryBody}
+          submitting={submitting}
+          summaryBody={summaryBody}
+          threads={threads}
+        />
+      ) : null}
     </>
   );
 }

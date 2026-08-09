@@ -13,7 +13,7 @@ pnpm dev
 
 ## Run semantics
 
-- New PRs are queued smallest-first from changed lines and file count.
+- New PRs appear in the inbox; select Analyze to queue an AI analysis.
 - Up to two different PRs run at once; analyses for the same PR remain serial.
 - Model-backed stages share a process-wide limit of three concurrent subprocesses.
 - File Tree and Section Tree generation and repair use the provider's highest configured effort
@@ -38,5 +38,5 @@ directory. The stable `.reviews/<review-slug>/index.html` points to the latest s
 Legacy `run.json` and `timings.json` files are imported once and preserved.
 
 Inbox state is stored separately at
-`~/.config/pr-review-cockpit/cockpit.sqlite3`. GitHub's read flag does not change local read or Done
-state.
+`~/.config/pr-review-cockpit/cockpit.sqlite3`, including cached GitHub PR conversations. GitHub's read
+flag does not change local read or Done state.

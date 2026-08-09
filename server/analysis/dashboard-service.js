@@ -1,20 +1,34 @@
-import { execFile } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { promisify } from "node:util";
 import { parseGitHubPrUrl } from "../../analysis-worker/workflow/02-fetch-pr/github.js";
 import {
   analysisModelReasoningEffort,
-  createAnalysisDashboardConfiguration,
-  DEFAULT_ANALYSIS_MODEL,
-  inferAnalysisProvider,
-  normalizeAnalysisProvider,
-} from "../../shared/analysis-models.js";
+  DEFAULT_CLAUDE_REASONING_EFFORTS,
+  DEFAULT_REASONING_EFFORTS,
+  inferModelProvider,
+  loadDashboardConfiguration,
+  normalizeDashboardConfiguration,
+  normalizeTokenUsage,
+} from "./dashboard-service/configuration.js";
+import {
+  createInputFingerprint,
+  readCodeVersion,
+  readInputFingerprint,
+  resolveFrozenInputFingerprint,
+  tryReadInputFingerprint,
+} from "./dashboard-service/input-snapshot.js";
+import {
+  compareFrozenSourceCandidates,
+  eventForResumedJob,
+  orderQueuedRunsForResume,
+  queuedJobFromManifest,
+  runKey,
+  stageAttemptOffsets,
+  uniqueJobs,
+} from "./dashboard-service/run-resume.js";
 import { assertStorageId, RunStore } from "./run-store.js";
 
-const execFileAsync = promisify(execFile);
 const ACTIVE_STATUSES = new Set(["queued", "running"]);
 const MAX_CONCURRENT_JOBS = 2;
 const STAGE_FINISH_EVENT_TYPES = new Set([
@@ -26,9 +40,14 @@ const STAGE_FINISH_EVENT_TYPES = new Set([
   "fail",
   "error",
 ]);
-export const DEFAULT_REASONING_EFFORTS = Object.freeze(["low", "medium", "high", "xhigh"]);
-export const DEFAULT_CLAUDE_REASONING_EFFORTS = Object.freeze(["low", "medium", "high", "max"]);
-const REASONING_EFFORT_ORDER = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
+
+export {
+  createInputFingerprint,
+  DEFAULT_CLAUDE_REASONING_EFFORTS,
+  DEFAULT_REASONING_EFFORTS,
+  loadDashboardConfiguration,
+  readCodeVersion,
+};
 
 export async function createDashboardService(options) {
   const service = new DashboardService(options);
@@ -1129,117 +1148,6 @@ async function publishDefaultReview(options) {
   return publishStableReview(options);
 }
 
-export async function readCodeVersion({ cwd = process.cwd() } = {}) {
-  try {
-    const [{ stdout: commitOutput }, { stdout: diffOutput }, { stdout: untrackedOutput }] =
-      await Promise.all([
-        execFileAsync("git", ["rev-parse", "HEAD"], { cwd }),
-        execFileAsync("git", ["diff", "--binary", "HEAD"], {
-          cwd,
-          maxBuffer: 1024 * 1024 * 100,
-        }),
-        execFileAsync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
-          cwd,
-          encoding: "buffer",
-          maxBuffer: 1024 * 1024 * 20,
-        }),
-      ]);
-    const commit = commitOutput.trim();
-    const hash = createHash("sha256");
-    hash.update(diffOutput);
-    const untrackedFiles = Buffer.from(untrackedOutput)
-      .toString("utf8")
-      .split("\0")
-      .filter(Boolean)
-      .sort();
-
-    for (const relativeFile of untrackedFiles) {
-      hash.update(relativeFile);
-      hash.update(await readFile(path.join(cwd, relativeFile)));
-    }
-
-    const dirty = diffOutput.length > 0 || untrackedFiles.length > 0;
-    const dirtyHash = hash.digest("hex").slice(0, 12);
-    return {
-      commit,
-      dirty,
-      fingerprint: dirty ? `${commit.slice(0, 12)}-dirty-${dirtyHash}` : commit,
-    };
-  } catch {
-    return {
-      commit: null,
-      dirty: null,
-      fingerprint: "unknown",
-    };
-  }
-}
-
-export function createInputFingerprint({ diff, metadata }) {
-  if (typeof diff !== "string") {
-    throw new TypeError("PR input diff must be a string.");
-  }
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-    throw new TypeError("PR input metadata must be an object.");
-  }
-
-  const hash = createHash("sha256");
-  hash.update("pr-input-snapshot/v1\0");
-  hash.update(JSON.stringify(sortJsonValue(metadata)));
-  hash.update("\0");
-  hash.update(diff);
-  return hash.digest("hex");
-}
-
-async function resolveFrozenInputFingerprint(frozenSource) {
-  const stored = frozenSource.run?.metrics?.inputFingerprint;
-  if (typeof stored === "string" && stored.length > 0) {
-    return stored;
-  }
-
-  const [metadataText, diff] = await Promise.all([
-    readFile(frozenSource.metadataPath, "utf8"),
-    readFile(frozenSource.diffPath, "utf8"),
-  ]);
-  return createInputFingerprint({
-    diff,
-    metadata: JSON.parse(metadataText),
-  });
-}
-
-async function readInputFingerprint(runDir) {
-  const [metadataText, diff] = await Promise.all([
-    readFile(path.join(runDir, "metadata.json"), "utf8"),
-    readFile(path.join(runDir, "diff.patch"), "utf8"),
-  ]);
-  return createInputFingerprint({
-    diff,
-    metadata: JSON.parse(metadataText),
-  });
-}
-
-async function tryReadInputFingerprint(runDir) {
-  try {
-    return await readInputFingerprint(runDir);
-  } catch {
-    return null;
-  }
-}
-
-function sortJsonValue(value) {
-  if (Array.isArray(value)) {
-    return value.map(sortJsonValue);
-  }
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-
-  const sorted = {};
-  for (const key of Object.keys(value).sort()) {
-    sorted[key] = sortJsonValue(value[key]);
-  }
-  return sorted;
-}
-
 function assertFrozenSourceIdentity(run, parsed) {
   if (pullRequestIdentityMatches(run, parsed)) {
     return;
@@ -1296,254 +1204,6 @@ function resolveHeadSha(metadata) {
 
 function resolveBaseSha(metadata) {
   return metadata?.baseRefOid || null;
-}
-
-export async function loadDashboardConfiguration() {
-  return normalizeDashboardConfiguration(createAnalysisDashboardConfiguration());
-}
-
-function normalizeDashboardConfiguration(configuration) {
-  if (!configuration || typeof configuration !== "object") {
-    throw new TypeError("Dashboard configuration must be an object.");
-  }
-
-  const defaultModel = normalizeOptionalName(configuration.defaultModel) || DEFAULT_ANALYSIS_MODEL;
-  const models = uniqueNames([
-    defaultModel,
-    ...(Array.isArray(configuration.models) ? configuration.models : []),
-  ]);
-  const reasoningEfforts = orderedReasoningEfforts(
-    Array.isArray(configuration.reasoningEfforts)
-      ? configuration.reasoningEfforts
-      : DEFAULT_REASONING_EFFORTS,
-  );
-  if (reasoningEfforts.length === 0) {
-    throw new TypeError("Dashboard configuration must include at least one reasoning effort.");
-  }
-
-  const configuredByModel =
-    configuration.modelReasoningEfforts && typeof configuration.modelReasoningEfforts === "object"
-      ? configuration.modelReasoningEfforts
-      : {};
-  const configuredProviders =
-    configuration.modelProviders && typeof configuration.modelProviders === "object"
-      ? configuration.modelProviders
-      : {};
-  const modelProviders = Object.fromEntries(
-    models.map((model) => [
-      model,
-      normalizeModelProvider(configuredProviders[model]) || inferModelProvider(model),
-    ]),
-  );
-  const modelReasoningEfforts = Object.fromEntries(
-    models.map((model) => {
-      const registryEffort = analysisModelReasoningEffort(model);
-      const configured = Array.isArray(configuredByModel[model])
-        ? configuredByModel[model]
-        : registryEffort
-          ? [registryEffort]
-          : modelProviders[model] === "claude"
-            ? DEFAULT_CLAUDE_REASONING_EFFORTS
-            : reasoningEfforts;
-      const supported = orderedReasoningEfforts(configured);
-      const fallback = registryEffort
-        ? [registryEffort]
-        : modelProviders[model] === "claude"
-          ? DEFAULT_CLAUDE_REASONING_EFFORTS
-          : reasoningEfforts;
-      return [model, supported.length > 0 ? supported : [...fallback]];
-    }),
-  );
-
-  return {
-    defaultModel,
-    models,
-    modelProviders,
-    reasoningEfforts,
-    modelReasoningEfforts,
-  };
-}
-
-function orderedReasoningEfforts(values) {
-  const names = new Set(uniqueNames(values));
-  return [...REASONING_EFFORT_ORDER.filter((effort) => names.delete(effort)), ...names];
-}
-
-function uniqueNames(values) {
-  return [...new Set(values.map(normalizeOptionalName).filter(Boolean))];
-}
-
-function normalizeOptionalName(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function normalizeModelProvider(value) {
-  return normalizeAnalysisProvider(value);
-}
-
-function inferModelProvider(model) {
-  return inferAnalysisProvider(model);
-}
-
-function normalizeTokenUsage(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-
-  const aliases = {
-    inputTokens: ["inputTokens", "input_tokens"],
-    cachedInputTokens: ["cachedInputTokens", "cached_input_tokens", "cachedTokens"],
-    outputTokens: ["outputTokens", "output_tokens"],
-    totalTokens: ["totalTokens", "total_tokens"],
-  };
-  const usage = {};
-  for (const [target, candidates] of Object.entries(aliases)) {
-    const metric = candidates
-      .map((candidate) => value[candidate])
-      .find(
-        (candidate) =>
-          typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0,
-      );
-    if (metric !== undefined) {
-      usage[target] = metric;
-    }
-  }
-  return Object.keys(usage).length > 0 ? usage : null;
-}
-
-function uniqueJobs(jobs) {
-  const seen = new Set();
-  return jobs.filter((job) => {
-    const key = `${job.slug}\0${job.runId}`;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function compareQueuedRunsOldestFirst(left, right) {
-  const leftBatchId = normalizeOptionalName(left.metrics?.batchId);
-  const rightBatchId = normalizeOptionalName(right.metrics?.batchId);
-  const leftBatchIndex = Number(left.metrics?.batchIndex);
-  const rightBatchIndex = Number(right.metrics?.batchIndex);
-  if (
-    left.slug === right.slug &&
-    leftBatchId &&
-    leftBatchId === rightBatchId &&
-    Number.isFinite(leftBatchIndex) &&
-    Number.isFinite(rightBatchIndex) &&
-    leftBatchIndex !== rightBatchIndex
-  ) {
-    return leftBatchIndex - rightBatchIndex;
-  }
-  return (
-    new Date(left.timestamps.queuedAt || left.timestamps.createdAt).getTime() -
-      new Date(right.timestamps.queuedAt || right.timestamps.createdAt).getTime() ||
-    left.runId.localeCompare(right.runId)
-  );
-}
-
-function orderQueuedRunsForResume(runs) {
-  const byId = new Map(runs.map((run) => [runKey(run.slug, run.runId), run]));
-  const ordered = [];
-  const added = new Set();
-
-  const addWithSource = (run) => {
-    const key = runKey(run.slug, run.runId);
-    if (added.has(key)) return;
-    added.add(key);
-    const source = run.sourceRunId ? byId.get(runKey(run.slug, run.sourceRunId)) : null;
-    if (source) addWithSource(source);
-    ordered.push(run);
-  };
-
-  for (const run of [...runs].sort(compareQueuedRunsOldestFirst)) addWithSource(run);
-  return ordered;
-}
-
-function queuedJobFromManifest(run, configuration, attemptOffsets) {
-  const storedModel = normalizeOptionalName(run.metrics?.model);
-  if (!configuration.models.includes(storedModel)) {
-    throw createUnsupportedStoredConfiguration(
-      run,
-      `model "${storedModel || "(missing)"}" is no longer configured`,
-    );
-  }
-  const model = storedModel;
-  const efforts = configuration.modelReasoningEfforts[model] || configuration.reasoningEfforts;
-  const storedEffort = normalizeOptionalName(run.metrics?.reasoningEffort);
-  if (!efforts.includes(storedEffort)) {
-    throw createUnsupportedStoredConfiguration(
-      run,
-      `reasoning effort "${storedEffort || "(missing)"}" is not supported by "${model}"`,
-    );
-  }
-  const configuredProvider = configuration.modelProviders[model] || inferModelProvider(model);
-  const storedProviderValue = normalizeOptionalName(run.metrics?.provider);
-  const storedProvider = normalizeModelProvider(storedProviderValue);
-  if (storedProviderValue && !storedProvider) {
-    throw createUnsupportedStoredConfiguration(
-      run,
-      `provider "${storedProviderValue}" is not supported`,
-    );
-  }
-  if (storedProvider && storedProvider !== configuredProvider) {
-    throw createUnsupportedStoredConfiguration(
-      run,
-      `provider "${storedProvider}" does not match "${configuredProvider}" for "${model}"`,
-    );
-  }
-
-  return {
-    attemptOffsets,
-    batchId: normalizeOptionalName(run.metrics?.batchId),
-    model,
-    prUrl: run.url,
-    provider: configuredProvider,
-    reasoningEffort: storedEffort,
-    runId: run.runId,
-    slug: run.slug,
-    sourceRunId: run.sourceRunId,
-  };
-}
-
-function createUnsupportedStoredConfiguration(run, reason) {
-  const error = new Error(`Queued run "${run.slug}/${run.runId}" cannot resume: ${reason}.`);
-  error.code = "UNSUPPORTED_STORED_CONFIGURATION";
-  return error;
-}
-
-function runKey(slug, runId) {
-  return `${slug}\0${runId}`;
-}
-
-function stageAttemptOffsets(timings) {
-  const offsets = new Map();
-  for (const stage of timings.stages) {
-    offsets.set(stage.stageId, Math.max(offsets.get(stage.stageId) || 0, stage.attempt));
-  }
-  return offsets;
-}
-
-function eventForResumedJob(job, event) {
-  const offset = job.attemptOffsets?.get(event.stageId) || 0;
-  return offset ? { ...event, attempt: (event.attempt || 1) + offset } : event;
-}
-
-function compareFrozenSourceCandidates(left, right) {
-  const statusRank = (run) => (run.status === "succeeded" ? 0 : 1);
-  const statusDifference = statusRank(left) - statusRank(right);
-  if (statusDifference !== 0) {
-    return statusDifference;
-  }
-  const leftIndex = Number(left.metrics?.batchIndex);
-  const rightIndex = Number(right.metrics?.batchIndex);
-  return (
-    (Number.isFinite(leftIndex) ? leftIndex : Number.MAX_SAFE_INTEGER) -
-    (Number.isFinite(rightIndex) ? rightIndex : Number.MAX_SAFE_INTEGER)
-  );
 }
 
 function isUnavailableFrozenSourceError(error) {
