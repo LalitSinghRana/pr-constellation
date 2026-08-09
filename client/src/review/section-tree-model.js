@@ -9,7 +9,10 @@ export function normalizeSectionTree(file) {
   };
 }
 
-export function foldSectionTree(file, { expandedGroupIds = [] } = {}) {
+export function foldSectionTree(
+  file,
+  { expandedGroupIds = [], showSecondaryRuntime = false } = {},
+) {
   const sectionTree = normalizeSectionTree(file);
   const expandedIds =
     expandedGroupIds instanceof Set ? expandedGroupIds : new Set(expandedGroupIds);
@@ -70,7 +73,7 @@ export function foldSectionTree(file, { expandedGroupIds = [] } = {}) {
     nextAncestry.add(sectionId);
     const section = sectionById.get(sectionId);
     const containsVisible =
-      isAlwaysVisibleReviewSection(section, { rootIds }) ||
+      isAlwaysVisibleReviewSection(section, { rootIds, showSecondaryRuntime }) ||
       (childrenById.get(sectionId) || []).some((child) => {
         return subtreeContainsAlwaysVisible(child.sectionId, nextAncestry);
       });
@@ -106,7 +109,7 @@ export function foldSectionTree(file, { expandedGroupIds = [] } = {}) {
 
     for (const child of childrenById.get(sectionId) || []) {
       const childSection = sectionById.get(child.sectionId);
-      const bucket = collapseBucketForSection(childSection, { rootIds });
+      const bucket = collapseBucketForSection(childSection, { rootIds, showSecondaryRuntime });
       const staysVisible =
         !bucket ||
         revealedBucketIds.has(bucket.id) ||
@@ -225,17 +228,21 @@ export function foldSectionTree(file, { expandedGroupIds = [] } = {}) {
   };
 }
 
-export function isAlwaysVisibleReviewSection(section, { rootIds } = {}) {
+export function isAlwaysVisibleReviewSection(
+  section,
+  { rootIds, showSecondaryRuntime = false } = {},
+) {
   return Boolean(
     section &&
       (rootIds?.has(section.id) ||
-        (section.reviewPriority === ALWAYS_VISIBLE_RUNTIME_PRIORITY &&
-          section.changeKind === "runtime")),
+        (section.changeKind === "runtime" &&
+          (section.reviewPriority === ALWAYS_VISIBLE_RUNTIME_PRIORITY ||
+            (showSecondaryRuntime && section.reviewPriority === "secondary")))),
   );
 }
 
-function collapseBucketForSection(section, { rootIds } = {}) {
-  if (!section || isAlwaysVisibleReviewSection(section, { rootIds })) {
+function collapseBucketForSection(section, { rootIds, showSecondaryRuntime } = {}) {
+  if (!section || isAlwaysVisibleReviewSection(section, { rootIds, showSecondaryRuntime })) {
     return null;
   }
 

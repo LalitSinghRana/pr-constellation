@@ -139,6 +139,7 @@ function App() {
   const stacks = treeData?.reviewStacks || [];
   const [activeStackId, setActiveStackId] = useState(() => stacks[0]?.id ?? null);
   const [activeTab, setActiveTab] = useState("conversation");
+  const [reviewerMode, setReviewerMode] = useState("quick");
   // First-pass layout uses the estimated reviewSectionHeight() formula; once
   // ReviewTreeCanvas measures real rendered heights that drift from the estimate,
   // this re-runs layout with real numbers. Rendered node ids and content are
@@ -166,8 +167,16 @@ function App() {
       expandedGroupIds,
       sourceOrderViewIds,
       measuredHeights,
+      showSecondaryRuntime: reviewerMode === "full",
     });
-  }, [activeStackId, expandedGroupIds, sourceOrderViewIds, measuredHeights, treeData]);
+  }, [
+    activeStackId,
+    expandedGroupIds,
+    sourceOrderViewIds,
+    measuredHeights,
+    reviewerMode,
+    treeData,
+  ]);
   const toggleReviewGroup = useCallback(
     (groupId) => {
       setExpandedGroupIds((current) => {
@@ -201,7 +210,13 @@ function App() {
     <ReviewDraftProvider reviewSlug={reviewSlug} showReviewSheet={activeTab === "trees"}>
       {(draft) => (
         <div className="review-shell fixed inset-0 grid h-dvh w-screen min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden bg-background">
-          <ReviewHeader activeTab={activeTab} onTabChange={setActiveTab} review={review} />
+          <ReviewHeader
+            activeTab={activeTab}
+            onReviewerModeChange={setReviewerMode}
+            onTabChange={setActiveTab}
+            review={review}
+            reviewerMode={reviewerMode}
+          />
           <main className="review-main grid min-h-0 overflow-hidden">
             {activeTab === "conversation" ? (
               <PullRequestConversation review={review} reviewSlug={reviewSlug} />
@@ -247,7 +262,7 @@ function App() {
   );
 }
 
-function ReviewHeader({ activeTab, onTabChange, review }) {
+function ReviewHeader({ activeTab, onReviewerModeChange, onTabChange, review, reviewerMode }) {
   return (
     <header className="review-header sticky top-0 z-20 border-b border-border bg-[color-mix(in_oklab,var(--card)_92%,var(--background))] px-5 py-3 shadow-xs backdrop-blur-[20px] max-[980px]:px-3 max-[980px]:py-2.5">
       <div className="review-header-main grid grid-cols-[minmax(0,1fr)_auto] items-center justify-between gap-3.5 max-[980px]:grid-cols-1 max-[980px]:gap-2">
@@ -273,12 +288,20 @@ function ReviewHeader({ activeTab, onTabChange, review }) {
             <a href={review.url}>{review.title || "Untitled pull request"}</a>
           </h1>
         </div>
-        <Tabs onValueChange={onTabChange} value={activeTab}>
-          <TabsList aria-label="Review content">
-            <TabsTrigger value="conversation">Conversation</TabsTrigger>
-            <TabsTrigger value="trees">Review trees</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Tabs onValueChange={onTabChange} value={activeTab}>
+            <TabsList aria-label="Review content">
+              <TabsTrigger value="conversation">Conversation</TabsTrigger>
+              <TabsTrigger value="trees">Review trees</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Tabs onValueChange={onReviewerModeChange} value={reviewerMode}>
+            <TabsList aria-label="Reviewer depth">
+              <TabsTrigger value="quick">0.1× reviewer</TabsTrigger>
+              <TabsTrigger value="full">1× reviewer</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
       </div>
     </header>
   );

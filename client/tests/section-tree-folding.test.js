@@ -71,6 +71,13 @@ assert.ok(
   }),
 );
 
+const fullRuntime = foldSectionTree(file, { showSecondaryRuntime: true });
+assert.ok(fullRuntime.sections.some((item) => item.id === "loading"));
+assert.ok(fullRuntime.sections.some((item) => item.id === "loading-styles"));
+assert.ok(fullRuntime.sections.some((item) => item.id === "visual"));
+assert.ok(!fullRuntime.sections.some((item) => item.id === "ui-fold-root-secondary-runtime"));
+assert.ok(!fullRuntime.sections.some((item) => item.id === "visual-imports"));
+
 const expandedAllVisibleGroups = foldSectionTree(file, {
   expandedGroupIds: new Set([
     secondaryGroupId,
