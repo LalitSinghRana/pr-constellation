@@ -16,7 +16,7 @@ const REVIEW_TREE_APP_ENTRY = fileURLToPath(new URL("./review-tree-app.jsx", imp
 const SRC_DIR = fileURLToPath(new URL("..", import.meta.url));
 const WEB_STYLES_ENTRY = fileURLToPath(new URL("./styles.css", import.meta.url));
 
-export async function renderDiffHtml({ analysis = null, pr, diff }) {
+export async function renderDiffHtml({ analysis = null, conversation = null, pr, diff }) {
   const syntaxHighlighter = await getSyntaxHighlighter();
   const reviewAssets = await getReviewAssets();
   const treeData = analysis ? buildReviewTreeData({ analysis, diff, syntaxHighlighter }) : null;
@@ -47,6 +47,7 @@ ${reviewAssets?.css || ""}
     <div id="pr-review-root"></div>
     <script id="pr-review-data" type="application/json">${serializeJsonForScript(buildReviewData({ pr }))}</script>
     <script id="pr-analysis-data" type="application/json">${serializeJsonForScript(treeData)}</script>
+    <script id="pr-conversation-data" type="application/json">${serializeJsonForScript(conversation)}</script>
     <script>${escapeScript(reviewAssets.js)}</script>
   </body>
 </html>`;
@@ -313,8 +314,11 @@ function buildReviewData({ pr }) {
   return {
     additions: pr.additions ?? null,
     authorLogin: pr.author?.login || "",
+    authorAvatarUrl: pr.author?.avatarUrl || "",
     baseRefName: pr.baseRefName || "",
+    body: pr.body || "",
     changedFiles: pr.changedFiles ?? null,
+    createdAt: pr.createdAt || "",
     deletions: pr.deletions ?? null,
     headRefName: pr.headRefName || "",
     number: pr.number ?? null,

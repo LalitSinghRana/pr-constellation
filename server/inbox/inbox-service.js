@@ -7,10 +7,7 @@ import {
 } from "../../shared/queue-policy.js";
 import { databasePath, queuePath, settingsPath } from "../runtime-config.js";
 import { getGitHubNotifications } from "./github-notifications.js";
-import {
-  automaticallyQueueNewAnalyses,
-  sortPullRequestsBySize,
-} from "./inbox-service/analysis-queue.js";
+import { sortPullRequestsBySize } from "./inbox-service/analysis-queue.js";
 import { createInboxApi } from "./inbox-service/api.js";
 import {
   apiMutationRejection,
@@ -1037,7 +1034,7 @@ async function refreshNotificationItems(items, pullRequestNotifications, touched
   return warnings;
 }
 
-export async function syncNotifications(now = new Date(), { dashboardService } = {}) {
+export async function syncNotifications(now = new Date()) {
   const startedAt = now.toISOString();
   const initialState = await readQueueState();
   const previousSync = new Date(
@@ -1088,20 +1085,15 @@ export async function syncNotifications(now = new Date(), { dashboardService } =
     },
     { ids: entries.map((item) => item.id), updateSync: true },
   );
-  const inbox = inboxFromQueue(await readQueueState());
-  const automaticAnalysis = dashboardService
-    ? await automaticallyQueueNewAnalyses(inbox.items, dashboardService)
-    : { runs: [], warnings: [] };
   return {
     ...summary,
-    autoQueued: automaticAnalysis.runs.length,
     notModified: false,
     pollIntervalSeconds: notifications.pollIntervalSeconds,
-    warnings: [...new Set([...summary.warnings, ...automaticAnalysis.warnings])],
+    warnings: summary.warnings,
   };
 }
 
-export async function syncQueue(now = new Date(), { dashboardService } = {}) {
+export async function syncQueue(now = new Date()) {
   const startedAt = now.toISOString();
   const [initialState, saved] = await Promise.all([readQueueState(), readSettings()]);
   const username = saved.username || initialState.sync.username || (await getDetectedUser());
@@ -1206,18 +1198,14 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
         notificationsResult.status === "fulfilled" ? notificationsResult.value : undefined,
     }),
   );
-  const automaticAnalysis = dashboardService
-    ? await automaticallyQueueNewAnalyses(inbox.items, dashboardService)
-    : { runs: [], warnings: [] };
   return {
     ...summary,
     active: inbox.items.filter((item) => !item.done).length,
-    autoQueued: automaticAnalysis.runs.length,
     pollIntervalSeconds:
       notificationsResult.status === "fulfilled"
         ? notificationsResult.value.pollIntervalSeconds
         : initialState.sync.notificationPollIntervalSeconds,
-    warnings: [...new Set([...summary.warnings, ...inbox.warnings, ...automaticAnalysis.warnings])],
+    warnings: [...new Set([...summary.warnings, ...inbox.warnings])],
   };
 }
 

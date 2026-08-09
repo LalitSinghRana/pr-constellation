@@ -56,6 +56,19 @@ const html = await renderDiffHtml({
       },
     ],
   },
+  conversation: {
+    threads: [],
+    timeline: [
+      {
+        actor: "octo",
+        body: "Cached conversation",
+        createdAt: "2026-08-09T12:01:00Z",
+        id: 1,
+        kind: "comment",
+        type: "IssueComment",
+      },
+    ],
+  },
   diff: `diff --git a/src/example.js b/src/example.js
 index 0000000..1111111 100644
 --- a/src/example.js
@@ -66,9 +79,11 @@ index 0000000..1111111 100644
 `,
   pr: {
     additions: 1,
-    author: { login: "check" },
+    author: { avatarUrl: "https://example.com/check.png", login: "check" },
     baseRefName: "main",
+    body: "## Description\n\nReview the change.",
     changedFiles: 1,
+    createdAt: "2026-08-09T12:00:00Z",
     deletions: 1,
     headRefName: "branch",
     number: 1,
@@ -94,6 +109,11 @@ for (const marker of [
 }
 
 const treeData = extractJsonScript(html, "pr-analysis-data");
+const reviewData = extractJsonScript(html, "pr-review-data");
+const conversationData = extractJsonScript(html, "pr-conversation-data");
+assert.equal(reviewData.body, "## Description\n\nReview the change.");
+assert.equal(reviewData.authorAvatarUrl, "https://example.com/check.png");
+assert.equal(conversationData.timeline[0].body, "Cached conversation");
 assert.equal(treeData.schemaVersion, "pr-review-analysis/v1");
 assert.equal(treeData.reviewStacks[0].fileTree.branches.length, 0);
 assert.equal(treeData.files[0].sectionTree.branches[0].order, 0);
@@ -126,12 +146,32 @@ assert.match(reviewTreeSource, /value="source"/);
 assert.match(reviewTreeSource, /ariaLabel="Review tree map"/);
 assert.match(reviewTreeSource, /pointerEvents: "auto"/);
 assert.match(treeAppSource, /text-base leading-relaxed/);
-assert.match(treeAppSource, /bg-diff-add\/15/);
+assert.match(treeAppSource, /const \[activeTab, setActiveTab\] = useState\("conversation"\)/);
+assert.match(treeAppSource, /value="conversation"/);
+assert.match(treeAppSource, /showReviewSheet=\{activeTab === "trees"\}/);
+assert.match(treeAppSource, /function conversationIcon/);
+assert.match(treeAppSource, /const initialConversation = useMemo\(readConversationData, \[\]\)/);
+assert.match(treeAppSource, /if \(initialConversation\) return;/);
+assert.match(treeAppSource, /item\.state === "APPROVED"\) return Check/);
+assert.match(treeAppSource, /item\.state === "COMMENTED"\) return MessageSquare/);
+assert.match(treeAppSource, /<Timeline/);
+assert.match(treeAppSource, /unstyled/);
+assert.match(webStyles, /\.conversation-timeline-connector/);
+assert.match(treeAppSource, /remarkPlugins=\{\[remarkGfm, remarkAlert\]\}/);
+assert.match(
+  treeAppSource,
+  /rehypePlugins=\{\[rehypeRaw, \[rehypeSanitize, githubMarkdownSanitizeSchema\]\]\}/,
+);
+assert.match(treeAppSource, /MIN_TREE_ZOOM/);
+assert.match(treeAppSource, /if \(item\.kind === "description"\) return 0;/);
+assert.match(treeAppSource, /FILE_TREE_TARGET_HANDLE/);
 assert.match(treeAppSource, /text-pr-open/);
 assert.doesNotMatch(treeAppSource, /What \/ Why/);
 assert.doesNotMatch(treeAppSource, /formatExplanationForHover/);
 assert.doesNotMatch(treeAppSource, /state-badge/);
 assert.doesNotMatch(treeAppSource, /text-\[15px\]/);
+assert.doesNotMatch(treeAppSource, /formatTimelineTimestamp/);
+assert.doesNotMatch(treeAppSource, /View on GitHub/);
 assert.match(webStyles, /\.review-branch-hit-path/);
 assert.match(webStyles, /\.review-tree-map/);
 assert.doesNotMatch(webStyles, /\.change-pill\.is-add/);

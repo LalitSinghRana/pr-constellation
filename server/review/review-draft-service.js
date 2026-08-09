@@ -2,10 +2,20 @@ import { randomUUID } from "node:crypto";
 import { getInboxStore } from "../inbox/inbox-service.js";
 import {
   checkGitHubWriteAccess,
+  fetchPullRequestConversation,
   fetchReviewThreads,
   submitPullRequestReview,
 } from "./github-review-client.js";
 import { loadReviewContext } from "./review-context.js";
+
+export async function getReviewConversation(slug) {
+  const context = await loadReviewContext(slug);
+  return fetchPullRequestConversation({
+    number: context.number,
+    owner: context.owner,
+    repo: context.repo,
+  });
+}
 
 export async function getReviewDraftSnapshot(slug) {
   const context = await loadReviewContext(slug);

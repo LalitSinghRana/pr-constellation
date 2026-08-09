@@ -68,6 +68,19 @@ const judgeFixtureResult = {
   summary: "The fixture candidate is valid.",
   findings: [],
 };
+const conversationFixture = {
+  threads: [],
+  timeline: [
+    {
+      actor: "octo",
+      body: "Cached conversation",
+      createdAt: "2026-08-09T00:00:00Z",
+      id: 1,
+      kind: "comment",
+      type: "IssueComment",
+    },
+  ],
+};
 
 try {
   await mkdir(sourceRunDir, { recursive: true });
@@ -103,6 +116,11 @@ index 1111111..2222222 100644
 `,
       "utf8",
     ),
+    writeFile(
+      path.join(sourceRunDir, "conversation.json"),
+      `${JSON.stringify(conversationFixture)}\n`,
+      "utf8",
+    ),
   ]);
 
   const result = await createBenchmarkRun({
@@ -132,6 +150,10 @@ index 1111111..2222222 100644
   assert.equal(result.metadata.headRefOid, "head-sha");
   assert.equal(result.diffSummary.changedLineCount, 2);
   assert.equal(result.runDir, targetRunDir);
+  assert.deepEqual(
+    JSON.parse(await readFile(result.conversationPath, "utf8")),
+    conversationFixture,
+  );
   assert.equal(codexCalls.length, 2);
   assert.deepEqual(
     codexCalls.map(({ model, reasoningEffort }) => ({
@@ -144,6 +166,7 @@ index 1111111..2222222 100644
     ],
   );
   assert.match(await readFile(result.htmlPath, "utf8"), /Benchmark fixture/);
+  assert.match(await readFile(result.htmlPath, "utf8"), /Cached conversation/);
   assert.equal(await readFile(result.stableHtmlPath, "utf8"), previousStableHtml);
   const claudeCalls = [];
   const claudeRunDir = path.join(reviewsDir, reviewSlug, "claude-run");

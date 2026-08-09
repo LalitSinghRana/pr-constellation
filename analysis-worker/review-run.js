@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { renderDiffHtml } from "../client/src/review/render.js";
+import { fetchPullRequestConversation } from "../server/review/github-review-client.js";
 import { fetchPullRequest, parseGitHubPrUrl } from "./workflow/02-fetch-pr/github.js";
 import {
   createDiffInventory,
@@ -17,8 +18,11 @@ import { serializeCursorExecutor } from "./workflow/07-run-retry-loop/cursor-age
 import { isAbortError, throwIfAborted } from "./workflow/abort.js";
 
 export async function createReviewRun({ prUrl, reviewsDir }) {
-  const { diff, metadata, paths, runDir } = await createPrInputRun({ prUrl, reviewsDir });
-  const html = await renderDiffHtml({ pr: metadata, diff });
+  const { conversation, diff, metadata, paths, runDir } = await createPrInputRun({
+    prUrl,
+    reviewsDir,
+  });
+  const html = await renderDiffHtml({ conversation, pr: metadata, diff });
 
   await writeReviewHtml({
     html,
@@ -27,6 +31,7 @@ export async function createReviewRun({ prUrl, reviewsDir }) {
   });
 
   return {
+    conversationPath: paths.conversationPath,
     diffPath: paths.diffPath,
     diffInventoryPath: paths.diffInventoryPath,
     diffSummaryPath: paths.diffSummaryPath,
@@ -43,6 +48,7 @@ export async function createAnalysisRun({ prUrl, reviewsDir }) {
 
   return {
     analysisPath: analysisResult.analysisPath,
+    conversationPath: paths.conversationPath,
     diffPath: paths.diffPath,
     diffInventoryPath: paths.diffInventoryPath,
     diffSummaryPath: paths.diffSummaryPath,
@@ -85,9 +91,10 @@ export async function createBenchmarkRun({
         stageId: "input.reuse",
         task: async () => {
           const resolvedSourceRunDir = path.resolve(sourceRunDir);
-          const [metadata, diff] = await Promise.all([
+          const [metadata, diff, conversation] = await Promise.all([
             readJson(path.join(resolvedSourceRunDir, "metadata.json")),
             readFile(path.join(resolvedSourceRunDir, "diff.patch"), "utf8"),
+            readOptionalJson(path.join(resolvedSourceRunDir, "conversation.json")),
           ]);
           const sourceSlug = parseGitHubPrUrl(metadata.url || prUrl).slug;
 
@@ -97,21 +104,10 @@ export async function createBenchmarkRun({
             );
           }
 
-          return { diff, metadata };
+          return { conversation, diff, metadata };
         },
       })
-    : await runTimedStage({
-        label: "Fetch PR from GitHub",
-        onEvent,
-        signal,
-        stageId: "input.fetch",
-        task: () =>
-          fetchPullRequest(prUrl, {
-            onEvent,
-            parentStageId: "input.fetch",
-            signal,
-          }),
-      });
+    : await fetchFreshPrInput({ onEvent, parsed, prUrl, signal });
 
   const { diffInventory, diffSummary } = await runTimedStage({
     getMetrics: (result) => ({
@@ -164,13 +160,7 @@ export async function createBenchmarkRun({
     onEvent,
     signal,
     stageId: "input.persist",
-    task: () =>
-      Promise.all([
-        writeFile(paths.diffInventoryPath, `${JSON.stringify(diffInventory, null, 2)}\n`, "utf8"),
-        writeFile(paths.diffSummaryPath, `${JSON.stringify(diffSummary)}\n`, "utf8"),
-        writeFile(paths.metadataPath, `${JSON.stringify(input.metadata, null, 2)}\n`, "utf8"),
-        writeFile(paths.diffPath, input.diff, "utf8"),
-      ]),
+    task: () => writePrInputArtifacts({ diffInventory, diffSummary, input, paths }),
   });
 
   const selectedExecutor =
@@ -208,6 +198,7 @@ export async function createBenchmarkRun({
           task: () =>
             renderDiffHtml({
               analysis: analysisResult.analysis,
+              conversation: input.conversation,
               diff: input.diff,
               pr: input.metadata,
             }),
@@ -237,6 +228,7 @@ export async function createBenchmarkRun({
 
   return {
     analysisPath: analysisResult.analysisPath,
+    conversationPath: paths.conversationPath,
     diffPath: paths.diffPath,
     diffInventoryPath: paths.diffInventoryPath,
     diffSummary,
@@ -255,17 +247,20 @@ export async function renderExistingRun({ runDir }) {
   const metadataPath = path.join(runDir, "metadata.json");
   const diffPath = path.join(runDir, "diff.patch");
   const analysisPath = path.join(runDir, "analysis.json");
+  const conversationPath = path.join(runDir, "conversation.json");
   const htmlPath = path.join(runDir, "index.html");
   const stableHtmlPath = path.join(path.dirname(runDir), "index.html");
 
-  const [metadata, diff, analysis] = await Promise.all([
+  const [metadata, diff, analysis, conversation] = await Promise.all([
     readJson(metadataPath),
     readFile(diffPath, "utf8"),
     readOptionalJson(analysisPath),
+    readOptionalJson(conversationPath),
   ]);
 
   const html = await renderDiffHtml({
     analysis,
+    conversation,
     diff,
     pr: metadata,
   });
@@ -274,6 +269,7 @@ export async function renderExistingRun({ runDir }) {
 
   return {
     analysisPath: analysis ? analysisPath : null,
+    conversationPath: conversation ? conversationPath : null,
     diffPath,
     htmlPath,
     metadataPath,
@@ -288,21 +284,25 @@ async function createPrInputRun({ prUrl, reviewsDir }) {
 
   await mkdir(runDir, { recursive: true });
 
-  const { metadata, diff } = await fetchPullRequest(prUrl);
+  const [{ metadata, diff }, conversation] = await Promise.all([
+    fetchPullRequest(prUrl),
+    fetchConversationSnapshot(parsed),
+  ]);
   const diffInventory = createDiffInventory(diff);
   const diffSummary = createDiffSummary(diffInventory);
 
   const stableHtmlPath = path.join(reviewsDir, parsed.slug, "index.html");
   const paths = buildRunPaths({ runDir, stableHtmlPath });
 
-  await Promise.all([
-    writeFile(paths.diffInventoryPath, `${JSON.stringify(diffInventory, null, 2)}\n`, "utf8"),
-    writeFile(paths.diffSummaryPath, `${JSON.stringify(diffSummary)}\n`, "utf8"),
-    writeFile(paths.metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8"),
-    writeFile(paths.diffPath, diff, "utf8"),
-  ]);
+  await writePrInputArtifacts({
+    diffInventory,
+    diffSummary,
+    input: { conversation, diff, metadata },
+    paths,
+  });
 
   return {
+    conversation,
     diff,
     metadata,
     paths,
@@ -310,8 +310,63 @@ async function createPrInputRun({ prUrl, reviewsDir }) {
   };
 }
 
+async function fetchFreshPrInput({ onEvent, parsed, prUrl, signal }) {
+  const [input, conversation] = await Promise.all([
+    runTimedStage({
+      label: "Fetch PR from GitHub",
+      onEvent,
+      signal,
+      stageId: "input.fetch",
+      task: () =>
+        fetchPullRequest(prUrl, {
+          onEvent,
+          parentStageId: "input.fetch",
+          signal,
+        }),
+    }),
+    runTimedStage({
+      getMetrics: (snapshot) => ({ cached: Boolean(snapshot) }),
+      label: "Snapshot PR conversation",
+      onEvent,
+      signal,
+      stageId: "conversation",
+      task: () => fetchConversationSnapshot(parsed),
+    }),
+  ]);
+
+  return { ...input, conversation };
+}
+
+async function fetchConversationSnapshot({ number, owner, repo }) {
+  try {
+    return await fetchPullRequestConversation({ number, owner, repo });
+  } catch (error) {
+    console.warn(
+      `Could not snapshot GitHub conversation for ${owner}/${repo}#${number}; ` +
+        `the review will use the live fallback. ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
+  }
+}
+
+async function writePrInputArtifacts({ diffInventory, diffSummary, input, paths }) {
+  const writes = [
+    writeFile(paths.diffInventoryPath, `${JSON.stringify(diffInventory, null, 2)}\n`, "utf8"),
+    writeFile(paths.diffSummaryPath, `${JSON.stringify(diffSummary)}\n`, "utf8"),
+    writeFile(paths.metadataPath, `${JSON.stringify(input.metadata, null, 2)}\n`, "utf8"),
+    writeFile(paths.diffPath, input.diff, "utf8"),
+  ];
+  if (input.conversation) {
+    writes.push(
+      writeFile(paths.conversationPath, `${JSON.stringify(input.conversation, null, 2)}\n`, "utf8"),
+    );
+  }
+  await Promise.all(writes);
+}
+
 function buildRunPaths({ runDir, stableHtmlPath }) {
   return {
+    conversationPath: path.join(runDir, "conversation.json"),
     diffPath: path.join(runDir, "diff.patch"),
     diffInventoryPath: path.join(runDir, "diff-inventory.json"),
     diffSummaryPath: path.join(runDir, "diff-summary.json"),

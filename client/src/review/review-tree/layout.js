@@ -19,13 +19,13 @@ const REVIEW_GROUP_HEIGHT = 118;
 const REVIEW_GROUP_WIDTH = 520;
 const SECTION_TREE_LAYER_GAP_Y = 110;
 const SECTION_TREE_SIBLING_GAP_X = 72;
-const MIN_TREE_ZOOM = 0.18;
+export const MIN_TREE_ZOOM = 0.18;
 const FILE_TREE_LAYER_GAP_Y = FILE_NODE_STACK_GAP_Y * 3;
 const FILE_TREE_SIBLING_GAP_X = FILE_NODE_GAP_X;
-const VIEWPORT_PADDING_Y = 176;
-const FALLBACK_TREE_VIEWPORT = { x: 72, y: 52, zoom: 0.86 };
-const FILE_TREE_SOURCE_HANDLE = "file-tree-source";
-const FILE_TREE_TARGET_HANDLE = "file-tree-target";
+export const VIEWPORT_PADDING_Y = 176;
+export const FALLBACK_TREE_VIEWPORT = { x: 72, y: 52, zoom: 0.86 };
+export const FILE_TREE_SOURCE_HANDLE = "file-tree-source";
+export const FILE_TREE_TARGET_HANDLE = "file-tree-target";
 const FILE_REVIEW_PRIORITY = new Map([
   ["primary", 0],
   ["secondary", 1],

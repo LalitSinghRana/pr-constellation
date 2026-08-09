@@ -13,7 +13,7 @@ pnpm dev
 
 ## Run semantics
 
-- New PRs are queued smallest-first from changed lines and file count.
+- New PRs appear in the inbox; select Analyze to queue an AI analysis.
 - Up to two different PRs run at once; analyses for the same PR remain serial.
 - Model-backed stages share a process-wide limit of three concurrent subprocesses.
 - File Tree and Section Tree generation and repair use the provider's highest configured effort
@@ -33,8 +33,9 @@ pnpm dev
 ## Persistence
 
 Mutable run metadata, timings, and queued work are stored in
-`.reviews/.run-store.sqlite`. Immutable diff, analysis, and generated HTML files stay in each run
-directory. The stable `.reviews/<review-slug>/index.html` points to the latest successful result.
+`.reviews/.run-store.sqlite`. Immutable diff, analysis, conversation snapshot, and generated HTML files
+stay in each run directory. The stable `.reviews/<review-slug>/index.html` points to the latest successful
+result.
 Legacy `run.json` and `timings.json` files are imported once and preserved.
 
 Inbox state is stored separately at

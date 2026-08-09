@@ -19,18 +19,32 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Check,
+  CircleDot,
+  CircleX,
   FileCode2,
   FileDiff,
+  FileText,
   FolderTree,
   GitBranch,
+  GitCommitHorizontal,
+  GitMerge,
   GitPullRequest,
+  GitPullRequestArrow,
   Layers3,
-  UserRound,
+  MessageSquare,
+  RotateCcw,
+  UserRoundPlus,
 } from "lucide-react";
+import { Timeline } from "primereact/timeline";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
+import remarkGfm from "remark-gfm";
+import { remarkAlert } from "remark-github-blockquote-alert";
 import { Badge } from "../components/ui/badge.jsx";
 import { Button } from "../components/ui/button.jsx";
 import { Collapsible, CollapsibleTrigger } from "../components/ui/collapsible.jsx";
@@ -45,12 +59,22 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.jsx";
 import { cn } from "../lib/utils.js";
 import { buildChunkDiffData } from "./diff-view-model.js";
+import { githubMarkdownSanitizeSchema } from "./github-markdown.js";
 import { lineKey, lineTargetFromGutter } from "./review-comment-model.js";
 import { InlineCommentComposer, ReviewDraftProvider } from "./review-draft-panel.jsx";
-import { buildReviewTree, sectionTreeSections } from "./review-tree/layout.js";
+import {
+  buildReviewTree,
+  FALLBACK_TREE_VIEWPORT,
+  FILE_TREE_SOURCE_HANDLE,
+  FILE_TREE_TARGET_HANDLE,
+  MIN_TREE_ZOOM,
+  sectionTreeSections,
+  VIEWPORT_PADDING_Y,
+} from "./review-tree/layout.js";
 import {
   readReviewData,
   readReviewSlug,
+  readConversationData,
   readTreeData,
   usePersistentStringSet,
 } from "./review-tree/state.js";
@@ -115,6 +139,7 @@ function App() {
     usePersistentStringSet(sourceOrderViewStorageKey);
   const stacks = treeData?.reviewStacks || [];
   const [activeStackId, setActiveStackId] = useState(() => stacks[0]?.id ?? null);
+  const [activeTab, setActiveTab] = useState("conversation");
   // First-pass layout uses the estimated reviewSectionHeight() formula; once
   // ReviewTreeCanvas measures real rendered heights that drift from the estimate,
   // this re-runs layout with real numbers. Rendered node ids and content are
@@ -174,12 +199,14 @@ function App() {
   );
 
   return (
-    <ReviewDraftProvider reviewSlug={reviewSlug}>
+    <ReviewDraftProvider reviewSlug={reviewSlug} showReviewSheet={activeTab === "trees"}>
       {(draft) => (
         <div className="review-shell fixed inset-0 grid h-dvh w-screen min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden bg-background">
-          <ReviewHeader review={review} />
+          <ReviewHeader activeTab={activeTab} onTabChange={setActiveTab} review={review} />
           <main className="review-main grid min-h-0 overflow-hidden">
-            {hasTree ? (
+            {activeTab === "conversation" ? (
+              <PullRequestConversation review={review} reviewSlug={reviewSlug} />
+            ) : hasTree ? (
               <section
                 className="review-tree-panel size-full min-h-0 overflow-hidden rounded-none border-0 bg-card shadow-none"
                 aria-label="PR review tree"
@@ -221,7 +248,7 @@ function App() {
   );
 }
 
-function ReviewHeader({ review }) {
+function ReviewHeader({ activeTab, onTabChange, review }) {
   return (
     <header className="review-header sticky top-0 z-20 border-b border-border bg-[color-mix(in_oklab,var(--card)_92%,var(--background))] px-5 py-3 shadow-xs backdrop-blur-[20px] max-[980px]:px-3 max-[980px]:py-2.5">
       <div className="review-header-main grid grid-cols-[minmax(0,1fr)_auto] items-center justify-between gap-3.5 max-[980px]:grid-cols-1 max-[980px]:gap-2">
@@ -247,50 +274,223 @@ function ReviewHeader({ review }) {
             <a href={review.url}>{review.title || "Untitled pull request"}</a>
           </h1>
         </div>
-        <div className="review-meta flex min-w-0 max-w-[min(44vw,520px)] flex-[0_1_auto] flex-wrap justify-end gap-2 max-[980px]:max-w-full max-[980px]:justify-start">
-          <Badge
-            className="meta-chip branch-chip min-w-0 max-w-[min(27vw,255px)] font-mono"
-            title="Base and head branches"
-            variant="outline"
-          >
-            <GitBranch aria-hidden="true" size={14} />
-            <span className="branch-name is-base min-w-0 max-w-[82px] flex-[0_1_auto] truncate">
-              {review.baseRefName || "base"}
-            </span>
-            <span
-              aria-hidden="true"
-              className="branch-arrow flex-none font-extrabold text-muted-foreground"
-            >
-              &lt;-
-            </span>
-            <span className="branch-name is-head min-w-0 max-w-[138px] flex-1 truncate">
-              {review.headRefName || "head"}
-            </span>
-          </Badge>
-          <Badge
-            className="meta-chip author-chip min-w-0 max-w-[150px]"
-            title="Author"
-            variant="outline"
-          >
-            <UserRound aria-hidden="true" size={14} />
-            <span className="author-name min-w-0 truncate">{review.authorLogin || "unknown"}</span>
-          </Badge>
-          <Badge
-            className="change-pill min-w-0 border-transparent bg-diff-add/15 font-mono text-diff-add"
-            variant="outline"
-          >
-            +{review.additions ?? 0}
-          </Badge>
-          <Badge
-            className="change-pill min-w-0 border-transparent bg-diff-del/15 font-mono text-diff-del"
-            variant="outline"
-          >
-            -{review.deletions ?? 0}
-          </Badge>
-        </div>
+        <Tabs onValueChange={onTabChange} value={activeTab}>
+          <TabsList aria-label="Review content">
+            <TabsTrigger value="conversation">Conversation</TabsTrigger>
+            <TabsTrigger value="trees">Review trees</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
     </header>
   );
+}
+
+function PullRequestConversation({ review, reviewSlug }) {
+  const initialConversation = useMemo(readConversationData, []);
+  const [conversation, setConversation] = useState(initialConversation);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (initialConversation) return;
+
+    const controller = new AbortController();
+    fetch(`/api/reviews/${encodeURIComponent(reviewSlug)}/conversation`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Conversation could not be loaded.");
+        setConversation(payload);
+      })
+      .catch((loadError) => {
+        if (loadError.name !== "AbortError") setError(loadError.message);
+      });
+    return () => controller.abort();
+  }, [initialConversation, reviewSlug]);
+
+  if (error) return <p className="m-auto text-sm text-destructive">{error}</p>;
+  if (!conversation)
+    return <p className="m-auto text-sm text-muted-foreground">Loading conversation…</p>;
+
+  const timeline = [
+    ...(review.body.trim()
+      ? [
+          {
+            actor: review.authorLogin || "Author",
+            avatarUrl: review.authorAvatarUrl,
+            body: review.body,
+            createdAt: review.createdAt,
+            kind: "description",
+            type: "PullRequest",
+            url: review.url,
+          },
+        ]
+      : []),
+    ...conversation.timeline,
+    ...conversation.threads.map((thread) => ({
+      actor: thread.comments[0]?.actor || "GitHub",
+      avatarUrl: thread.comments[0]?.avatarUrl || "",
+      createdAt: thread.comments[0]?.createdAt || "",
+      kind: "thread",
+      thread,
+      type: "PullRequestReviewThread",
+    })),
+  ].sort((left, right) => timelineTimestamp(left) - timelineTimestamp(right));
+
+  return (
+    <section
+      aria-label="Pull request conversation"
+      className="flex min-h-0 min-w-0 items-start justify-center overflow-auto bg-card px-5 py-6 max-[980px]:px-3"
+    >
+      {timeline.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No conversation yet.</p>
+      ) : (
+        <Timeline
+          className="conversation-timeline w-full min-w-0 max-w-5xl"
+          content={(item) => <ConversationItem item={item} />}
+          marker={(item) => {
+            const Icon = conversationIcon(item);
+            return (
+              <span
+                className={cn(
+                  "grid size-6 shrink-0 place-items-center rounded-full border-2 border-background",
+                  conversationIconClass(item),
+                )}
+              >
+                <Icon aria-hidden size={13} strokeWidth={2.5} />
+              </span>
+            );
+          }}
+          pt={{
+            connector: { className: "conversation-timeline-connector" },
+            content: { className: "conversation-timeline-content" },
+            event: { className: "conversation-timeline-event" },
+            opposite: { className: "conversation-timeline-opposite" },
+            separator: { className: "conversation-timeline-separator" },
+          }}
+          unstyled
+          value={timeline}
+        />
+      )}
+    </section>
+  );
+}
+
+function ConversationItem({ item }) {
+  const label = conversationLabel(item);
+  const isContent =
+    ["comment", "description", "thread"].includes(item.kind) ||
+    (item.kind === "review" && Boolean(item.body.trim()));
+  return (
+    <article
+      className={cn(
+        "relative min-w-0 text-sm",
+        isContent ? "rounded-lg border bg-background p-4" : "flex items-center py-1.5",
+      )}
+    >
+      <p
+        className={cn(
+          "min-w-0 font-semibold text-muted-foreground",
+          isContent ? "text-xs" : "truncate",
+        )}
+      >
+        {item.actor} {label}
+      </p>
+      {item.kind === "thread" ? <ConversationThread thread={item.thread} /> : null}
+      {isContent && item.body ? <ConversationMarkdown body={item.body} /> : null}
+    </article>
+  );
+}
+
+function ConversationThread({ thread }) {
+  return (
+    <div className="mt-3 grid gap-3">
+      <p className="font-mono text-xs text-muted-foreground">
+        {thread.path}:{thread.line}
+        {thread.isResolved ? " · resolved" : ""}
+        {thread.isOutdated ? " · outdated" : ""}
+      </p>
+      {thread.comments.map((comment) => (
+        <div className="border-t pt-3" key={comment.id || comment.createdAt}>
+          <p className="text-xs font-semibold text-muted-foreground">{comment.actor}</p>
+          <ConversationMarkdown body={comment.body} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ConversationMarkdown({ body }) {
+  return (
+    <div className="conversation-markdown mt-3 min-w-0 break-words leading-6">
+      <ReactMarkdown
+        components={{ table: MarkdownTable }}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, githubMarkdownSanitizeSchema]]}
+        remarkPlugins={[remarkGfm, remarkAlert]}
+      >
+        {body}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function MarkdownTable({ children }) {
+  return (
+    <div className="my-3 overflow-x-auto rounded-md border border-border">
+      <table className="conversation-markdown-table">{children}</table>
+    </div>
+  );
+}
+
+function conversationLabel(item) {
+  if (item.kind === "description") return "opened this pull request";
+  if (item.kind === "review") return `submitted ${item.state.toLowerCase().replaceAll("_", " ")}`;
+  if (item.kind === "thread") return "reviewed a file";
+  if (item.kind === "commit") return `pushed ${item.body.split("\n", 1)[0] || "a commit"}`;
+  if (item.type === "ReviewRequestedEvent")
+    return `requested review from ${item.requestedReviewer || "a reviewer"}`;
+  if (item.kind === "event")
+    return String(item.type)
+      .replace(/Event$/, "")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .toLowerCase();
+  return "commented";
+}
+
+function conversationIcon(item) {
+  if (item.kind === "description") return GitPullRequest;
+  if (item.kind === "comment" || item.kind === "thread") return MessageSquare;
+  if (item.kind === "review" && item.state === "APPROVED") return Check;
+  if (item.kind === "review" && item.state === "COMMENTED") return MessageSquare;
+  if (item.kind === "review") return FileText;
+  if (item.kind === "commit") return GitCommitHorizontal;
+  if (item.type === "ReviewRequestedEvent") return UserRoundPlus;
+  if (item.type === "MergedEvent") return GitMerge;
+  if (item.type === "ClosedEvent") return CircleX;
+  if (item.type === "HeadRefForcePushedEvent") return RotateCcw;
+  if (item.type === "CrossReferencedEvent") return GitPullRequestArrow;
+  return CircleDot;
+}
+
+function conversationIconClass(item) {
+  if (item.type === "MergedEvent") return "bg-pr-merged text-background";
+  if (item.type === "ClosedEvent") return "bg-pr-closed text-background";
+  if (item.kind === "description") return "bg-pr-open text-background";
+  if (item.kind === "review" && item.state === "APPROVED") return "bg-pr-open text-background";
+  if (
+    item.kind === "comment" ||
+    item.kind === "thread" ||
+    (item.kind === "review" && item.state === "COMMENTED")
+  )
+    return "bg-background text-muted-foreground";
+  if (item.kind === "review") return "bg-primary text-primary-foreground";
+  return "bg-muted text-muted-foreground";
+}
+
+function timelineTimestamp(item) {
+  if (item.kind === "description") return 0;
+  const value = new Date(item.createdAt).getTime();
+  return Number.isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
 }
 
 function ReviewTreeCanvas({

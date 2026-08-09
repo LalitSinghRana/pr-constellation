@@ -34,6 +34,13 @@ export function readTreeData() {
   return readJsonScript("pr-analysis-data", null);
 }
 
+export function readConversationData() {
+  const conversation = readJsonScript("pr-conversation-data", null);
+  return Array.isArray(conversation?.timeline) && Array.isArray(conversation?.threads)
+    ? conversation
+    : null;
+}
+
 function readJsonScript(id, fallback) {
   const target = document.getElementById(id);
   return target ? JSON.parse(target.textContent) : fallback;

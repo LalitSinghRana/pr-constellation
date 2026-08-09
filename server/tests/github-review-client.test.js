@@ -1,6 +1,52 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildReviewComments, submitPullRequestReview } from "../review/github-review-client.js";
+import {
+  buildReviewComments,
+  fetchPullRequestConversation,
+  submitPullRequestReview,
+} from "../review/github-review-client.js";
+
+test("fetchPullRequestConversation normalizes timeline items and review threads", async () => {
+  const conversation = await fetchPullRequestConversation({
+    number: 16,
+    owner: "acme",
+    repo: "app",
+    runGh: async () => ({
+      data: {
+        repository: {
+          pullRequest: {
+            reviewThreads: { nodes: [{ line: 4, path: "src/app.js", comments: { nodes: [] } }] },
+            timelineItems: {
+              nodes: [
+                {
+                  __typename: "IssueComment",
+                  author: { login: "octo" },
+                  body: "hello",
+                  createdAt: "now",
+                  databaseId: 1,
+                },
+              ],
+            },
+          },
+        },
+      },
+    }),
+  });
+
+  assert.deepEqual(conversation.timeline, [
+    {
+      actor: "octo",
+      avatarUrl: "",
+      body: "hello",
+      createdAt: "now",
+      id: 1,
+      kind: "comment",
+      type: "IssueComment",
+      url: "",
+    },
+  ]);
+  assert.equal(conversation.threads[0].path, "src/app.js");
+});
 
 test("buildReviewComments maps draft comments to GitHub line/side payloads", () => {
   assert.deepEqual(

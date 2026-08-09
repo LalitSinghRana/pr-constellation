@@ -630,7 +630,7 @@ test("settings lists are validated before writing", () => {
   );
 });
 
-test("morning analyses queue from smallest pull request to largest", () => {
+test("manual batch analyses queue from smallest pull request to largest", () => {
   const ordered = sortPullRequestsBySize([
     {
       url: "https://github.com/example/repo/pull/3",
