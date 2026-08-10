@@ -30,7 +30,7 @@ import {
 import { assertStorageId, RunStore } from "./run-store.js";
 
 const ACTIVE_STATUSES = new Set(["queued", "running"]);
-const MAX_CONCURRENT_JOBS = 2;
+const MAX_CONCURRENT_JOBS = 1;
 const STAGE_FINISH_EVENT_TYPES = new Set([
   "end",
   "finish",

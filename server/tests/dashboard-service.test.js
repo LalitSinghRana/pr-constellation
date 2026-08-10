@@ -191,7 +191,7 @@ try {
   releaseFirstExecution();
   await service.waitForIdle();
 
-  assert.ok(maximumActiveExecutions <= 2);
+  assert.equal(maximumActiveExecutions, 1);
   assert.equal(executions.length, 2);
   assert.equal(executions[0].sourceRunDir, null);
   assert.equal(executions[1].sourceRunDir, null);
@@ -211,8 +211,8 @@ try {
     totalTokens: 120,
   });
   assert.deepEqual(storedFirst.metrics.tokens, storedFirst.metrics.usage);
-  assert.equal(storedSecond.gitCommit, "abc123");
-  assert.equal(storedSecond.metrics.codeFingerprint, "abc123-dirty-fixture");
+  assert.equal(storedSecond.gitCommit, "def456");
+  assert.equal(storedSecond.metrics.codeFingerprint, "def456");
   assert.match(storedFirst.metrics.inputFingerprint, /^[a-f0-9]{64}$/);
 
   const frozen = await service.enqueue({
@@ -467,7 +467,7 @@ try {
   await failingService.close();
 
   await service.close();
-  await checkConcurrentScheduling();
+  await checkSequentialScheduling();
   await checkCancellation();
   await checkCancellationCommitRace();
   await checkSuccessPublicationWinsCancellation();
@@ -478,17 +478,17 @@ try {
 
 console.log("dashboard service checks passed");
 
-async function checkConcurrentScheduling() {
+async function checkSequentialScheduling() {
   const starts = [];
   let activeExecutions = 0;
   let maximumActiveExecutions = 0;
-  let reportThirdStart;
-  let reportTwoStarts;
-  const thirdStart = new Promise((resolve) => {
-    reportThirdStart = resolve;
+  let reportNextStart;
+  let reportFirstStart;
+  const firstStart = new Promise((resolve) => {
+    reportFirstStart = resolve;
   });
-  const twoStarts = new Promise((resolve) => {
-    reportTwoStarts = resolve;
+  const nextStart = new Promise((resolve) => {
+    reportNextStart = resolve;
   });
   const service = new DashboardService({
     configuration: {
@@ -515,8 +515,8 @@ async function checkConcurrentScheduling() {
           },
           { once: true },
         );
-        if (starts.length === 2) reportTwoStarts();
-        if (starts.length === 3) reportThirdStart();
+        if (starts.length === 1) reportFirstStart();
+        if (starts.length === 2) reportNextStart();
       },
     }),
   });
@@ -533,36 +533,35 @@ async function checkConcurrentScheduling() {
     prUrl: "https://github.com/example/concurrent-c/pull/3",
     refresh: true,
   });
-  await twoStarts;
+  await firstStart;
 
   assert.deepEqual(
     starts.map((context) => context.prUrl),
-    [samePrUrl, distinct.url],
+    [samePrUrl],
   );
   const activeSnapshot = await service.snapshot();
-  assert.deepEqual(
-    new Set(activeSnapshot.queue.activeRunIds),
-    new Set([first.runId, distinct.runId]),
-  );
-  assert.deepEqual(activeSnapshot.queue.queuedRunIds, [second.runId, waiting.runId]);
-  assert.equal(maximumActiveExecutions, 2);
+  assert.deepEqual(activeSnapshot.queue.activeRunIds, [first.runId]);
+  assert.deepEqual(activeSnapshot.queue.queuedRunIds, [
+    second.runId,
+    distinct.runId,
+    waiting.runId,
+  ]);
+  assert.equal(maximumActiveExecutions, 1);
 
   const cancellation = await service.cancelRun({ slug: first.slug, runId: first.runId });
   assert.deepEqual(cancellation.canceledRunIds, [first.runId]);
-  assert.equal(starts[1].signal.aborted, false);
-  await thirdStart;
-  assert.equal(starts[2].prUrl, samePrUrl);
-  assert.equal(maximumActiveExecutions, 2);
+  await nextStart;
+  assert.equal(starts[1].prUrl, samePrUrl);
+  assert.equal(maximumActiveExecutions, 1);
 
   await service.close();
   assert.equal(starts[1].signal.aborted, true);
-  assert.equal(starts[2].signal.aborted, true);
-  assert.equal(starts.length, 3);
+  assert.equal(starts.length, 2);
   const reopenedStore = new RunStore({ reviewsDir: service.reviewsDir });
   try {
     assert.equal((await reopenedStore.readRun(first.slug, first.runId)).status, "canceled");
     assert.equal((await reopenedStore.readRun(second.slug, second.runId)).status, "canceled");
-    assert.equal((await reopenedStore.readRun(distinct.slug, distinct.runId)).status, "canceled");
+    assert.equal((await reopenedStore.readRun(distinct.slug, distinct.runId)).status, "queued");
     assert.equal((await reopenedStore.readRun(waiting.slug, waiting.runId)).status, "queued");
   } finally {
     reopenedStore.close();
