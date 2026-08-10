@@ -1077,6 +1077,7 @@ export async function refreshNotificationItems(
     const pr = prFromActivity(result.item, result.activity);
     addSource(items, pr, "activity");
     const item = items.get(prKey(pr));
+    item.authored ||= pr.author?.login?.toLowerCase() === username.toLowerCase();
     item.latestReviewState = summarizeActivity(result.activity, username).latestReviewState;
     item.reviewed ||= Boolean(item.latestReviewState);
     items.set(item.id, item);
@@ -1465,6 +1466,7 @@ export async function collectInbox({
     addSource(items, pr, "activity");
     const summary = summarizeActivity(result.activity, username, teammates);
     const item = items.get(prKey(pr));
+    item.authored ||= pr.author?.login?.toLowerCase() === username.toLowerCase();
     item.latestReviewState = summary.latestReviewState;
     item.reviewed ||= Boolean(summary.latestReviewState);
     items.set(item.id, item);

@@ -64,4 +64,30 @@ test("a notification refresh keeps commented pull requests reviewed", async () =
   assert.equal(item.reviewed, true);
   assert.equal(lifecycleForQueueItem(item), "reviewed");
   assert.equal(touched.has(id), true);
+
+  const authoredId = "LalitSinghRana/pr-review-cockpit#16";
+  items.set(authoredId, {
+    ...items.get(id),
+    authored: false,
+    id: authoredId,
+    notificationUpdatedAt: "2026-08-10T08:40:00Z",
+    number: 16,
+    repository: "LalitSinghRana/pr-review-cockpit",
+  });
+  await refreshNotificationItems(
+    items,
+    [
+      {
+        pr: { number: 16, repository: { nameWithOwner: "LalitSinghRana/pr-review-cockpit" } },
+        thread: { updated_at: "2026-08-10T08:46:31Z" },
+      },
+    ],
+    touched,
+    {
+      getActivity: async () => ({ ...activity, author: { login: "LalitSinghRana" } }),
+      username: "LalitSinghRana",
+    },
+  );
+
+  assert.equal(lifecycleForQueueItem(items.get(authoredId)), "mine");
 });
