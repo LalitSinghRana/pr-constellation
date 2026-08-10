@@ -1036,7 +1036,12 @@ async function listRepositoryPullRequests(repository, historical, since) {
   }));
 }
 
-async function refreshNotificationItems(items, pullRequestNotifications, touched) {
+export async function refreshNotificationItems(
+  items,
+  pullRequestNotifications,
+  touched,
+  { getActivity = getPrActivity, username = "" } = {},
+) {
   const before = new Set(items.keys());
   const notificationTimes = new Map();
   for (const { thread, pr } of pullRequestNotifications) {
@@ -1058,7 +1063,7 @@ async function refreshNotificationItems(items, pullRequestNotifications, touched
     5,
     async (item) => {
       try {
-        return { item, activity: await getPrActivity(item) };
+        return { item, activity: await getActivity(item) };
       } catch {
         return { failed: true };
       }
@@ -1071,6 +1076,10 @@ async function refreshNotificationItems(items, pullRequestNotifications, touched
     }
     const pr = prFromActivity(result.item, result.activity);
     addSource(items, pr, "activity");
+    const item = items.get(prKey(pr));
+    item.latestReviewState = summarizeActivity(result.activity, username).latestReviewState;
+    item.reviewed ||= Boolean(item.latestReviewState);
+    items.set(item.id, item);
     const id = prKey(pr);
     const notificationAt = notificationTimes.get(id);
     if (notificationAt) {
@@ -1083,7 +1092,8 @@ async function refreshNotificationItems(items, pullRequestNotifications, touched
 
 export async function syncNotifications(now = new Date(), { dashboardService } = {}) {
   const startedAt = now.toISOString();
-  const initialState = await readQueueState();
+  const [initialState, saved] = await Promise.all([readQueueState(), readSettings()]);
+  const username = saved.username || initialState.sync.username || (await getDetectedUser());
   const previousSync = new Date(
     initialState.sync.notificationsSyncedAt || initialState.sync.lastSyncedAt,
   ).getTime();
@@ -1107,7 +1117,9 @@ export async function syncNotifications(now = new Date(), { dashboardService } =
   const items = new Map(trackedQueueItems(initialState).map((item) => [item.id, item]));
   const initialIds = new Set(Object.keys(initialState.items));
   const touched = new Set();
-  const warnings = await refreshNotificationItems(items, notifications.pullRequests, touched);
+  const warnings = await refreshNotificationItems(items, notifications.pullRequests, touched, {
+    username,
+  });
   const entries = [
     ...[...touched].map((id) => items.get(id)).filter(Boolean),
     ...notifications.other,
@@ -1122,6 +1134,7 @@ export async function syncNotifications(now = new Date(), { dashboardService } =
       state.sync.notificationLastModified = notifications.lastModified;
       state.sync.notificationPollIntervalSeconds = notifications.pollIntervalSeconds;
       state.sync.notificationsSyncedAt = startedAt;
+      state.sync.username = username;
       const added = entries.filter((item) => !initialIds.has(item.id)).length;
       return {
         fetched: entries.length,
@@ -1195,7 +1208,11 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
   let pullRequestNotifications = [];
   if (notificationsResult.status === "fulfilled") {
     pullRequestNotifications = notificationsResult.value.pullRequests;
-    warnings.push(...(await refreshNotificationItems(items, pullRequestNotifications, touched)));
+    warnings.push(
+      ...(await refreshNotificationItems(items, pullRequestNotifications, touched, {
+        username,
+      })),
+    );
   } else {
     warnings.push("GitHub notifications could not be synchronized.");
   }
