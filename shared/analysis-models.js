@@ -20,6 +20,20 @@ export const ANALYSIS_MODELS = Object.freeze([
   }),
 ]);
 
+/** Agents offered as the settings "default agent" choice. Expand as more are supported. */
+export const SETTINGS_ANALYSIS_AGENTS = Object.freeze([
+  Object.freeze({
+    id: DEFAULT_ANALYSIS_MODEL,
+    label: "Grok 4.5",
+    providerLabel: "via Cursor",
+  }),
+]);
+
+export function normalizeSettingsAnalysisModel(value) {
+  const id = typeof value === "string" ? value.trim() : "";
+  return SETTINGS_ANALYSIS_AGENTS.some((agent) => agent.id === id) ? id : DEFAULT_ANALYSIS_MODEL;
+}
+
 export function analysisModelReasoningEffort(model) {
   const entry = ANALYSIS_MODELS.find((candidate) => candidate.id === model);
   return entry?.reasoningEffort ?? null;

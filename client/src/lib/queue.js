@@ -6,6 +6,7 @@ export const EMPTY_SETTINGS = {
   teams: [],
   autoQueue: false,
   showMinimap: false,
+  defaultAnalysisModel: "grok-4.5",
 };
 
 export const ACTIVITY_SIGNAL_KINDS = new Set(ACTIVITY_SIGNAL_KIND_VALUES);

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { normalizeSettingsAnalysisModel } from "../../shared/analysis-models.js";
 import {
   ACTIVITY_SIGNAL_KINDS,
   LIFECYCLE_SCORES,
@@ -167,6 +168,7 @@ export function normalizeSettings(value = {}) {
     teams: parseList(value.teams, teamPattern, 10),
     autoQueue: value.autoQueue === true,
     showMinimap: value.showMinimap === true,
+    defaultAnalysisModel: normalizeSettingsAnalysisModel(value.defaultAnalysisModel),
   };
 }
 
@@ -1108,13 +1110,24 @@ export async function syncNotifications(now = new Date(), { dashboardService } =
     since,
   });
   if (notifications.notModified) {
+    const automaticAnalysis =
+      dashboardService && saved.autoQueue
+        ? await automaticallyQueueNewAnalyses(
+            inboxFromQueue(initialState).items,
+            dashboardService,
+            {
+              model: saved.defaultAnalysisModel,
+            },
+          )
+        : { runs: [], warnings: [] };
     return {
       added: 0,
+      autoQueued: automaticAnalysis.runs.length,
       fetched: 0,
       notModified: true,
       pollIntervalSeconds: notifications.pollIntervalSeconds,
       tracked: Object.keys(initialState.items).length,
-      warnings: [],
+      warnings: automaticAnalysis.warnings,
     };
   }
   const items = new Map(trackedQueueItems(initialState).map((item) => [item.id, item]));
@@ -1152,7 +1165,9 @@ export async function syncNotifications(now = new Date(), { dashboardService } =
   const [conversationCache, automaticAnalysis] = await Promise.all([
     cacheReviewConversations(entries),
     dashboardService && saved.autoQueue
-      ? automaticallyQueueNewAnalyses(inboxFromQueue(queueState).items, dashboardService)
+      ? automaticallyQueueNewAnalyses(inboxFromQueue(queueState).items, dashboardService, {
+          model: saved.defaultAnalysisModel,
+        })
       : { runs: [], warnings: [] },
   ]);
   return {
@@ -1282,7 +1297,9 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
   ]);
   const automaticAnalysis =
     dashboardService && saved.autoQueue
-      ? await automaticallyQueueNewAnalyses(inbox.items, dashboardService)
+      ? await automaticallyQueueNewAnalyses(inbox.items, dashboardService, {
+          model: saved.defaultAnalysisModel,
+        })
       : { runs: [], warnings: [] };
   return {
     ...summary,

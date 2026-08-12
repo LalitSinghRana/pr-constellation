@@ -67,17 +67,20 @@ function historyByUrlFromDashboard(dashboard) {
   return map;
 }
 
-export async function enqueueMissingAnalyses(values, dashboardService) {
+export async function enqueueMissingAnalyses(values, dashboardService, options = {}) {
   const candidates = values.slice(0, 100).map(normalizeAnalysisCandidate);
   const dashboard = await dashboardService.snapshot();
   const historyByUrl = historyByUrlFromDashboard(dashboard);
   const ordered = sortAnalysisCandidates(candidates, historyByUrl);
+  const model =
+    typeof options.model === "string" && options.model.trim() ? options.model.trim() : undefined;
   const runs = [];
   for (const candidate of ordered) {
     if (alreadyAnalyzed(dashboard, candidate)) continue;
     runs.push(
       await dashboardService.enqueue({
         inboxScore: candidate.inboxScore,
+        model,
         prioritize: candidate.prioritize,
         prUrl: candidate.url,
         queueBand: candidate.queueBand,
@@ -92,16 +95,18 @@ export async function enqueueMissingAnalyses(values, dashboardService) {
   return runs;
 }
 
-export async function automaticallyQueueNewAnalyses(items, dashboardService) {
+export async function automaticallyQueueNewAnalyses(items, dashboardService, options = {}) {
   try {
     return {
       runs: await enqueueMissingAnalyses(
         items.filter((item) => item.lifecycle === "new" && !item.done),
         dashboardService,
+        options,
       ),
       warnings: [],
     };
-  } catch {
+  } catch (error) {
+    console.error("Automatic analysis queue failed:", error);
     return {
       runs: [],
       warnings: [

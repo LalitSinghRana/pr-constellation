@@ -660,6 +660,7 @@ test("settings lists are validated before writing", () => {
       teams: ["example/platform", "bad"],
       autoQueue: true,
       showMinimap: true,
+      defaultAnalysisModel: "grok-4.5",
     }),
     {
       username: "me",
@@ -667,14 +668,24 @@ test("settings lists are validated before writing", () => {
       teams: ["example/platform"],
       autoQueue: true,
       showMinimap: true,
+      defaultAnalysisModel: "grok-4.5",
     },
   );
   assert.equal(normalizeSettings({}).autoQueue, false);
   assert.equal(normalizeSettings({}).showMinimap, false);
+  assert.equal(normalizeSettings({}).defaultAnalysisModel, "grok-4.5");
   assert.equal(normalizeSettings({ autoQueue: false }).autoQueue, false);
   assert.equal(normalizeSettings({ showMinimap: false }).showMinimap, false);
   assert.equal(normalizeSettings({ autoQueue: true }).autoQueue, true);
   assert.equal(normalizeSettings({ showMinimap: true }).showMinimap, true);
+  assert.equal(
+    normalizeSettings({ defaultAnalysisModel: "not-a-real-model" }).defaultAnalysisModel,
+    "grok-4.5",
+  );
+  assert.equal(
+    normalizeSettings({ defaultAnalysisModel: "gpt-5.6-sol" }).defaultAnalysisModel,
+    "grok-4.5",
+  );
 });
 
 test("manual batch analyses queue from smallest pull request to largest", () => {
