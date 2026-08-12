@@ -47,7 +47,12 @@ export function createInboxApi({
         const body = await readRequestJson(request);
         const candidate = normalizeAnalysisCandidate(body);
         const run = await dashboardService.enqueue({
+          additions: candidate.additions,
+          changedFiles: candidate.changedFiles,
+          deletions: candidate.deletions,
+          inboxScore: candidate.inboxScore,
           model: typeof body.model === "string" ? body.model.trim() : undefined,
+          prioritize: candidate.prioritize,
           prUrl: candidate.url,
           reasoningEffort:
             typeof body.reasoningEffort === "string" ? body.reasoningEffort.trim() : undefined,

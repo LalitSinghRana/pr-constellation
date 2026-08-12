@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowUp,
   ArrowUpRight,
   AtSign,
   Bell,
@@ -147,6 +148,8 @@ function PullRequestRow({
   analysis,
   analysisBusy,
   onAnalyze,
+  onPrioritize,
+  prioritizeBusy,
   onMarkRead,
 }) {
   const Title = nested ? "h4" : "h3";
@@ -329,56 +332,93 @@ function PullRequestRow({
                   <Sparkles className="size-3.5" />
                   Open review
                 </a>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={analysisBusy || Boolean(analysis.active)}
-                      title={
-                        analysisBusy || analysis.active?.status === "queued"
-                          ? "Queued for AI analysis"
-                          : analysis.active?.status === "running"
-                            ? "Analyzing"
-                            : "Re-run AI analysis"
-                      }
-                    >
-                      {analysisBusy || analysis.active ? (
-                        <LoaderCircle className="size-3.5 animate-spin" />
-                      ) : (
-                        <RotateCcw className="size-3.5" />
-                      )}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-52">
-                    <DropdownMenuLabel>Retry analysis with</DropdownMenuLabel>
-                    {ANALYSIS_MODELS.map((model) => (
-                      <DropdownMenuItem
-                        key={model.id}
-                        disabled={analysisBusy || Boolean(analysis.active)}
-                        onSelect={() =>
-                          onAnalyze(item, {
-                            model: model.id,
-                            reasoningEffort: model.reasoningEffort,
-                          })
-                        }
+                {analysis.active?.status === "queued" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={prioritizeBusy || analysis.bumped}
+                    onClick={() => onPrioritize(analysis)}
+                    title={
+                      analysis.bumped
+                        ? "Already at the front of the queue"
+                        : "Move to front of queue"
+                    }
+                  >
+                    {prioritizeBusy ? (
+                      <LoaderCircle className="size-3.5 animate-spin" />
+                    ) : (
+                      <ArrowUp className="size-3.5" />
+                    )}
+                    {analysis.bumped ? "Prioritized" : "Prioritize"}
+                  </Button>
+                ) : analysis.active?.status === "running" ? (
+                  <Button size="sm" variant="outline" disabled>
+                    <LoaderCircle className="size-3.5 animate-spin" />
+                    Analyzing
+                  </Button>
+                ) : (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={analysisBusy}
+                        title="Re-run AI analysis"
                       >
-                        <span className="flex flex-col gap-0.5">
-                          <span className="font-medium">{model.label}</span>
-                          <span className="text-[0.7rem] text-muted-foreground">
-                            {model.id} · {model.reasoningEffort}
+                        {analysisBusy ? (
+                          <LoaderCircle className="size-3.5 animate-spin" />
+                        ) : (
+                          <RotateCcw className="size-3.5" />
+                        )}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuLabel>Retry analysis with</DropdownMenuLabel>
+                      {ANALYSIS_MODELS.map((model) => (
+                        <DropdownMenuItem
+                          key={model.id}
+                          disabled={analysisBusy}
+                          onSelect={() =>
+                            onAnalyze(item, {
+                              model: model.id,
+                              reasoningEffort: model.reasoningEffort,
+                            })
+                          }
+                        >
+                          <span className="flex flex-col gap-0.5">
+                            <span className="font-medium">{model.label}</span>
+                            <span className="text-[0.7rem] text-muted-foreground">
+                              {model.id} · {model.reasoningEffort}
+                            </span>
                           </span>
-                        </span>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </>
+            ) : analysis.active?.status === "queued" ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={prioritizeBusy || analysis.bumped}
+                onClick={() => onPrioritize(analysis)}
+                title={
+                  analysis.bumped ? "Already at the front of the queue" : "Move to front of queue"
+                }
+              >
+                {prioritizeBusy ? (
+                  <LoaderCircle className="size-3.5 animate-spin" />
+                ) : (
+                  <ArrowUp className="size-3.5" />
+                )}
+                {analysis.bumped ? "Prioritized" : "Prioritize"}
+              </Button>
             ) : (
               <Button
                 size="sm"
                 variant="outline"
-                disabled={analysisBusy || Boolean(analysis.active)}
+                disabled={analysisBusy || analysis.active?.status === "running"}
                 onClick={() => onAnalyze(item)}
               >
                 {analysisBusy || analysis.active?.status === "running" ? (
@@ -390,9 +430,7 @@ function PullRequestRow({
                   ? "Queueing"
                   : analysis.active?.status === "running"
                     ? "Analyzing"
-                    : analysis.active
-                      ? "Queued"
-                      : "Analyze"}
+                    : "Analyze"}
               </Button>
             )}
             <Button
@@ -496,6 +534,8 @@ function UpdatedDateGroup({
   analyses,
   analysisMutation,
   onAnalyze,
+  onPrioritize,
+  prioritizeMutation,
   onMarkRead,
   notifications = false,
   nested = false,
@@ -548,6 +588,8 @@ function UpdatedDateGroup({
             analysis: analysisFor(item, analyses.get(item.url)),
             analysisBusy: analysisMutation === item.id,
             onAnalyze,
+            onPrioritize,
+            prioritizeBusy: prioritizeMutation === item.url,
             onMarkRead,
           })}
         />
@@ -564,6 +606,8 @@ export function QueueSection({
   analyses,
   analysisMutation,
   onAnalyze,
+  onPrioritize,
+  prioritizeMutation,
   onMarkRead,
   showHeader,
 }) {
@@ -593,6 +637,8 @@ export function QueueSection({
             analyses={analyses}
             analysisMutation={analysisMutation}
             onAnalyze={onAnalyze}
+            onPrioritize={onPrioritize}
+            prioritizeMutation={prioritizeMutation}
             onMarkRead={onMarkRead}
             notifications={section.id === "nonpr"}
             nested={showHeader}

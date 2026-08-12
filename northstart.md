@@ -20,8 +20,8 @@ Next improvements
   - When typing comments edges flickers. There might be re-rendering happening
   - In "review" button, we show other existing comments also. It should only show draft comments only.
 - timer to review the PRs. Each review-stack should have their own timer based on #LOC. No need for AI, we can deterministically do this.
-- Priority queue
-- Settings page. Auto queue, mini-map toggle.
+- ~Priority queue: bands bumped → none → past-fail/cancel → past-success; within band by score; Prioritize button~
+- ~Settings page. Auto queue, mini-map toggle.~
 - Long git-diff files break out of node boundaries. http://127.0.0.1:4397/reviews/gh-17-picnicsupermarket-19-picnic-store-config-4993/ or http://127.0.0.1:4397/reviews/gh-17-picnicsupermarket-19-picnic-store-config-4993/
 - Move 0.1x / 1x / 10x toggle from header to inside the scope of review-trees
 - sorting by simple-smallest, simple-large, complex-large to get smaller ones get finished quickly

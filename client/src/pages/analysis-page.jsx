@@ -23,6 +23,7 @@ export function AnalysisPage() {
   } = useAnalysisDashboard();
   const [queueItems, setQueueItems] = useState([]);
   const [canceling, setCanceling] = useState(false);
+  const [prioritizingRunId, setPrioritizingRunId] = useState("");
   const [actionError, setActionError] = useState("");
   const [activeTab, setActiveTab] = useQueryState(
     "tab",
@@ -158,6 +159,28 @@ export function AnalysisPage() {
     [refreshDashboard],
   );
 
+  const prioritizeRun = useCallback(
+    async (entry, run) => {
+      if (!entry?.pr?.slug || !run?.runId) return;
+      setPrioritizingRunId(run.runId);
+      setActionError("");
+      try {
+        const response = await fetch(
+          `/api/runs/${encodeURIComponent(entry.pr.slug)}/${encodeURIComponent(run.runId)}/prioritize`,
+          { method: "POST", headers: { "Content-Type": "application/json" } },
+        );
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error || "Could not prioritize analysis.");
+        await refreshDashboard();
+      } catch (caught) {
+        setActionError(caught.message || "Could not prioritize analysis.");
+      } finally {
+        setPrioritizingRunId("");
+      }
+    },
+    [refreshDashboard],
+  );
+
   const cancelAll = useCallback(
     () =>
       cancelRuns([
@@ -226,6 +249,8 @@ export function AnalysisPage() {
               entries={[...running, ...queued]}
               mode="ongoing"
               onCancel={cancelRuns}
+              onPrioritize={prioritizeRun}
+              prioritizingRunId={prioritizingRunId}
               title="Ongoing"
             />
           </TabsContent>

@@ -32,6 +32,7 @@ export function QueuePage() {
   const [queueActionError, setQueueActionError] = useState("");
   const [analysisActionError, setAnalysisActionError] = useState("");
   const [analysisMutation, setAnalysisMutation] = useState("");
+  const [prioritizeMutation, setPrioritizeMutation] = useState("");
   const [analysisNotice, setAnalysisNotice] = useState("");
   const analysisError = analysisActionError || analysisServiceError;
 
@@ -172,8 +173,10 @@ export function QueuePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...item,
+          score: item.score,
           ...(options.model ? { model: options.model } : {}),
           ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}),
+          ...(options.prioritize ? { prioritize: true } : {}),
         }),
       });
       const result = await response.json();
@@ -185,6 +188,27 @@ export function QueuePage() {
       setAnalysisActionError(caught.message || "AI analysis could not be queued.");
     } finally {
       setAnalysisMutation("");
+    }
+  }
+
+  async function prioritize(analysis) {
+    if (!analysis?.slug || !analysis?.runId) return;
+    setPrioritizeMutation(analysis.url || analysis.slug);
+    setAnalysisActionError("");
+    setAnalysisNotice("");
+    try {
+      const response = await fetch(
+        `/api/runs/${encodeURIComponent(analysis.slug)}/${encodeURIComponent(analysis.runId)}/prioritize`,
+        { method: "POST", headers: { "Content-Type": "application/json" } },
+      );
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Could not prioritize analysis.");
+      setAnalysisNotice("Moved analysis to the front of the queue.");
+      await refreshAnalyses();
+    } catch (caught) {
+      setAnalysisActionError(caught.message || "Could not prioritize analysis.");
+    } finally {
+      setPrioritizeMutation("");
     }
   }
 
@@ -342,6 +366,8 @@ export function QueuePage() {
                     analyses={analyses}
                     analysisMutation={analysisMutation}
                     onAnalyze={analyze}
+                    onPrioritize={prioritize}
+                    prioritizeMutation={prioritizeMutation}
                     onMarkRead={markRead}
                     showHeader={activeFilter === "done"}
                   />

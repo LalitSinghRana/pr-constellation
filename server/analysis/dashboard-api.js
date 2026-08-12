@@ -71,6 +71,17 @@ export function createDashboardApiMiddleware({ service }) {
         return;
       }
 
+      const prioritizeRunMatch = url.pathname.match(
+        /^\/api\/runs\/([^/]+)\/([^/]+)\/prioritize\/?$/,
+      );
+      if (request.method === "POST" && prioritizeRunMatch) {
+        const slug = decodePathPart(prioritizeRunMatch[1]);
+        const runId = decodePathPart(prioritizeRunMatch[2]);
+        const run = await service.prioritizeRun({ runId, slug });
+        sendJson(response, 200, { run });
+        return;
+      }
+
       const rerunMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/([^/]+)\/rerun\/?$/);
       if (request.method === "POST" && rerunMatch) {
         const slug = decodePathPart(rerunMatch[1]);

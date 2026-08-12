@@ -1,4 +1,4 @@
-import { ChevronDown, FileClock, LoaderCircle, Sparkles, X } from "lucide-react";
+import { ArrowUp, ChevronDown, FileClock, LoaderCircle, Sparkles, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Card, CardContent } from "@/components/ui/card.jsx";
@@ -167,7 +167,7 @@ function RunDetails({ run, timeline }) {
   );
 }
 
-function AnalysisRow({ canceling, entry, mode, onCancel }) {
+function AnalysisRow({ canceling, entry, mode, onCancel, onPrioritize, prioritizing }) {
   const run = runForEntry(entry, mode);
   const item = entry.queueItem;
   const metrics = run?.metrics ?? {};
@@ -187,6 +187,9 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
   const successfulRun = entry.runs.find((candidate) => candidate.status === "succeeded");
   const timeline = analysisTimeline(run);
   const canCancel = Boolean(entry.runningRun || entry.queuedRuns?.length);
+  const queuedRun = entry.queuedRuns?.[0];
+  const canPrioritize = Boolean(queuedRun && !entry.runningRun && mode !== "running");
+  const bumped = Boolean(queuedRun?.metrics?.bumpedAt);
   const detail = entryDetail(entry, mode, run);
 
   const summary = (
@@ -248,6 +251,22 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
             summary
           )}
           <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:justify-end">
+            {canPrioritize && (
+              <Button
+                disabled={prioritizing || bumped || canceling}
+                onClick={() => onPrioritize?.(entry, queuedRun)}
+                size="sm"
+                variant="outline"
+                title={bumped ? "Already at the front of the queue" : "Move to front of queue"}
+              >
+                {prioritizing ? (
+                  <LoaderCircle className="size-3.5 animate-spin" />
+                ) : (
+                  <ArrowUp className="size-3.5" />
+                )}
+                {bumped ? "Prioritized" : "Prioritize"}
+              </Button>
+            )}
             {canCancel && (
               <Button
                 className="text-coral-strong"
@@ -293,7 +312,15 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
   );
 }
 
-export function AnalysisSection({ canceling, entries, mode, onCancel, title }) {
+export function AnalysisSection({
+  canceling,
+  entries,
+  mode,
+  onCancel,
+  onPrioritize,
+  prioritizingRunId,
+  title,
+}) {
   const groups = groupByUpdatedDate(
     entries.map((entry) => {
       const run = runForEntry(entry, mode);
@@ -341,6 +368,8 @@ export function AnalysisSection({ canceling, entries, mode, onCancel, title }) {
                   key={`${mode}-${entry.pr.slug || entry.pr.url}-${entry.runningRun?.runId || entry.queuedRuns?.[0]?.runId || entry.latestRun?.runId || "none"}`}
                   mode={mode}
                   onCancel={onCancel}
+                  onPrioritize={onPrioritize}
+                  prioritizing={prioritizingRunId === entry.queuedRuns?.[0]?.runId}
                 />
               ))}
             </section>

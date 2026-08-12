@@ -3,6 +3,11 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { parseGitHubPrUrl } from "../../analysis-worker/workflow/02-fetch-pr/github.js";
 import {
+  ANALYSIS_QUEUE_BANDS,
+  analysisHistoryBand,
+  sortAnalysisQueueJobs,
+} from "../../shared/analysis-queue-policy.js";
+import {
   analysisModelReasoningEffort,
   DEFAULT_CLAUDE_REASONING_EFFORTS,
   DEFAULT_REASONING_EFFORTS,
@@ -131,8 +136,13 @@ export class DashboardService {
         this.#emitChange({ runId: run.runId, slug: run.slug, type: "failed" });
       }
     }
+    this.#sortJobs();
     this.#initialized = true;
     this.#startDrain();
+  }
+
+  #sortJobs() {
+    this.#jobs = sortAnalysisQueueJobs(this.#jobs);
   }
 
   async #resumeInterruptedBatchSources(interruptedRuns, queuedRuns) {
@@ -246,18 +256,54 @@ export class DashboardService {
     sourceRunId = null,
     sourceSlug = null,
     title = "",
+    inboxScore = 0,
+    queueBand = null,
+    prioritize = false,
+    additions = null,
+    deletions = null,
+    changedFiles = null,
   }) {
     await this.initialize();
     this.#assertOpen();
     return this.#enqueueRun({
+      additions,
+      changedFiles,
+      deletions,
+      inboxScore,
       model,
+      prioritize,
       prUrl,
+      queueBand,
       reasoningEffort,
       refresh,
       sourceRunId,
       sourceSlug,
       title,
     });
+  }
+
+  async prioritizeRun({ runId, slug }) {
+    await this.initialize();
+    this.#assertOpen();
+    assertStorageId(slug, "slug");
+    assertStorageId(runId, "runId");
+
+    const job = this.#jobs.find(
+      (candidate) => candidate.slug === slug && candidate.runId === runId,
+    );
+    if (!job) {
+      throw createCancellationTargetNotFound(`Run "${slug}/${runId}" is not queued.`);
+    }
+
+    const bumpedAt = this.#nowDate().toISOString();
+    job.bumpedAt = bumpedAt;
+    const manifest = await this.#store.updateRun(slug, runId, {
+      metrics: { bumpedAt, queueBand: job.queueBand || "none" },
+    });
+    this.#sortJobs();
+    this.#emitChange({ runId, slug, type: "prioritized" });
+    this.#startDrain();
+    return manifest;
   }
 
   async enqueueFrozenRerun({ runId, slug, model }) {
@@ -935,8 +981,14 @@ export class DashboardService {
 
   async #enqueueRun(
     {
+      additions = null,
+      changedFiles = null,
+      deletions = null,
+      inboxScore = 0,
       prUrl,
       model,
+      prioritize = false,
+      queueBand = null,
       reasoningEffort,
       refresh = false,
       sourceRunId = null,
@@ -961,12 +1013,23 @@ export class DashboardService {
     const inputFingerprint = frozenSource
       ? await resolveFrozenInputFingerprint(frozenSource)
       : null;
+    const resolvedBand =
+      typeof queueBand === "string" && queueBand in ANALYSIS_QUEUE_BANDS
+        ? queueBand
+        : await this.#historyBandForSlug(parsed.slug);
+    const bumpedAt = prioritize ? this.#nowDate().toISOString() : null;
     const manifest = await this.#createQueuedRun({
+      additions,
+      bumpedAt,
+      changedFiles,
+      deletions,
+      inboxScore: Number.isFinite(inboxScore) ? inboxScore : 0,
       inputFingerprint,
       model: selectedModel,
       parsed,
       prUrl,
       provider: selectedProvider,
+      queueBand: resolvedBand,
       reasoningEffort: selectedReasoningEffort,
       runId,
       sourceRun,
@@ -976,6 +1039,11 @@ export class DashboardService {
 
     this.#startDrain();
     return manifest;
+  }
+
+  async #historyBandForSlug(slug) {
+    const runs = (await this.#store.scanRuns()).filter((run) => run.slug === slug);
+    return analysisHistoryBand(runs);
   }
 
   async #enqueueFrozenSource(source, model) {
@@ -996,14 +1064,20 @@ export class DashboardService {
   }
 
   async #createQueuedRun({
+    additions = null,
     batchId = null,
     batchIndex = null,
     batchSize = null,
+    bumpedAt = null,
+    changedFiles = null,
+    deletions = null,
+    inboxScore = 0,
     inputFingerprint,
     model,
     parsed,
     prUrl,
     provider,
+    queueBand = "none",
     reasoningEffort,
     runId,
     sourceRun,
@@ -1013,8 +1087,14 @@ export class DashboardService {
     const sourceMode = sourceRunId ? "frozen" : "fresh";
     const metrics = {
       ...(inputFingerprint ? { inputFingerprint } : {}),
+      ...(Number.isInteger(additions) ? { additions } : {}),
+      ...(Number.isInteger(deletions) ? { deletions } : {}),
+      ...(Number.isInteger(changedFiles) ? { changedFiles } : {}),
+      ...(bumpedAt ? { bumpedAt } : {}),
+      inboxScore: Number.isFinite(inboxScore) ? inboxScore : 0,
       model,
       provider,
+      queueBand: queueBand in ANALYSIS_QUEUE_BANDS ? queueBand : "none",
       reasoningEffort,
     };
     if (batchId) {
@@ -1043,15 +1123,24 @@ export class DashboardService {
     });
 
     this.#jobs.push({
+      additions: Number.isInteger(additions) ? additions : null,
       batchId,
+      batchIndex,
+      bumpedAt,
+      changedFiles: Number.isInteger(changedFiles) ? changedFiles : null,
+      deletions: Number.isInteger(deletions) ? deletions : null,
+      inboxScore: metrics.inboxScore,
       model,
       prUrl: manifest.url,
       provider,
+      queueBand: metrics.queueBand,
+      queuedAt: manifest.timestamps?.queuedAt || manifest.timestamps?.createdAt || null,
       reasoningEffort,
       runId,
       slug: parsed.slug,
       sourceRunId,
     });
+    this.#sortJobs();
     this.#emitChange({ runId, slug: parsed.slug, type: "queued" });
     return manifest;
   }

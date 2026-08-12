@@ -52,9 +52,15 @@ export function analysisFor(item, pullRequest) {
   const succeeded = runs.find(
     (run) => run.status === "succeeded" && (!item.headSha || run.headSha === item.headSha),
   );
+  const pastSuccess = runs.some((run) => run.status === "succeeded");
   return {
     active,
+    bumped: Boolean(active?.metrics?.bumpedAt),
     href: succeeded ? `/reviews/${encodeURIComponent(pullRequest.slug)}/` : "",
+    pastSuccess,
+    runId: active?.runId || null,
+    slug: pullRequest?.slug || active?.slug || "",
+    url: pullRequest?.url || item.url,
   };
 }
 
