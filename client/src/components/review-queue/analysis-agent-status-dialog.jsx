@@ -77,32 +77,34 @@ export function AnalysisAgentStatusDialog() {
   return (
     <Dialog open={open} onOpenChange={() => {}}>
       <DialogContent
-        className="sm:max-w-md"
+        className="flex max-h-[min(90dvh,36rem)] w-[calc(100%-1.5rem)] max-w-md flex-col gap-4 overflow-hidden p-4 sm:w-full sm:p-6"
         showCloseButton={false}
         onEscapeKeyDown={(event) => event.preventDefault()}
         onPointerDownOutside={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0 text-left">
           <p className="mb-2 flex items-center gap-2 text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-ochre-strong">
-            <AlertTriangle className="size-3.5" />
+            <AlertTriangle className="size-3.5 shrink-0" />
             Analysis setup
           </p>
-          <DialogTitle>AI agent is not accessible</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-balance">AI agent is not accessible</DialogTitle>
+          <DialogDescription className="text-pretty">
             This cockpit needs a working AI agent to analyze pull requests. Recheck once access is
             restored.
           </DialogDescription>
         </DialogHeader>
 
         {(error || status.message) && (
-          <p className="rounded-md border border-ochre/25 bg-ochre/10 px-3 py-2 text-xs text-ochre-strong">
-            {error || status.message}
-          </p>
+          <div className="min-h-0 max-h-[min(40vh,14rem)] overflow-y-auto overscroll-contain rounded-md border border-ochre/25 bg-ochre/10 px-3 py-2">
+            <pre className="m-0 whitespace-pre-wrap break-words font-sans text-xs leading-5 text-ochre-strong">
+              {error || status.message}
+            </pre>
+          </div>
         )}
 
-        <DialogFooter>
-          <Button type="button" disabled={loading} onClick={recheck}>
+        <DialogFooter className="shrink-0 sm:justify-end">
+          <Button type="button" className="w-full sm:w-auto" disabled={loading} onClick={recheck}>
             <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
             Recheck
           </Button>

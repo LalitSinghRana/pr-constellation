@@ -57,14 +57,9 @@ export function createInboxApi({
           changedFiles: candidate.changedFiles,
           deletions: candidate.deletions,
           inboxScore: candidate.inboxScore,
-          model:
-            typeof body.model === "string" && body.model.trim()
-              ? body.model.trim()
-              : settings.defaultAnalysisModel,
+          model: settings.defaultAnalysisModel,
           prioritize: candidate.prioritize,
           prUrl: candidate.url,
-          reasoningEffort:
-            typeof body.reasoningEffort === "string" ? body.reasoningEffort.trim() : undefined,
           refresh: true,
           title: candidate.title,
         });

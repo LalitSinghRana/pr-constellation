@@ -1,4 +1,4 @@
-import { AlertTriangle, Sparkles } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LIFECYCLE_META, LIFECYCLE_ORDER } from "@/components/review-queue/config.jsx";
@@ -12,7 +12,6 @@ import { useAnalysisDashboard } from "@/hooks/use-analysis-dashboard.js";
 import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { useInbox } from "@/hooks/use-inbox.js";
 import { EMPTY_SETTINGS, groupByUpdatedDate, matchesPrFilter } from "@/lib/queue.js";
-import { cn } from "@/lib/utils.js";
 
 export function QueuePage() {
   useDocumentTitle({ title: "Review Queue · PR Review Cockpit" });
@@ -33,7 +32,6 @@ export function QueuePage() {
   const [analysisActionError, setAnalysisActionError] = useState("");
   const [analysisMutation, setAnalysisMutation] = useState("");
   const [prioritizeMutation, setPrioritizeMutation] = useState("");
-  const [analysisNotice, setAnalysisNotice] = useState("");
   const analysisError = analysisActionError || analysisServiceError;
 
   const isDone = useCallback((item) => Boolean(item.done), []);
@@ -166,7 +164,6 @@ export function QueuePage() {
   async function analyze(item, options = {}) {
     setAnalysisMutation(item.id);
     setAnalysisActionError("");
-    setAnalysisNotice("");
     try {
       const response = await fetch("/api/analyses", {
         method: "POST",
@@ -174,15 +171,11 @@ export function QueuePage() {
         body: JSON.stringify({
           ...item,
           score: item.score,
-          ...(options.model ? { model: options.model } : {}),
-          ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}),
           ...(options.prioritize ? { prioritize: true } : {}),
         }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
-      const modelLabel = options.model ? ` with ${options.model}` : "";
-      setAnalysisNotice(`Queued AI analysis for #${item.number}${modelLabel}.`);
       await refreshAnalyses();
     } catch (caught) {
       setAnalysisActionError(caught.message || "AI analysis could not be queued.");
@@ -195,7 +188,6 @@ export function QueuePage() {
     if (!analysis?.slug || !analysis?.runId) return;
     setPrioritizeMutation(analysis.url || analysis.slug);
     setAnalysisActionError("");
-    setAnalysisNotice("");
     try {
       const response = await fetch(
         `/api/runs/${encodeURIComponent(analysis.slug)}/${encodeURIComponent(analysis.runId)}/prioritize`,
@@ -203,7 +195,6 @@ export function QueuePage() {
       );
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "Could not prioritize analysis.");
-      setAnalysisNotice("Moved analysis to the front of the queue.");
       await refreshAnalyses();
     } catch (caught) {
       setAnalysisActionError(caught.message || "Could not prioritize analysis.");
@@ -331,22 +322,13 @@ export function QueuePage() {
               </p>
             )}
 
-            {(analysisError || analysisNotice) && (
+            {analysisError && (
               <p
-                className={cn(
-                  "mx-3 mt-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs",
-                  analysisError
-                    ? "border-coral/25 bg-coral/10 text-coral-strong"
-                    : "border-sky/25 bg-sky/10 text-sky-strong",
-                )}
+                className="mx-3 mt-3 flex items-center gap-2 rounded-lg border border-coral/25 bg-coral/10 px-3 py-2 text-xs text-coral-strong"
                 aria-live="polite"
               >
-                {analysisError ? (
-                  <AlertTriangle className="size-3.5" />
-                ) : (
-                  <Sparkles className="size-3.5" />
-                )}
-                {analysisError || analysisNotice}
+                <AlertTriangle className="size-3.5" />
+                {analysisError}
               </p>
             )}
 

@@ -16,13 +16,6 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu.jsx";
-import {
   Empty,
   EmptyContent,
   EmptyDescription,
@@ -42,7 +35,6 @@ import {
   safeGitHubUrl,
 } from "@/lib/queue.js";
 import { cn } from "@/lib/utils.js";
-import { ANALYSIS_MODELS } from "../../../../shared/analysis-models.js";
 import { LIFECYCLE_META, LIFECYCLE_STYLES } from "./config.jsx";
 
 const signalStyles = {
@@ -357,44 +349,20 @@ function PullRequestRow({
                     Analyzing
                   </Button>
                 ) : (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={analysisBusy}
-                        title="Re-run AI analysis"
-                      >
-                        {analysisBusy ? (
-                          <LoaderCircle className="size-3.5 animate-spin" />
-                        ) : (
-                          <RotateCcw className="size-3.5" />
-                        )}
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52">
-                      <DropdownMenuLabel>Retry analysis with</DropdownMenuLabel>
-                      {ANALYSIS_MODELS.map((model) => (
-                        <DropdownMenuItem
-                          key={model.id}
-                          disabled={analysisBusy}
-                          onSelect={() =>
-                            onAnalyze(item, {
-                              model: model.id,
-                              reasoningEffort: model.reasoningEffort,
-                            })
-                          }
-                        >
-                          <span className="flex flex-col gap-0.5">
-                            <span className="font-medium">{model.label}</span>
-                            <span className="text-[0.7rem] text-muted-foreground">
-                              {model.id} · {model.reasoningEffort}
-                            </span>
-                          </span>
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={analysisBusy}
+                    onClick={() => onAnalyze(item)}
+                    title="Re-run AI analysis"
+                  >
+                    {analysisBusy ? (
+                      <LoaderCircle className="size-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="size-3.5" />
+                    )}
+                    Retry
+                  </Button>
                 )}
               </>
             ) : analysis.active?.status === "queued" ? (

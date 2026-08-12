@@ -121,7 +121,7 @@ export function SettingsPage() {
                   <Label htmlFor="default-agent">Default agent</Label>
                 </ItemTitle>
                 <ItemDescription className="line-clamp-none">
-                  Used when queueing analysis without picking a model.
+                  Used for Analyze, Retry, and auto-queue.
                 </ItemDescription>
               </ItemContent>
               <ItemActions>

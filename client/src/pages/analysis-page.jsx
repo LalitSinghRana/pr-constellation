@@ -251,7 +251,6 @@ export function AnalysisPage() {
               onCancel={cancelRuns}
               onPrioritize={prioritizeRun}
               prioritizingRunId={prioritizingRunId}
-              title="Ongoing"
             />
           </TabsContent>
           <TabsContent value="not-started">
@@ -260,7 +259,6 @@ export function AnalysisPage() {
               entries={notStarted}
               mode="not-started"
               onCancel={cancelRuns}
-              title="Not started"
             />
           </TabsContent>
           <TabsContent value="successful">
@@ -269,7 +267,6 @@ export function AnalysisPage() {
               entries={completed}
               mode="completed"
               onCancel={cancelRuns}
-              title="Successful"
             />
           </TabsContent>
           <TabsContent value="failed">
@@ -278,7 +275,6 @@ export function AnalysisPage() {
               entries={failed}
               mode="failed"
               onCancel={cancelRuns}
-              title="Failed"
             />
           </TabsContent>
           <TabsContent value="canceled">
@@ -287,7 +283,6 @@ export function AnalysisPage() {
               entries={canceled}
               mode="canceled"
               onCancel={cancelRuns}
-              title="Canceled"
             />
           </TabsContent>
         </Tabs>

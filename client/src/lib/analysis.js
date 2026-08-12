@@ -1,3 +1,8 @@
+import {
+  ANALYSIS_QUEUE_BANDS,
+  analysisHistoryBand,
+} from "../../../shared/analysis-queue-policy.js";
+
 export function analysisState({ latestRun, queuedRuns, runningRun }) {
   if (runningRun) return "running";
   if (queuedRuns.length) return "queued";
@@ -5,6 +10,46 @@ export function analysisState({ latestRun, queuedRuns, runningRun }) {
   if (latestRun.status === "succeeded") return "completed";
   if (latestRun.status === "canceled" || latestRun.status === "interrupted") return "canceled";
   return "failed";
+}
+
+export const ANALYSIS_QUEUE_BAND_ORDER = Object.freeze([
+  "running",
+  "bumped",
+  "none",
+  "past-fail-cancel",
+  "past-success",
+]);
+
+export const ANALYSIS_QUEUE_BAND_LABELS = Object.freeze({
+  running: "Running",
+  bumped: "Prioritized",
+  none: "No prior analysis",
+  "past-fail-cancel": "Previously failed or canceled",
+  "past-success": "Previously successful",
+});
+
+export function analysisQueueBandForEntry(entry) {
+  if (entry.runningRun) return "running";
+  const run = entry.queuedRuns?.[0];
+  if (run?.metrics?.bumpedAt || run?.bumpedAt) return "bumped";
+  const band = run?.metrics?.queueBand || run?.queueBand;
+  if (typeof band === "string" && band in ANALYSIS_QUEUE_BANDS) return band;
+  return analysisHistoryBand(entry.runs ?? []);
+}
+
+export function groupByAnalysisQueueBand(entries) {
+  const buckets = new Map(ANALYSIS_QUEUE_BAND_ORDER.map((key) => [key, []]));
+  for (const entry of entries) {
+    const key = analysisQueueBandForEntry(entry);
+    const bucket = buckets.get(key) ?? [];
+    bucket.push(entry);
+    buckets.set(key, bucket);
+  }
+  return ANALYSIS_QUEUE_BAND_ORDER.filter((key) => buckets.get(key)?.length).map((key) => ({
+    key,
+    label: ANALYSIS_QUEUE_BAND_LABELS[key] ?? key,
+    items: buckets.get(key),
+  }));
 }
 
 export function analysisTimeline(run, now = Date.now()) {
