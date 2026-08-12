@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { automaticallyQueueNewAnalyses } from "../inbox/inbox-service/analysis-queue.js";
 import {
   activityCandidates,
   addReviewRequests,
@@ -27,6 +28,42 @@ import {
   trackedQueueItems,
   trackedRepositories,
 } from "../server.mjs";
+
+test("automatic queue includes only active new pull requests", async () => {
+  const queued = [];
+  const result = await automaticallyQueueNewAnalyses(
+    [
+      {
+        done: false,
+        lifecycle: "new",
+        title: "New",
+        url: "https://github.com/example/repo/pull/1",
+      },
+      {
+        done: true,
+        lifecycle: "new",
+        title: "Done",
+        url: "https://github.com/example/repo/pull/2",
+      },
+      {
+        done: false,
+        lifecycle: "reviewed",
+        title: "Reviewed",
+        url: "https://github.com/example/repo/pull/3",
+      },
+    ],
+    {
+      enqueue: async ({ prUrl }) => {
+        queued.push(prUrl);
+        return { prUrl };
+      },
+      snapshot: async () => ({ prs: [] }),
+    },
+  );
+
+  assert.deepEqual(queued, ["https://github.com/example/repo/pull/1"]);
+  assert.equal(result.runs.length, 1);
+});
 
 test("the cockpit uses its dedicated local port", () => {
   assert.equal(defaultPort, 4397);

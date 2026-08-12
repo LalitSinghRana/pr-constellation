@@ -8,7 +8,10 @@ import {
 import { fetchPullRequestConversation } from "../review/github-review-client.js";
 import { databasePath, queuePath, settingsPath } from "../runtime-config.js";
 import { getGitHubNotifications } from "./github-notifications.js";
-import { sortPullRequestsBySize } from "./inbox-service/analysis-queue.js";
+import {
+  automaticallyQueueNewAnalyses,
+  sortPullRequestsBySize,
+} from "./inbox-service/analysis-queue.js";
 import { createInboxApi } from "./inbox-service/api.js";
 import {
   apiMutationRejection,
@@ -1033,7 +1036,12 @@ async function listRepositoryPullRequests(repository, historical, since) {
   }));
 }
 
-async function refreshNotificationItems(items, pullRequestNotifications, touched) {
+export async function refreshNotificationItems(
+  items,
+  pullRequestNotifications,
+  touched,
+  { getActivity = getPrActivity, username = "" } = {},
+) {
   const before = new Set(items.keys());
   const notificationTimes = new Map();
   for (const { thread, pr } of pullRequestNotifications) {
@@ -1055,7 +1063,7 @@ async function refreshNotificationItems(items, pullRequestNotifications, touched
     5,
     async (item) => {
       try {
-        return { item, activity: await getPrActivity(item) };
+        return { item, activity: await getActivity(item) };
       } catch {
         return { failed: true };
       }
@@ -1068,6 +1076,11 @@ async function refreshNotificationItems(items, pullRequestNotifications, touched
     }
     const pr = prFromActivity(result.item, result.activity);
     addSource(items, pr, "activity");
+    const item = items.get(prKey(pr));
+    item.authored ||= pr.author?.login?.toLowerCase() === username.toLowerCase();
+    item.latestReviewState = summarizeActivity(result.activity, username).latestReviewState;
+    item.reviewed ||= Boolean(item.latestReviewState);
+    items.set(item.id, item);
     const id = prKey(pr);
     const notificationAt = notificationTimes.get(id);
     if (notificationAt) {
@@ -1078,9 +1091,10 @@ async function refreshNotificationItems(items, pullRequestNotifications, touched
   return warnings;
 }
 
-export async function syncNotifications(now = new Date()) {
+export async function syncNotifications(now = new Date(), { dashboardService } = {}) {
   const startedAt = now.toISOString();
-  const initialState = await readQueueState();
+  const [initialState, saved] = await Promise.all([readQueueState(), readSettings()]);
+  const username = saved.username || initialState.sync.username || (await getDetectedUser());
   const previousSync = new Date(
     initialState.sync.notificationsSyncedAt || initialState.sync.lastSyncedAt,
   ).getTime();
@@ -1104,7 +1118,9 @@ export async function syncNotifications(now = new Date()) {
   const items = new Map(trackedQueueItems(initialState).map((item) => [item.id, item]));
   const initialIds = new Set(Object.keys(initialState.items));
   const touched = new Set();
-  const warnings = await refreshNotificationItems(items, notifications.pullRequests, touched);
+  const warnings = await refreshNotificationItems(items, notifications.pullRequests, touched, {
+    username,
+  });
   const entries = [
     ...[...touched].map((id) => items.get(id)).filter(Boolean),
     ...notifications.other,
@@ -1119,6 +1135,7 @@ export async function syncNotifications(now = new Date()) {
       state.sync.notificationLastModified = notifications.lastModified;
       state.sync.notificationPollIntervalSeconds = notifications.pollIntervalSeconds;
       state.sync.notificationsSyncedAt = startedAt;
+      state.sync.username = username;
       const added = entries.filter((item) => !initialIds.has(item.id)).length;
       return {
         fetched: entries.length,
@@ -1129,16 +1146,29 @@ export async function syncNotifications(now = new Date()) {
     },
     { ids: entries.map((item) => item.id), updateSync: true },
   );
-  const conversationCache = await cacheReviewConversations(entries);
+  const queueState = await readQueueState();
+  const [conversationCache, automaticAnalysis] = await Promise.all([
+    cacheReviewConversations(entries),
+    dashboardService
+      ? automaticallyQueueNewAnalyses(inboxFromQueue(queueState).items, dashboardService)
+      : { runs: [], warnings: [] },
+  ]);
   return {
     ...summary,
+    autoQueued: automaticAnalysis.runs.length,
     notModified: false,
     pollIntervalSeconds: notifications.pollIntervalSeconds,
-    warnings: [...new Set([...summary.warnings, ...conversationCache.warnings])],
+    warnings: [
+      ...new Set([
+        ...summary.warnings,
+        ...conversationCache.warnings,
+        ...automaticAnalysis.warnings,
+      ]),
+    ],
   };
 }
 
-export async function syncQueue(now = new Date()) {
+export async function syncQueue(now = new Date(), { dashboardService } = {}) {
   const startedAt = now.toISOString();
   const [initialState, saved] = await Promise.all([readQueueState(), readSettings()]);
   const username = saved.username || initialState.sync.username || (await getDetectedUser());
@@ -1179,7 +1209,11 @@ export async function syncQueue(now = new Date()) {
   let pullRequestNotifications = [];
   if (notificationsResult.status === "fulfilled") {
     pullRequestNotifications = notificationsResult.value.pullRequests;
-    warnings.push(...(await refreshNotificationItems(items, pullRequestNotifications, touched)));
+    warnings.push(
+      ...(await refreshNotificationItems(items, pullRequestNotifications, touched, {
+        username,
+      })),
+    );
   } else {
     warnings.push("GitHub notifications could not be synchronized.");
   }
@@ -1244,14 +1278,25 @@ export async function syncQueue(now = new Date()) {
         notificationsResult.status === "fulfilled" ? notificationsResult.value : undefined,
     }).then(attachQueueState),
   ]);
+  const automaticAnalysis = dashboardService
+    ? await automaticallyQueueNewAnalyses(inbox.items, dashboardService)
+    : { runs: [], warnings: [] };
   return {
     ...summary,
     active: inbox.items.filter((item) => !item.done).length,
+    autoQueued: automaticAnalysis.runs.length,
     pollIntervalSeconds:
       notificationsResult.status === "fulfilled"
         ? notificationsResult.value.pollIntervalSeconds
         : initialState.sync.notificationPollIntervalSeconds,
-    warnings: [...new Set([...summary.warnings, ...conversationCache.warnings, ...inbox.warnings])],
+    warnings: [
+      ...new Set([
+        ...summary.warnings,
+        ...conversationCache.warnings,
+        ...inbox.warnings,
+        ...automaticAnalysis.warnings,
+      ]),
+    ],
   };
 }
 
@@ -1421,6 +1466,7 @@ export async function collectInbox({
     addSource(items, pr, "activity");
     const summary = summarizeActivity(result.activity, username, teammates);
     const item = items.get(prKey(pr));
+    item.authored ||= pr.author?.login?.toLowerCase() === username.toLowerCase();
     item.latestReviewState = summary.latestReviewState;
     item.reviewed ||= Boolean(summary.latestReviewState);
     items.set(item.id, item);

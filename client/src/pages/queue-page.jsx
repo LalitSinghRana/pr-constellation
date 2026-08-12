@@ -74,14 +74,9 @@ export function QueuePage() {
 
   const availableProjects = useMemo(() => {
     const completed = activeFilter === "done";
-    const entries = [
-      ...data.items.filter(
-        (item) => isDone(item) === completed && matchesPrFilter(item, activeFilter),
-      ),
-      ...data.notifications.filter(
-        (item) => isDone(item) === completed && ["nonpr", "done"].includes(activeFilter),
-      ),
-    ];
+    const entries = data.items.filter(
+      (item) => isDone(item) === completed && matchesPrFilter(item, activeFilter),
+    );
     const countsByProject = new Map();
     for (const item of entries) {
       countsByProject.set(item.repository, (countsByProject.get(item.repository) ?? 0) + 1);
@@ -90,11 +85,12 @@ export function QueuePage() {
       repository,
       count: countsByProject.get(repository) ?? 0,
     }));
-  }, [activeFilter, data.items, data.notifications, data.repositories, isDone]);
+  }, [activeFilter, data.items, data.repositories, isDone]);
 
-  const selectedProject = data.repositories.includes(activeProject)
-    ? activeProject
-    : (data.repositories[0] ?? "");
+  const selectedProject =
+    activeFilter !== "nonpr" && data.repositories.includes(activeProject)
+      ? activeProject
+      : (data.repositories[0] ?? "");
 
   const { visiblePrs, visibleNotifications } = useMemo(() => {
     const completed = activeFilter === "done";
@@ -106,12 +102,7 @@ export function QueuePage() {
       })
       .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt) || b.score - a.score);
     const notifications = data.notifications
-      .filter(
-        (item) =>
-          isDone(item) === completed &&
-          (!selectedProject || item.repository === selectedProject) &&
-          ["nonpr", "done"].includes(activeFilter),
-      )
+      .filter((item) => isDone(item) === completed && ["nonpr", "done"].includes(activeFilter))
       .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
     return { visiblePrs: prs, visibleNotifications: notifications };
   }, [activeFilter, data.items, data.notifications, isDone, selectedProject]);
@@ -267,7 +258,7 @@ export function QueuePage() {
           <h1 className="sr-only">{LIFECYCLE_META[activeFilter]?.label ?? "Review queue"}</h1>
 
           <section aria-label="Repository queue">
-            {data.repositories.length > 0 && (
+            {activeFilter !== "nonpr" && data.repositories.length > 0 && (
               <Tabs className="gap-0" value={selectedProject} onValueChange={setActiveProject}>
                 <TabsList aria-label="Repositories" variant="cockpit" style={{ height: "3rem" }}>
                   {availableProjects.map((project) => (

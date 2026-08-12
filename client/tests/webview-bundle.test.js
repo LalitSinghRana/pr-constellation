@@ -126,7 +126,10 @@ const reviewTreeSource = `${treeAppSource}\n${treeLayoutSource}`;
 assert.match(reviewTreeSource, /nodesDraggable=\{false\}/);
 assert.match(reviewTreeSource, /reviewBranch: React\.memo\(ReviewBranch\)/);
 assert.match(reviewTreeSource, /filter\(\(\{ type \}\) => type === "reviewSection"\)/);
-assert.match(reviewTreeSource, /foldSectionTree\(file, \{ expandedGroupIds \}\)/);
+assert.match(
+  reviewTreeSource,
+  /foldSectionTree\(file, \{ expandedGroupIds, showSecondaryRuntime \}\)/,
+);
 assert.match(reviewTreeSource, /value="source"/);
 assert.match(reviewTreeSource, /ariaLabel="Review tree map"/);
 assert.match(reviewTreeSource, /pointerEvents: "auto"/);
