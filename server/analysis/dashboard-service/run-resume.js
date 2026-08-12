@@ -1,4 +1,8 @@
 import {
+  ANALYSIS_QUEUE_BANDS,
+  compareAnalysisQueueJobs,
+} from "../../../shared/analysis-queue-policy.js";
+import {
   inferModelProvider,
   normalizeModelProvider,
   normalizeOptionalName,
@@ -14,26 +18,23 @@ export function uniqueJobs(jobs) {
   });
 }
 
-function compareQueuedRunsOldestFirst(left, right) {
-  const leftBatchId = normalizeOptionalName(left.metrics?.batchId);
-  const rightBatchId = normalizeOptionalName(right.metrics?.batchId);
-  const leftBatchIndex = Number(left.metrics?.batchIndex);
-  const rightBatchIndex = Number(right.metrics?.batchIndex);
-  if (
-    left.slug === right.slug &&
-    leftBatchId &&
-    leftBatchId === rightBatchId &&
-    Number.isFinite(leftBatchIndex) &&
-    Number.isFinite(rightBatchIndex) &&
-    leftBatchIndex !== rightBatchIndex
-  ) {
-    return leftBatchIndex - rightBatchIndex;
-  }
-  return (
-    new Date(left.timestamps.queuedAt || left.timestamps.createdAt).getTime() -
-      new Date(right.timestamps.queuedAt || right.timestamps.createdAt).getTime() ||
-    left.runId.localeCompare(right.runId)
-  );
+function queueFieldsFromRun(run) {
+  const metrics = run.metrics ?? {};
+  const band =
+    typeof metrics.queueBand === "string" && metrics.queueBand in ANALYSIS_QUEUE_BANDS
+      ? metrics.queueBand
+      : "none";
+  return {
+    additions: Number.isInteger(metrics.additions) ? metrics.additions : null,
+    batchId: normalizeOptionalName(metrics.batchId),
+    batchIndex: Number.isInteger(metrics.batchIndex) ? metrics.batchIndex : null,
+    bumpedAt: typeof metrics.bumpedAt === "string" ? metrics.bumpedAt : null,
+    changedFiles: Number.isInteger(metrics.changedFiles) ? metrics.changedFiles : null,
+    deletions: Number.isInteger(metrics.deletions) ? metrics.deletions : null,
+    inboxScore: Number.isFinite(metrics.inboxScore) ? metrics.inboxScore : 0,
+    queueBand: band,
+    queuedAt: run.timestamps?.queuedAt || run.timestamps?.createdAt || null,
+  };
 }
 
 export function orderQueuedRunsForResume(runs) {
@@ -50,7 +51,11 @@ export function orderQueuedRunsForResume(runs) {
     ordered.push(run);
   };
 
-  for (const run of [...runs].sort(compareQueuedRunsOldestFirst)) addWithSource(run);
+  for (const run of [...runs]
+    .map((run) => ({ ...run, ...queueFieldsFromRun(run) }))
+    .sort(compareAnalysisQueueJobs)) {
+    addWithSource(byId.get(runKey(run.slug, run.runId)));
+  }
   return ordered;
 }
 
@@ -86,7 +91,6 @@ export function queuedJobFromManifest(run, configuration, attemptOffsets) {
 
   return {
     attemptOffsets,
-    batchId: normalizeOptionalName(run.metrics?.batchId),
     model,
     prUrl: run.url,
     provider: configuredProvider,
@@ -94,6 +98,7 @@ export function queuedJobFromManifest(run, configuration, attemptOffsets) {
     runId: run.runId,
     slug: run.slug,
     sourceRunId: run.sourceRunId,
+    ...queueFieldsFromRun(run),
   };
 }
 

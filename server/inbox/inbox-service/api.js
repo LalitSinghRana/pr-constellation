@@ -1,5 +1,10 @@
+import { probeAnalysisAgent } from "../../analysis/analysis-agent-probe.js";
 import { host } from "../../runtime-config.js";
-import { enqueueMissingAnalyses, normalizeAnalysisCandidate } from "./analysis-queue.js";
+import {
+  automaticallyQueueNewAnalyses,
+  enqueueMissingAnalyses,
+  normalizeAnalysisCandidate,
+} from "./analysis-queue.js";
 import { secureHeaders, sendJson } from "./http-guards.js";
 
 async function readRequestJson(request) {
@@ -46,11 +51,15 @@ export function createInboxApi({
       try {
         const body = await readRequestJson(request);
         const candidate = normalizeAnalysisCandidate(body);
+        const settings = await readSettings();
         const run = await dashboardService.enqueue({
-          model: typeof body.model === "string" ? body.model.trim() : undefined,
+          additions: candidate.additions,
+          changedFiles: candidate.changedFiles,
+          deletions: candidate.deletions,
+          inboxScore: candidate.inboxScore,
+          model: settings.defaultAnalysisModel,
+          prioritize: candidate.prioritize,
           prUrl: candidate.url,
-          reasoningEffort:
-            typeof body.reasoningEffort === "string" ? body.reasoningEffort.trim() : undefined,
           refresh: true,
           title: candidate.title,
         });
@@ -65,9 +74,11 @@ export function createInboxApi({
     if (url.pathname === "/api/analyses/queue" && request.method === "POST") {
       try {
         const body = await readRequestJson(request);
+        const settings = await readSettings();
         const runs = await enqueueMissingAnalyses(
           Array.isArray(body.pullRequests) ? body.pullRequests : [],
           dashboardService,
+          { model: settings.defaultAnalysisModel },
         );
         eventHub.publish("analysis", { queued: runs.length });
         sendJson(response, 202, { runs });
@@ -82,10 +93,37 @@ export function createInboxApi({
       return true;
     }
 
+    if (url.pathname === "/api/analysis-agent/probe" && request.method === "POST") {
+      try {
+        await readRequestJson(request);
+        const settings = await readSettings();
+        const agent = await probeAnalysisAgent({ model: settings.defaultAnalysisModel });
+        sendJson(response, 200, {
+          agent,
+          checkedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        sendJson(response, 502, { error: error.message || "AI agent probe failed." });
+      }
+      return true;
+    }
+
     if (url.pathname === "/api/settings" && request.method === "PUT") {
       try {
+        const previous = await readSettings();
         const settings = await saveSettings(await readRequestJson(request));
         eventHub.publish("settings");
+        if (settings.autoQueue === true && previous.autoQueue !== true && dashboardService) {
+          const queueState = await readQueueState();
+          const automaticAnalysis = await automaticallyQueueNewAnalyses(
+            inboxFromQueue(queueState).items,
+            dashboardService,
+            { model: settings.defaultAnalysisModel },
+          );
+          if (automaticAnalysis.runs.length) {
+            eventHub.publish("analysis", { queued: automaticAnalysis.runs.length });
+          }
+        }
         sendJson(response, 200, settings);
       } catch {
         sendJson(response, 400, { error: "Settings could not be saved." });

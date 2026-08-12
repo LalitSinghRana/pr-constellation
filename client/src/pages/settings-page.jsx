@@ -11,9 +11,20 @@ import {
   ItemTitle,
 } from "@/components/ui/item.jsx";
 import { Label } from "@/components/ui/label.jsx";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select.jsx";
 import { Switch } from "@/components/ui/switch.jsx";
 import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { EMPTY_SETTINGS } from "@/lib/queue.js";
+import {
+  DEFAULT_ANALYSIS_MODEL,
+  SETTINGS_ANALYSIS_AGENTS,
+} from "../../../shared/analysis-models.js";
 
 export function SettingsPage() {
   useDocumentTitle({ title: "Settings · PR Review Cockpit" });
@@ -36,17 +47,17 @@ export function SettingsPage() {
       });
   }, []);
 
-  async function patchSetting(field, enabled) {
+  async function patchSetting(field, value) {
     if (!settingsLoaded || savingField) return;
     setSavingField(field);
     setError("");
     const previous = settings;
-    setSettings((current) => ({ ...current, [field]: enabled }));
+    setSettings((current) => ({ ...current, [field]: value }));
     try {
       const response = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...settings, [field]: enabled }),
+        body: JSON.stringify({ ...settings, [field]: value }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
@@ -60,6 +71,7 @@ export function SettingsPage() {
   }
 
   const busy = !settingsLoaded || Boolean(savingField);
+  const defaultAnalysisModel = settings.defaultAnalysisModel || DEFAULT_ANALYSIS_MODEL;
 
   return (
     <main className="min-h-screen">
@@ -106,11 +118,44 @@ export function SettingsPage() {
             <Item size="sm" className="rounded-none border-0 px-5 py-4">
               <ItemContent>
                 <ItemTitle>
+                  <Label htmlFor="default-agent">Default agent</Label>
+                </ItemTitle>
+                <ItemDescription className="line-clamp-none">
+                  Used for Analyze, Retry, and auto-queue.
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Select
+                  value={defaultAnalysisModel}
+                  disabled={busy}
+                  onValueChange={(value) => patchSetting("defaultAnalysisModel", value)}
+                >
+                  <SelectTrigger
+                    id="default-agent"
+                    className="w-[11.5rem]"
+                    aria-label="Default agent"
+                  >
+                    <SelectValue placeholder="Select agent" />
+                  </SelectTrigger>
+                  <SelectContent align="end" position="popper">
+                    {SETTINGS_ANALYSIS_AGENTS.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {agent.label} {agent.providerLabel}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </ItemActions>
+            </Item>
+            <ItemSeparator />
+            <Item size="sm" className="rounded-none border-0 px-5 py-4">
+              <ItemContent>
+                <ItemTitle>
                   <Label htmlFor="auto-queue">Auto queue</Label>
                 </ItemTitle>
                 <ItemDescription className="line-clamp-none">
-                  When enabled, newly tracked pull requests are automatically queued for AI analysis
-                  during sync.
+                  When enabled, unreviewed pull requests are queued for AI analysis immediately and
+                  kept topped up on each sync.
                 </ItemDescription>
               </ItemContent>
               <ItemActions>

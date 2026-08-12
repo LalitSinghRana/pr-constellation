@@ -70,9 +70,9 @@ export async function startServer({
   const scheduler = createSyncScheduler({
     fullSync: () => syncQueue(new Date(), { dashboardService }),
     notificationSync: () => syncNotifications(new Date(), { dashboardService }),
-    onUpdate: ({ full, result }) => {
+    onUpdate: ({ result }) => {
       eventHub.publish("inbox", result);
-      if (full && result.autoQueued) eventHub.publish("analysis", { queued: result.autoQueued });
+      if (result?.autoQueued) eventHub.publish("analysis", { queued: result.autoQueued });
     },
   });
   let resourcesClosePromise;

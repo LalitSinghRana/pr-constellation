@@ -1,5 +1,4 @@
-import { ChevronDown, FileClock, LoaderCircle, Sparkles, X } from "lucide-react";
-import { Badge } from "@/components/ui/badge.jsx";
+import { ArrowUp, ChevronDown, FileClock, Layers3, LoaderCircle, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import {
@@ -8,7 +7,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible.jsx";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty.jsx";
-import { analysisTimeline, formatDuration } from "@/lib/analysis.js";
+import { analysisTimeline, formatDuration, groupByAnalysisQueueBand } from "@/lib/analysis.js";
 import { groupByUpdatedDate, relativeTime, safeGitHubUrl } from "@/lib/queue.js";
 import { cn } from "@/lib/utils.js";
 
@@ -167,7 +166,7 @@ function RunDetails({ run, timeline }) {
   );
 }
 
-function AnalysisRow({ canceling, entry, mode, onCancel }) {
+function AnalysisRow({ canceling, entry, mode, onCancel, onPrioritize, prioritizing }) {
   const run = runForEntry(entry, mode);
   const item = entry.queueItem;
   const metrics = run?.metrics ?? {};
@@ -187,6 +186,9 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
   const successfulRun = entry.runs.find((candidate) => candidate.status === "succeeded");
   const timeline = analysisTimeline(run);
   const canCancel = Boolean(entry.runningRun || entry.queuedRuns?.length);
+  const queuedRun = entry.queuedRuns?.[0];
+  const canPrioritize = Boolean(queuedRun && !entry.runningRun && mode !== "running");
+  const bumped = Boolean(queuedRun?.metrics?.bumpedAt);
   const detail = entryDetail(entry, mode, run);
 
   const summary = (
@@ -248,6 +250,22 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
             summary
           )}
           <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:justify-end">
+            {canPrioritize && (
+              <Button
+                disabled={prioritizing || bumped || canceling}
+                onClick={() => onPrioritize?.(entry, queuedRun)}
+                size="sm"
+                variant="outline"
+                title={bumped ? "Already at the front of the queue" : "Move to front of queue"}
+              >
+                {prioritizing ? (
+                  <LoaderCircle className="size-3.5 animate-spin" />
+                ) : (
+                  <ArrowUp className="size-3.5" />
+                )}
+                {bumped ? "Prioritized" : "Prioritize"}
+              </Button>
+            )}
             {canCancel && (
               <Button
                 className="text-coral-strong"
@@ -293,45 +311,47 @@ function AnalysisRow({ canceling, entry, mode, onCancel }) {
   );
 }
 
-export function AnalysisSection({ canceling, entries, mode, onCancel, title }) {
-  const groups = groupByUpdatedDate(
-    entries.map((entry) => {
-      const run = runForEntry(entry, mode);
-      return {
-        ...entry,
-        updatedAt:
-          run?.completedAt ||
-          run?.startedAt ||
-          run?.queuedAt ||
-          run?.createdAt ||
-          run?.updatedAt ||
-          entry.queueItem?.updatedAt,
-      };
-    }),
-    { preserveOrder: true },
-  );
+export function AnalysisSection({
+  canceling,
+  entries,
+  mode,
+  onCancel,
+  onPrioritize,
+  prioritizingRunId,
+}) {
+  const groups =
+    mode === "ongoing"
+      ? groupByAnalysisQueueBand(entries)
+      : groupByUpdatedDate(
+          entries.map((entry) => {
+            const run = runForEntry(entry, mode);
+            return {
+              ...entry,
+              updatedAt:
+                run?.completedAt ||
+                run?.startedAt ||
+                run?.queuedAt ||
+                run?.createdAt ||
+                run?.updatedAt ||
+                entry.queueItem?.updatedAt,
+            };
+          }),
+          { preserveOrder: true },
+        );
+  const GroupIcon = mode === "ongoing" ? Layers3 : FileClock;
 
   return (
-    <section className="mt-8" aria-labelledby={`analysis-${mode}`}>
-      <header className="mb-3 flex items-end justify-between gap-4">
-        <h2
-          className="font-display text-2xl font-semibold tracking-[-0.035em]"
-          id={`analysis-${mode}`}
-        >
-          {title}
-        </h2>
-        <Badge variant="outline">{entries.length}</Badge>
-      </header>
+    <section className="mt-6" aria-label={`${mode} analyses`}>
       <div className="grid gap-6">
         {entries.length ? (
           groups.map((group) => (
             <section
               className="grid gap-3"
-              key={group.label}
+              key={group.key || group.label}
               aria-label={`${group.label} analyses`}
             >
               <h3 className="flex items-center gap-2 border-b border-border pb-2 text-xs font-semibold text-muted-foreground">
-                <FileClock className="size-3.5 text-primary" aria-hidden="true" />
+                <GroupIcon className="size-3.5 text-primary" aria-hidden="true" />
                 {group.label}
               </h3>
               {group.items.map((entry) => (
@@ -341,6 +361,8 @@ export function AnalysisSection({ canceling, entries, mode, onCancel, title }) {
                   key={`${mode}-${entry.pr.slug || entry.pr.url}-${entry.runningRun?.runId || entry.queuedRuns?.[0]?.runId || entry.latestRun?.runId || "none"}`}
                   mode={mode}
                   onCancel={onCancel}
+                  onPrioritize={onPrioritize}
+                  prioritizing={prioritizingRunId === entry.queuedRuns?.[0]?.runId}
                 />
               ))}
             </section>
@@ -349,7 +371,7 @@ export function AnalysisSection({ canceling, entries, mode, onCancel, title }) {
           <Empty className="min-h-24 border border-dashed py-6 md:p-6">
             <EmptyHeader>
               <EmptyTitle className="text-sm">Nothing here</EmptyTitle>
-              <EmptyDescription>No {title.toLowerCase()}.</EmptyDescription>
+              <EmptyDescription>No analyses in this tab.</EmptyDescription>
             </EmptyHeader>
           </Empty>
         )}

@@ -23,6 +23,7 @@ export function AnalysisPage() {
   } = useAnalysisDashboard();
   const [queueItems, setQueueItems] = useState([]);
   const [canceling, setCanceling] = useState(false);
+  const [prioritizingRunId, setPrioritizingRunId] = useState("");
   const [actionError, setActionError] = useState("");
   const [activeTab, setActiveTab] = useQueryState(
     "tab",
@@ -158,6 +159,28 @@ export function AnalysisPage() {
     [refreshDashboard],
   );
 
+  const prioritizeRun = useCallback(
+    async (entry, run) => {
+      if (!entry?.pr?.slug || !run?.runId) return;
+      setPrioritizingRunId(run.runId);
+      setActionError("");
+      try {
+        const response = await fetch(
+          `/api/runs/${encodeURIComponent(entry.pr.slug)}/${encodeURIComponent(run.runId)}/prioritize`,
+          { method: "POST", headers: { "Content-Type": "application/json" } },
+        );
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error || "Could not prioritize analysis.");
+        await refreshDashboard();
+      } catch (caught) {
+        setActionError(caught.message || "Could not prioritize analysis.");
+      } finally {
+        setPrioritizingRunId("");
+      }
+    },
+    [refreshDashboard],
+  );
+
   const cancelAll = useCallback(
     () =>
       cancelRuns([
@@ -226,7 +249,8 @@ export function AnalysisPage() {
               entries={[...running, ...queued]}
               mode="ongoing"
               onCancel={cancelRuns}
-              title="Ongoing"
+              onPrioritize={prioritizeRun}
+              prioritizingRunId={prioritizingRunId}
             />
           </TabsContent>
           <TabsContent value="not-started">
@@ -235,7 +259,6 @@ export function AnalysisPage() {
               entries={notStarted}
               mode="not-started"
               onCancel={cancelRuns}
-              title="Not started"
             />
           </TabsContent>
           <TabsContent value="successful">
@@ -244,7 +267,6 @@ export function AnalysisPage() {
               entries={completed}
               mode="completed"
               onCancel={cancelRuns}
-              title="Successful"
             />
           </TabsContent>
           <TabsContent value="failed">
@@ -253,7 +275,6 @@ export function AnalysisPage() {
               entries={failed}
               mode="failed"
               onCancel={cancelRuns}
-              title="Failed"
             />
           </TabsContent>
           <TabsContent value="canceled">
@@ -262,7 +283,6 @@ export function AnalysisPage() {
               entries={canceled}
               mode="canceled"
               onCancel={cancelRuns}
-              title="Canceled"
             />
           </TabsContent>
         </Tabs>
