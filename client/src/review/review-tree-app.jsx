@@ -548,6 +548,16 @@ function ReviewTreeCanvas({
     return targets;
   }, [reviewSteps]);
   const [currentStepId, setCurrentStepId] = useState(() => reviewSteps[0]?.id ?? null);
+  const [showMinimap, setShowMinimap] = useState(false);
+  useEffect(() => {
+    fetch("/api/settings")
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) return;
+        setShowMinimap(result.showMinimap === true);
+      })
+      .catch(() => {});
+  }, []);
   const navigation = useMemo(() => {
     const currentIndex = reviewSteps.findIndex(({ id }) => id === currentStepId);
     const current = reviewSteps[currentIndex] ?? null;
@@ -807,25 +817,27 @@ function ReviewTreeCanvas({
             size={1.2}
             variant={BackgroundVariant.Dots}
           />
-          <MiniMap
-            ariaLabel="Review tree map"
-            className="review-tree-map"
-            nodeClassName={reviewTreeMapNodeClassName}
-            nodeColor={reviewTreeMapNodeColor}
-            nodeComponent={ReviewTreeMapNode}
-            nodeStrokeColor={(node) =>
-              node.id === currentStepId ? "var(--primary)" : "transparent"
-            }
-            nodeStrokeWidth={4}
-            onNodeClick={(event, node) => {
-              event.stopPropagation();
-              snapToStep(node.id);
-            }}
-            pannable
-            position="top-right"
-            style={{ right: 18, top: 16 }}
-            zoomable={false}
-          />
+          {showMinimap ? (
+            <MiniMap
+              ariaLabel="Review tree map"
+              className="review-tree-map"
+              nodeClassName={reviewTreeMapNodeClassName}
+              nodeColor={reviewTreeMapNodeColor}
+              nodeComponent={ReviewTreeMapNode}
+              nodeStrokeColor={(node) =>
+                node.id === currentStepId ? "var(--primary)" : "transparent"
+              }
+              nodeStrokeWidth={4}
+              onNodeClick={(event, node) => {
+                event.stopPropagation();
+                snapToStep(node.id);
+              }}
+              pannable
+              position="top-right"
+              style={{ right: 18, top: 16 }}
+              zoomable={false}
+            />
+          ) : null}
         </ReactFlow>
         <StackSelect
           activeStackId={activeStackId}

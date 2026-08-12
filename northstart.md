@@ -1,5 +1,11 @@
 Next improvements
 
+### Rendering architecture (TODO)
+- No conventional React SSR in this app.
+- `/`, `/analysis`, `/scoring` — Vite SPA routes; all cockpit UI mounts into `#root` client-side.
+- `/reviews/<slug>/` — server-generated at analysis time: Node builds and saves static `index.html` with inline CSS/JS, PR metadata, analysis-tree data, and precomputed Shiki syntax tokens. But the HTML shell has an empty `#pr-review-root`; the visible review UI (tree, React Flow graph, diffs, timeline, comments, draft UI) is rendered in the browser by the bundled React app.
+- So: review pages are **server-generated, not server-side-rendered React HTML**. The document is static; none of the interactive UI DOM is server-rendered.
+
 ### UI/UX
 - ~a clean snap flow from file to file or node-to-node. with arrow navigation~
 - ~graph and rest of website should be merge for style~
