@@ -1,6 +1,12 @@
 import { ACTIVITY_SIGNAL_KINDS as ACTIVITY_SIGNAL_KIND_VALUES } from "../../../shared/queue-policy.js";
 
-export const EMPTY_SETTINGS = { username: "", people: [], teams: [] };
+export const EMPTY_SETTINGS = {
+  username: "",
+  people: [],
+  teams: [],
+  autoQueue: false,
+  showMinimap: false,
+};
 
 export const ACTIVITY_SIGNAL_KINDS = new Set(ACTIVITY_SIGNAL_KIND_VALUES);
 

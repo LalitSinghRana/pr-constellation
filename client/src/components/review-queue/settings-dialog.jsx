@@ -33,6 +33,7 @@ export function SettingsDialog({ open, onOpenChange, settings, onSave }) {
     event.preventDefault();
     setSaving(true);
     const saved = await onSave({
+      ...settings,
       username: draft.username.trim(),
       people: parseList(draft.people),
       teams: parseList(draft.teams),

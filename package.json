@@ -14,6 +14,7 @@
     "format": "biome format --write .",
     "install:service": "pnpm build && node server/install-service.mjs",
     "install:sync": "pnpm install:service",
+    "postinstall": "pnpm rebuild better-sqlite3",
     "prc": "node analysis-worker/bin/prc.js",
     "start": "node server/server.mjs",
     "test": "node --test --test-concurrency=1",

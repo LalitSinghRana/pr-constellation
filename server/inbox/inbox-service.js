@@ -165,6 +165,8 @@ export function normalizeSettings(value = {}) {
     username: usernamePattern.test(username) ? username : "",
     people: parseList(value.people, usernamePattern, 20),
     teams: parseList(value.teams, teamPattern, 10),
+    autoQueue: value.autoQueue === true,
+    showMinimap: value.showMinimap === true,
   };
 }
 
@@ -191,7 +193,7 @@ async function readSettings() {
 }
 
 async function saveSettings(value) {
-  const settings = normalizeSettings(value);
+  const settings = normalizeSettings({ ...(await readSettings()), ...value });
   return (await getInboxStore()).saveSettings(settings);
 }
 
@@ -1149,7 +1151,7 @@ export async function syncNotifications(now = new Date(), { dashboardService } =
   const queueState = await readQueueState();
   const [conversationCache, automaticAnalysis] = await Promise.all([
     cacheReviewConversations(entries),
-    dashboardService
+    dashboardService && saved.autoQueue
       ? automaticallyQueueNewAnalyses(inboxFromQueue(queueState).items, dashboardService)
       : { runs: [], warnings: [] },
   ]);
@@ -1278,9 +1280,10 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
         notificationsResult.status === "fulfilled" ? notificationsResult.value : undefined,
     }).then(attachQueueState),
   ]);
-  const automaticAnalysis = dashboardService
-    ? await automaticallyQueueNewAnalyses(inbox.items, dashboardService)
-    : { runs: [], warnings: [] };
+  const automaticAnalysis =
+    dashboardService && saved.autoQueue
+      ? await automaticallyQueueNewAnalyses(inbox.items, dashboardService)
+      : { runs: [], warnings: [] };
   return {
     ...summary,
     active: inbox.items.filter((item) => !item.done).length,

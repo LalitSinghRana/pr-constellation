@@ -658,13 +658,23 @@ test("settings lists are validated before writing", () => {
       username: "me",
       people: ["alice", "alice", "not valid"],
       teams: ["example/platform", "bad"],
+      autoQueue: true,
+      showMinimap: true,
     }),
     {
       username: "me",
       people: ["alice"],
       teams: ["example/platform"],
+      autoQueue: true,
+      showMinimap: true,
     },
   );
+  assert.equal(normalizeSettings({}).autoQueue, false);
+  assert.equal(normalizeSettings({}).showMinimap, false);
+  assert.equal(normalizeSettings({ autoQueue: false }).autoQueue, false);
+  assert.equal(normalizeSettings({ showMinimap: false }).showMinimap, false);
+  assert.equal(normalizeSettings({ autoQueue: true }).autoQueue, true);
+  assert.equal(normalizeSettings({ showMinimap: true }).showMinimap, true);
 });
 
 test("manual batch analyses queue from smallest pull request to largest", () => {
