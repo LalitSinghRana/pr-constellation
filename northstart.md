@@ -11,8 +11,13 @@ Next improvements
   - Existing review comment threads should be open by default.
   - Is it possible to have this anchor to the node, float to left of node, but doesn't take space in node or group wrapper. It should scroll with the node anchor point.
   - use: https://github.com/PicnicSupermarket/picnic-store-config/pull/4919#discussion_r3702665359 as test target
-- timer to review the PRs
-- Move 0.1x / 1x toggle from header to inside the scope of review-trees
+  - When typing comments edges flickers. There might be re-rendering happening
+  - In "review" button, we show other existing comments also. It should only show draft comments only.
+- timer to review the PRs. Each review-stack should have their own timer based on #LOC. No need for AI, we can deterministically do this.
+- Priority queue
+- Settings page. Auto queue, mini-map toggle.
+- Long git-diff files break out of node boundaries. http://127.0.0.1:4397/reviews/gh-17-picnicsupermarket-19-picnic-store-config-4993/ or http://127.0.0.1:4397/reviews/gh-17-picnicsupermarket-19-picnic-store-config-4993/
+- Move 0.1x / 1x / 10x toggle from header to inside the scope of review-trees
 - sorting by simple-smallest, simple-large, complex-large to get smaller ones get finished quickly
 - set-up notifications
 
