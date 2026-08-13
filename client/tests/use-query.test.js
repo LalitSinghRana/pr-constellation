@@ -124,11 +124,15 @@ test("useQuery refetch keeps prior data while pending", async () => {
     await act(async () => {});
     assert.deepEqual(latest.data, { n: 1 });
 
-    await act(async () => latest.refetch());
+    let refetchDone;
+    await act(async () => {
+      refetchDone = latest.refetch();
+    });
     assert.equal(latest.status, "pending");
     assert.deepEqual(latest.data, { n: 1 });
 
     await act(async () => second.resolve({ n: 2 }));
+    await act(async () => refetchDone);
     assert.deepEqual(latest.data, { n: 2 });
     assert.equal(latest.status, "success");
   } finally {

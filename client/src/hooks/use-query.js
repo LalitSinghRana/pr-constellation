@@ -69,6 +69,7 @@ export function useQuery({ queryKey, queryFn, enabled = true }) {
   const queryKeyRef = useRef(queryKey);
   const previousKeyRef = useRef(null);
   const requestIdRef = useRef(0);
+  const settleRef = useRef(null);
 
   queryFnRef.current = queryFn;
   queryKeyRef.current = queryKey;
@@ -81,6 +82,8 @@ export function useQuery({ queryKey, queryFn, enabled = true }) {
       requestIdRef.current += 1;
       previousKeyRef.current = null;
       dispatch({ type: "idle" });
+      settleRef.current?.();
+      settleRef.current = null;
       return;
     }
 
@@ -90,6 +93,12 @@ export function useQuery({ queryKey, queryFn, enabled = true }) {
     const controller = new AbortController();
     dispatch({ type: "pending", resetData });
 
+    const settle = () => {
+      if (requestId !== requestIdRef.current) return;
+      settleRef.current?.();
+      settleRef.current = null;
+    };
+
     void (async () => {
       try {
         const data = await queryFnRef.current({
@@ -98,10 +107,15 @@ export function useQuery({ queryKey, queryFn, enabled = true }) {
         });
         if (requestId !== requestIdRef.current) return;
         dispatch({ type: "success", data });
+        settle();
       } catch (caught) {
         if (requestId !== requestIdRef.current) return;
-        if (controller.signal.aborted || caught?.name === "AbortError") return;
+        if (controller.signal.aborted || caught?.name === "AbortError") {
+          settle();
+          return;
+        }
         dispatch({ type: "error", error: toError(caught) });
+        settle();
       }
     })();
 
@@ -112,8 +126,11 @@ export function useQuery({ queryKey, queryFn, enabled = true }) {
   }, [enabled, key, reloadToken]);
 
   const refetch = useCallback(() => {
-    if (!enabled) return;
-    setReloadToken((token) => token + 1);
+    if (!enabled) return Promise.resolve();
+    return new Promise((resolve) => {
+      settleRef.current = resolve;
+      setReloadToken((token) => token + 1);
+    });
   }, [enabled]);
 
   return {

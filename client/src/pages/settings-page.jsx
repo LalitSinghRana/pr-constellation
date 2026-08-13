@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select.jsx";
 import { Switch } from "@/components/ui/switch.jsx";
 import { useDocumentTitle } from "@/hooks/use-document-title.js";
+import { useSettingsQuery } from "@/hooks/use-settings.js";
 import { EMPTY_SETTINGS } from "@/lib/queue.js";
 import {
   DEFAULT_ANALYSIS_MODEL,
@@ -28,29 +29,19 @@ import {
 
 export function SettingsPage() {
   useDocumentTitle({ title: "Settings · PR Review Cockpit" });
+  const settingsQuery = useSettingsQuery();
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [savingField, setSavingField] = useState("");
-  const [error, setError] = useState("");
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then(async (response) => {
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error);
-        setSettings(result);
-        setSettingsLoaded(true);
-      })
-      .catch((caught) => {
-        setError(caught.message || "Settings could not be loaded.");
-        setSettingsLoaded(true);
-      });
-  }, []);
+    if (settingsQuery.data) setSettings(settingsQuery.data);
+  }, [settingsQuery.data]);
 
   async function patchSetting(field, value) {
-    if (!settingsLoaded || savingField) return;
+    if (settingsQuery.isLoading || savingField) return;
     setSavingField(field);
-    setError("");
+    setSaveError("");
     const previous = settings;
     setSettings((current) => ({ ...current, [field]: value }));
     try {
@@ -64,13 +55,14 @@ export function SettingsPage() {
       setSettings(result);
     } catch (caught) {
       setSettings(previous);
-      setError(caught.message || "Setting could not be saved.");
+      setSaveError(caught.message || "Setting could not be saved.");
     } finally {
       setSavingField("");
     }
   }
 
-  const busy = !settingsLoaded || Boolean(savingField);
+  const error = saveError || settingsQuery.error?.message || "";
+  const busy = settingsQuery.isLoading || Boolean(savingField);
   const defaultAnalysisModel = settings.defaultAnalysisModel || DEFAULT_ANALYSIS_MODEL;
 
   return (

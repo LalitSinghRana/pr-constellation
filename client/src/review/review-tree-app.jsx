@@ -57,6 +57,8 @@ import {
   SelectValue,
 } from "../components/ui/select.jsx";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.jsx";
+import { useQuery } from "../hooks/use-query.js";
+import { useSettingsQuery } from "../hooks/use-settings.js";
 import { cn } from "../lib/utils.js";
 import { buildChunkDiffData } from "./diff-view-model.js";
 import { githubMarkdownSanitizeSchema } from "./github-markdown.js";
@@ -308,28 +310,29 @@ function ReviewHeader({ activeTab, onReviewerModeChange, onTabChange, review, re
 }
 
 function PullRequestConversation({ review, reviewSlug }) {
-  const [conversation, setConversation] = useState(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch(`/api/reviews/${encodeURIComponent(reviewSlug)}/conversation`, {
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Conversation could not be loaded.");
-        setConversation(payload);
-      })
-      .catch((loadError) => {
-        if (loadError.name !== "AbortError") setError(loadError.message);
+  const {
+    data: conversation,
+    error,
+    isLoading,
+  } = useQuery({
+    queryKey: ["review-conversation", reviewSlug],
+    queryFn: async ({ queryKey, signal }) => {
+      const slug = queryKey[1];
+      const response = await fetch(`/api/reviews/${encodeURIComponent(slug)}/conversation`, {
+        signal,
       });
-    return () => controller.abort();
-  }, [reviewSlug]);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Conversation could not be loaded.");
+      }
+      return payload;
+    },
+  });
 
-  if (error) return <p className="m-auto text-sm text-destructive">{error}</p>;
-  if (!conversation)
+  if (error) return <p className="m-auto text-sm text-destructive">{error.message}</p>;
+  if (isLoading || !conversation) {
     return <p className="m-auto text-sm text-muted-foreground">Loading conversation…</p>;
+  }
 
   const timeline = [
     ...(review.body.trim()
@@ -548,16 +551,8 @@ function ReviewTreeCanvas({
     return targets;
   }, [reviewSteps]);
   const [currentStepId, setCurrentStepId] = useState(() => reviewSteps[0]?.id ?? null);
-  const [showMinimap, setShowMinimap] = useState(false);
-  useEffect(() => {
-    fetch("/api/settings")
-      .then(async (response) => {
-        const result = await response.json();
-        if (!response.ok) return;
-        setShowMinimap(result.showMinimap === true);
-      })
-      .catch(() => {});
-  }, []);
+  const settingsQuery = useSettingsQuery();
+  const showMinimap = settingsQuery.data?.showMinimap === true;
   const navigation = useMemo(() => {
     const currentIndex = reviewSteps.findIndex(({ id }) => id === currentStepId);
     const current = reviewSteps[currentIndex] ?? null;

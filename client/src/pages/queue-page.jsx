@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.jsx";
 import { useAnalysisDashboard } from "@/hooks/use-analysis-dashboard.js";
 import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { useInbox } from "@/hooks/use-inbox.js";
+import { useSettingsQuery } from "@/hooks/use-settings.js";
 import { EMPTY_SETTINGS, groupByUpdatedDate, matchesPrFilter } from "@/lib/queue.js";
 
 export function QueuePage() {
@@ -25,6 +26,7 @@ export function QueuePage() {
     error: analysisServiceError,
     refresh: refreshAnalyses,
   } = useAnalysisDashboard();
+  const settingsQuery = useSettingsQuery();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
   const [doneMutation, setDoneMutation] = useState([]);
@@ -37,14 +39,13 @@ export function QueuePage() {
   const isDone = useCallback((item) => Boolean(item.done), []);
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then(async (response) => {
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error);
-        setSettings(result);
-      })
-      .catch((caught) => setError(caught.message || "Local settings could not be loaded."));
-  }, [setError]);
+    if (settingsQuery.data) setSettings(settingsQuery.data);
+  }, [settingsQuery.data]);
+
+  useEffect(() => {
+    if (!settingsQuery.error) return;
+    setError(settingsQuery.error.message || "Local settings could not be loaded.");
+  }, [settingsQuery.error, setError]);
 
   const openPrs = useMemo(() => data.items.filter((item) => !isDone(item)), [data.items, isDone]);
   const openNotifications = useMemo(

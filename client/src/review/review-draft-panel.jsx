@@ -10,6 +10,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "../components/ui/sheet.jsx";
+import { useQuery } from "../hooks/use-query.js";
 import { cn } from "../lib/utils.js";
 import { lineKey } from "./review-comment-model.js";
 
@@ -20,36 +21,35 @@ const reviewEvents = [
 ];
 
 export function ReviewDraftProvider({ children, reviewSlug, showReviewSheet = true }) {
+  const draftQuery = useQuery({
+    queryKey: ["review-draft", reviewSlug],
+    enabled: Boolean(reviewSlug),
+    queryFn: async ({ queryKey, signal }) => {
+      const slug = queryKey[1];
+      const response = await fetch(`/api/reviews/${encodeURIComponent(slug)}/draft`, { signal });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Review draft could not be loaded.");
+      }
+      return payload;
+    },
+  });
   const [snapshot, setSnapshot] = useState(null);
-  const [loading, setLoading] = useState(Boolean(reviewSlug));
-  const [error, setError] = useState("");
+  const [saveError, setSaveError] = useState("");
   const [pendingTarget, setPendingTarget] = useState(null);
   const [composerBody, setComposerBody] = useState("");
   const [summaryBody, setSummaryBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const refresh = useCallback(async () => {
-    if (!reviewSlug) return;
-    setLoading(true);
-    setError("");
-    try {
-      const response = await fetch(`/api/reviews/${encodeURIComponent(reviewSlug)}/draft`);
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || "Review draft could not be loaded.");
-      }
-      setSnapshot(payload);
-      setSummaryBody(payload.draft?.body || "");
-    } catch (loadError) {
-      setError(loadError.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [reviewSlug]);
-
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (!draftQuery.data) return;
+    setSnapshot(draftQuery.data);
+    setSummaryBody(draftQuery.data.draft?.body || "");
+  }, [draftQuery.data]);
+
+  const refresh = draftQuery.refetch;
+  const loading = draftQuery.isLoading && !snapshot;
+  const error = saveError || draftQuery.error?.message || "";
 
   const draftComments = snapshot?.draft?.comments || [];
   const threads = snapshot?.threads || [];
@@ -135,7 +135,7 @@ export function ReviewDraftProvider({ children, reviewSlug, showReviewSheet = tr
   const submitReview = useCallback(
     async (event) => {
       setSubmitting(true);
-      setError("");
+      setSaveError("");
       try {
         if (summaryBody !== snapshot?.draft?.body) {
           const bodyResponse = await fetch(`/api/reviews/${encodeURIComponent(reviewSlug)}/draft`, {
@@ -167,7 +167,7 @@ export function ReviewDraftProvider({ children, reviewSlug, showReviewSheet = tr
           window.open(payload.htmlUrl, "_blank", "noopener,noreferrer");
         }
       } catch (submitError) {
-        setError(submitError.message);
+        setSaveError(submitError.message);
       } finally {
         setSubmitting(false);
       }
@@ -198,7 +198,7 @@ export function ReviewDraftProvider({ children, reviewSlug, showReviewSheet = tr
     reviewSlug,
     saveComment,
     setComposerBody,
-    setError,
+    setError: setSaveError,
     snapshot,
     threads,
   };

@@ -1,11 +1,12 @@
 import { AlertTriangle, ArrowLeft, RefreshCw, X } from "lucide-react";
 import { parseAsStringEnum, useQueryState } from "nuqs";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { AnalysisSection } from "@/components/analysis/analysis-section.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs.jsx";
 import { useAnalysisDashboard } from "@/hooks/use-analysis-dashboard.js";
 import { useDocumentTitle } from "@/hooks/use-document-title.js";
+import { readJson, useQuery } from "@/hooks/use-query.js";
 import { analysisState } from "@/lib/analysis.js";
 import { cn } from "@/lib/utils.js";
 
@@ -21,7 +22,14 @@ export function AnalysisPage() {
     refresh: refreshDashboard,
     running: analysisRunning,
   } = useAnalysisDashboard();
-  const [queueItems, setQueueItems] = useState([]);
+  const inboxQuery = useQuery({
+    queryKey: ["inbox", "active"],
+    queryFn: async ({ signal }) => {
+      const response = await fetch("/api/inbox?view=active", { signal });
+      return readJson(response);
+    },
+  });
+  const queueItems = inboxQuery.data?.items ?? [];
   const [canceling, setCanceling] = useState(false);
   const [prioritizingRunId, setPrioritizingRunId] = useState("");
   const [actionError, setActionError] = useState("");
@@ -30,14 +38,6 @@ export function AnalysisPage() {
     parseAsStringEnum(analysisTabs).withDefault("ongoing"),
   );
   const error = actionError || dashboardError;
-
-  useEffect(() => {
-    fetch("/api/inbox?view=active")
-      .then((response) => response.json())
-      .then((inbox) => setQueueItems(inbox.items ?? []))
-      .catch(() => {});
-  }, []);
-
   const entries = useMemo(() => {
     const itemsByUrl = new Map(queueItems.map((item) => [item.url, item]));
     const queueOrder = new Map(
