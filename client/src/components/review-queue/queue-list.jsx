@@ -70,7 +70,7 @@ export function LoadingQueue() {
   );
 }
 
-export function EmptyQueue({ canConfigure, onSettings, error, onRetry }) {
+export function EmptyQueue({ canConfigure, error, onRetry }) {
   const Icon = error ? AlertTriangle : Check;
   return (
     <Empty className="min-h-80 overflow-hidden rounded-lg border border-solid bg-card/75 shadow-lg backdrop-blur-sm">
@@ -94,8 +94,8 @@ export function EmptyQueue({ canConfigure, onSettings, error, onRetry }) {
           {error ? (
             <Button onClick={onRetry}>Retry</Button>
           ) : (
-            <Button variant="outline" onClick={onSettings}>
-              Add your team
+            <Button asChild variant="outline">
+              <a href="/settings#team">Add your team</a>
             </Button>
           )}
         </EmptyContent>
@@ -350,18 +350,18 @@ function PullRequestRow({
                   </Button>
                 ) : (
                   <Button
-                    size="sm"
+                    size="icon-sm"
                     variant="outline"
                     disabled={analysisBusy}
                     onClick={() => onAnalyze(item)}
-                    title="Re-run AI analysis"
+                    aria-label="Retry analysis"
+                    title="Retry analysis"
                   >
                     {analysisBusy ? (
                       <LoaderCircle className="size-3.5 animate-spin" />
                     ) : (
                       <RotateCcw className="size-3.5" />
                     )}
-                    Retry
                   </Button>
                 )}
               </>

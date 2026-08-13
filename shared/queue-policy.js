@@ -20,6 +20,34 @@ export const LIFECYCLE_SCORES = Object.freeze({
   other: 0,
 });
 
+export const SIGNAL_WEIGHTS = Object.freeze({
+  "direct-review": 10,
+  "post-merge-comment": 10,
+  "teammate-pr": 7,
+  "review-reply": 6,
+  "direct-mention": 6,
+  "my-pr-activity": 5,
+  "new-commits": 3,
+  "team-review": 3,
+  "new-comments": 2,
+  "team-mention": 2,
+  "team-covered": -4,
+});
+
+export const SIGNAL_LABELS = Object.freeze({
+  "direct-review": "Direct review request",
+  "post-merge-comment": "Comment after merge",
+  "teammate-pr": "Teammate PR",
+  "review-reply": "Reply to your review",
+  "direct-mention": "Mentioned you",
+  "my-pr-activity": "Activity on your PR",
+  "new-commits": "New commits",
+  "team-review": "Team review request",
+  "new-comments": "New comments",
+  "team-mention": "Team mentioned",
+  "team-covered": "Covered by teammate",
+});
+
 export function lifecycleForQueueItem(item) {
   if (item.state === "MERGED") return "merged";
   if (item.draft) return "draft";

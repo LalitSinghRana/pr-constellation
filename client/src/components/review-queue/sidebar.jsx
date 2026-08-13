@@ -1,11 +1,4 @@
-import {
-  ArrowUpRight,
-  GitPullRequest,
-  Settings,
-  Settings2,
-  Sparkles,
-  TableProperties,
-} from "lucide-react";
+import { ArrowUpRight, GitPullRequest, Settings, Sparkles } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle.jsx";
 import {
   SidebarContent,
@@ -78,7 +71,7 @@ function NavigationGroup({ label, children }) {
   );
 }
 
-export function QueueSidebar({ activeFilter, counts, onFilter, onSettings }) {
+export function QueueSidebar({ activeFilter, counts, onFilter }) {
   return (
     <AppSidebar
       footer={
@@ -93,25 +86,10 @@ export function QueueSidebar({ activeFilter, counts, onFilter, onSettings }) {
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton className={menuButtonClass} onClick={onSettings}>
-              <Settings2 />
-              <span>Configure team</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
             <SidebarMenuButton asChild className={menuButtonClass}>
               <a href="/settings" target="_blank" rel="noreferrer">
                 <Settings />
                 <span>Settings</span>
-                <ArrowUpRight className="ml-auto" />
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild className={menuButtonClass}>
-              <a href="/scoring">
-                <TableProperties />
-                <span>Scoring details</span>
                 <ArrowUpRight className="ml-auto" />
               </a>
             </SidebarMenuButton>

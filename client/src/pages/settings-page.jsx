@@ -1,5 +1,8 @@
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ScoringCard } from "@/components/settings/scoring-card.jsx";
+import { SettingsExpandableRow } from "@/components/settings/settings-expandable-row.jsx";
+import { TeamSettingsForm } from "@/components/settings/team-settings-form.jsx";
 import { ThemeToggle } from "@/components/theme-toggle.jsx";
 import {
   Item,
@@ -28,29 +31,60 @@ import {
   SETTINGS_ANALYSIS_AGENTS,
 } from "../../../shared/analysis-models.js";
 
+function sectionFromLocation() {
+  if (window.location.pathname.startsWith("/scoring")) return "scoring";
+  const hash = window.location.hash.replace(/^#/, "");
+  return hash === "team" || hash === "scoring" ? hash : "";
+}
+
 export function SettingsPage() {
   useDocumentTitle({ title: "Settings · PR Review Cockpit" });
   const settingsQuery = useSettingsQuery();
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
+  const [teamOpen, setTeamOpen] = useState(() => sectionFromLocation() === "team");
+  const [scoringOpen, setScoringOpen] = useState(() => sectionFromLocation() === "scoring");
   const saveSettings = useMutation({
-    mutationFn: ({ body }) => putSettings(body),
+    mutationFn: putSettings,
   });
 
   useEffect(() => {
     if (settingsQuery.data) setSettings(settingsQuery.data);
   }, [settingsQuery.data]);
 
-  async function patchSetting(field, value) {
-    if (settingsQuery.isLoading || saveSettings.isPending) return;
+  useEffect(() => {
+    if (!window.location.pathname.startsWith("/scoring")) return;
+    window.history.replaceState(null, "", "/settings#scoring");
+  }, []);
+
+  async function patchSettings(patch) {
+    if (settingsQuery.isLoading || saveSettings.isPending) return false;
     const previous = settings;
-    const body = { ...settings, [field]: value };
+    const body = { ...settings, ...patch };
     setSettings(body);
     try {
-      const result = await saveSettings.mutateAsync({ field, body });
+      const result = await saveSettings.mutateAsync(body);
       setSettings(result);
+      return true;
     } catch {
       setSettings(previous);
+      return false;
     }
+  }
+
+  function setSectionOpen(section, nextOpen) {
+    if (section === "team") setTeamOpen(nextOpen);
+    else setScoringOpen(nextOpen);
+    const otherOpen = section === "team" ? scoringOpen : teamOpen;
+    if (nextOpen) {
+      window.history.replaceState(null, "", `/settings#${section}`);
+      return;
+    }
+    if (window.location.hash !== `#${section}`) return;
+    window.history.replaceState(
+      null,
+      "",
+      otherOpen ? `/settings#${section === "team" ? "scoring" : "team"}` : "/settings",
+    );
   }
 
   const error =
@@ -62,7 +96,7 @@ export function SettingsPage() {
 
   return (
     <main className="min-h-screen">
-      <div className="mx-auto w-[min(100%-2.5rem,42rem)] pt-12 pb-20 max-[700px]:w-[min(100%-1.5rem,42rem)] max-[700px]:pt-6">
+      <div className="mx-auto w-full max-w-[1240px] px-5 pt-12 pb-20 sm:px-8 max-[700px]:px-4 max-[700px]:pt-6">
         <div className="flex items-center justify-between">
           <a
             className="inline-flex items-center gap-[0.45rem] text-[0.78rem] font-bold text-muted-foreground no-underline hover:text-foreground"
@@ -82,9 +116,9 @@ export function SettingsPage() {
           <h1 className="font-display text-4xl font-semibold tracking-[-0.045em] sm:text-5xl">
             Settings
           </h1>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-            Turn cockpit features on or off. Preferences are saved in the local SQLite settings
-            store.
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Turn cockpit features on or off, configure the team used to score the queue, and inspect
+            the priority model. Preferences are saved in the local SQLite settings store.
           </p>
         </header>
 
@@ -115,7 +149,7 @@ export function SettingsPage() {
                 <Select
                   value={defaultAnalysisModel}
                   disabled={busy}
-                  onValueChange={(value) => patchSetting("defaultAnalysisModel", value)}
+                  onValueChange={(value) => patchSettings({ defaultAnalysisModel: value })}
                 >
                   <SelectTrigger
                     id="default-agent"
@@ -150,7 +184,7 @@ export function SettingsPage() {
                   id="auto-queue"
                   checked={settings.autoQueue === true}
                   disabled={busy}
-                  onCheckedChange={(enabled) => patchSetting("autoQueue", enabled)}
+                  onCheckedChange={(enabled) => patchSettings({ autoQueue: enabled })}
                 />
               </ItemActions>
             </Item>
@@ -169,10 +203,34 @@ export function SettingsPage() {
                   id="show-minimap"
                   checked={settings.showMinimap === true}
                   disabled={busy}
-                  onCheckedChange={(enabled) => patchSetting("showMinimap", enabled)}
+                  onCheckedChange={(enabled) => patchSettings({ showMinimap: enabled })}
                 />
               </ItemActions>
             </Item>
+            <ItemSeparator />
+            <SettingsExpandableRow
+              description="GitHub username, teammates, and teams used to score the queue."
+              id="team"
+              onOpenChange={(nextOpen) => setSectionOpen("team", nextOpen)}
+              open={teamOpen}
+              title="Team"
+            >
+              <TeamSettingsForm
+                busy={busy}
+                onSave={(patch) => patchSettings(patch)}
+                settings={settings}
+              />
+            </SettingsExpandableRow>
+            <ItemSeparator />
+            <SettingsExpandableRow
+              description="Lifecycle bases and activity signals that make a pull request's priority score."
+              id="scoring"
+              onOpenChange={(nextOpen) => setSectionOpen("scoring", nextOpen)}
+              open={scoringOpen}
+              title="Scoring model"
+            >
+              <ScoringCard />
+            </SettingsExpandableRow>
           </ItemGroup>
         </section>
       </div>

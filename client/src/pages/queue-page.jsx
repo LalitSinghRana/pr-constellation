@@ -3,7 +3,6 @@ import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LIFECYCLE_META, LIFECYCLE_ORDER } from "@/components/review-queue/config.jsx";
 import { EmptyQueue, LoadingQueue, QueueSection } from "@/components/review-queue/queue-list.jsx";
-import { SettingsDialog } from "@/components/review-queue/settings-dialog.jsx";
 import { QueueSidebar } from "@/components/review-queue/sidebar.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar.jsx";
@@ -13,7 +12,7 @@ import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { useInbox } from "@/hooks/use-inbox.js";
 import { useMutation } from "@/hooks/use-mutation.js";
 import { readJson } from "@/hooks/use-query.js";
-import { putSettings, useSettingsQuery } from "@/hooks/use-settings.js";
+import { useSettingsQuery } from "@/hooks/use-settings.js";
 import { EMPTY_SETTINGS, groupByUpdatedDate, matchesPrFilter } from "@/lib/queue.js";
 
 export function QueuePage() {
@@ -29,15 +28,11 @@ export function QueuePage() {
     refresh: refreshAnalyses,
   } = useAnalysisDashboard();
   const settingsQuery = useSettingsQuery();
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
   const [queueActionError, setQueueActionError] = useState("");
   const [analysisActionError, setAnalysisActionError] = useState("");
   const analysisError = analysisActionError || analysisServiceError;
 
-  const saveSettingsMutation = useMutation({
-    mutationFn: putSettings,
-  });
   const analyzeMutation = useMutation({
     mutationFn: async ({ item, options }) => {
       const response = await fetch("/api/analyses", {
@@ -236,19 +231,6 @@ export function QueuePage() {
     ];
   }, [activeFilter, visibleNotifications, visiblePrs]);
 
-  async function saveSettings(nextSettings) {
-    setError("");
-    try {
-      const result = await saveSettingsMutation.mutateAsync(nextSettings);
-      setSettings(result);
-      await refresh();
-      return true;
-    } catch (caught) {
-      setError(caught.message || "Local settings could not be saved.");
-      return false;
-    }
-  }
-
   function analyze(item, options = {}) {
     setAnalysisActionError("");
     analyzeMutation.mutate({ item, options });
@@ -277,12 +259,7 @@ export function QueuePage() {
 
   return (
     <SidebarProvider>
-      <QueueSidebar
-        activeFilter={activeFilter}
-        counts={counts}
-        onFilter={setActiveFilter}
-        onSettings={() => setSettingsOpen(true)}
-      />
+      <QueueSidebar activeFilter={activeFilter} counts={counts} onFilter={setActiveFilter} />
 
       <SidebarInset className="min-h-screen">
         <div className="mx-auto w-full max-w-[1240px] px-5 pb-20 pt-8 sm:px-8 lg:px-12 lg:pt-12">
@@ -372,10 +349,7 @@ export function QueuePage() {
                   />
                 ))
               ) : (
-                <EmptyQueue
-                  canConfigure={!settings.people.length && !settings.teams.length}
-                  onSettings={() => setSettingsOpen(true)}
-                />
+                <EmptyQueue canConfigure={!settings.people.length && !settings.teams.length} />
               )}
             </div>
             {data.page?.hasMore && (
@@ -388,13 +362,6 @@ export function QueuePage() {
           </section>
         </div>
       </SidebarInset>
-
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        settings={settings}
-        onSave={saveSettings}
-      />
     </SidebarProvider>
   );
 }

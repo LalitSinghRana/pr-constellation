@@ -5,6 +5,8 @@ import {
   ACTIVITY_SIGNAL_KINDS,
   LIFECYCLE_SCORES,
   lifecycleForQueueItem,
+  SIGNAL_LABELS,
+  SIGNAL_WEIGHTS,
 } from "../../shared/queue-policy.js";
 import { fetchPullRequestConversation } from "../review/github-review-client.js";
 import { databasePath, queuePath, settingsPath } from "../runtime-config.js";
@@ -36,20 +38,7 @@ export const trackedRepositories = Object.freeze([
   "PicnicSupermarket/picnic-page-platform-modules",
 ]);
 
-export const weights = Object.freeze({
-  "direct-review": 10,
-  "post-merge-comment": 10,
-  "teammate-pr": 7,
-  "review-reply": 6,
-  "direct-mention": 6,
-  "my-pr-activity": 5,
-  "new-commits": 3,
-  "team-review": 3,
-  "new-comments": 2,
-  "team-mention": 2,
-  "team-covered": -4,
-});
-
+export const weights = SIGNAL_WEIGHTS;
 export const lifecycleScores = LIFECYCLE_SCORES;
 
 const lifecycleLabels = Object.freeze({
@@ -62,19 +51,7 @@ const lifecycleLabels = Object.freeze({
   other: "Other PR notification",
 });
 
-const signalLabels = Object.freeze({
-  "direct-review": "Direct review request",
-  "post-merge-comment": "Comment after merge",
-  "teammate-pr": "Teammate PR",
-  "review-reply": "Reply to your review",
-  "direct-mention": "Mentioned you",
-  "my-pr-activity": "Activity on your PR",
-  "new-commits": "New commits",
-  "team-review": "Team review request",
-  "new-comments": "New comments",
-  "team-mention": "Team mentioned",
-  "team-covered": "Covered by teammate",
-});
+const signalLabels = SIGNAL_LABELS;
 
 const activitySignalKinds = new Set(ACTIVITY_SIGNAL_KINDS);
 

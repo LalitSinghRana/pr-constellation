@@ -1,23 +1,8 @@
 Next improvements
 
-### Rendering architecture (TODO)
-- No conventional React SSR in this app.
-- `/`, `/analysis`, `/scoring` — Vite SPA routes; all cockpit UI mounts into `#root` client-side.
-- `/reviews/<slug>/` — server-generated at analysis time: Node builds and saves static `index.html` with inline CSS/JS, PR metadata, analysis-tree data, and precomputed Shiki syntax tokens. But the HTML shell has an empty `#pr-review-root`; the visible review UI (tree, React Flow graph, diffs, timeline, comments, draft UI) is rendered in the browser by the bundled React app.
-- So: review pages are **server-generated, not server-side-rendered React HTML**. The document is static; none of the interactive UI DOM is server-rendered.
-
 ### UI/UX
-- ~a clean snap flow from file to file or node-to-node. with arrow navigation~
-- ~graph and rest of website should be merge for style~
-- ~Do full review and leave comments from my local website~
-- ~move rendering and shiki styling from backend to frontend.~
-- ~show GH PR 'conversation' tab~
 - timer to review the PRs. Each review-stack should have their own timer based on #LOC. No need for AI, we can deterministically do this.
-- ~Priority queue: bands bumped → none → past-fail/cancel → past-success; within band by score; Prioritize button~
-- ~useQuery and refactor all existing api calls~
-- ~RSC for things that should come local server/db. but do we need it if it's running locally and is super fast.~
-- ~Settings page. Auto queue, mini-map toggle.~
-- decouple pages from server. Ideally Only react-flow should come from server.
+- ~move team settings, scoring card (simplify) to settings page.~
 - Long git-diff files break out of node boundaries. http://127.0.0.1:4397/reviews/gh-17-picnicsupermarket-19-picnic-store-config-4993/ or http://127.0.0.1:4397/reviews/gh-17-picnicsupermarket-19-picnic-store-config-4993/ or http://127.0.0.1:4397/reviews/gh-17-picnicsupermarket-16-picnic-store-app-3558/
 - Move 0.1x / 1x / 10x toggle from header to inside the scope of review-trees
 - sorting by simple-smallest, simple-large, complex-large to get smaller ones get finished quickly
