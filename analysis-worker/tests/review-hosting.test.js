@@ -1,14 +1,32 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { renderExistingRun } from "../review-run.js";
+import { RunStore } from "../../server/analysis/run-store.js";
+import {
+  getLatestReviewPayload,
+  getReviewPayloadForRun,
+} from "../../server/review/review-payload-service.js";
 
 const reviewsDir = await mkdtemp(path.join(os.tmpdir(), "pr-review-hosting-"));
-const slugDir = path.join(reviewsDir, "example-repo-1");
-const runDir = path.join(slugDir, "run-1");
+const store = new RunStore({
+  reviewsDir,
+  clock: () => new Date("2026-08-13T15:00:00.000Z"),
+});
 
 try {
+  const run = await store.createRun({
+    runId: "run-1",
+    url: "https://github.com/example/repo/pull/1",
+    owner: "example",
+    repo: "repo",
+    number: 1,
+    slug: "example-repo-1",
+    title: "Hosting check",
+    headSha: "head",
+    baseSha: "base",
+  });
+  const runDir = store.getRunDir(run.slug, run.runId);
   await mkdir(runDir, { recursive: true });
   await Promise.all([
     writeFile(
@@ -39,17 +57,39 @@ index 0000000..1111111 100644
 `,
       "utf8",
     ),
+    writeFile(
+      path.join(runDir, "diff-inventory.json"),
+      `${JSON.stringify({
+        schemaVersion: "diff-inventory/v1",
+        changedLineCount: 2,
+        files: [],
+      })}\n`,
+      "utf8",
+    ),
+    writeFile(
+      path.join(runDir, "analysis.json"),
+      `${JSON.stringify({
+        schemaVersion: "pr-review-analysis/v1",
+        intent: "Hosting check",
+        summary: "Existing analysis artifacts remain usable without HTML.",
+        confidence: 1,
+        reviewStacks: [],
+        files: [],
+      })}\n`,
+      "utf8",
+    ),
   ]);
+  await store.updateRun(run.slug, run.runId, { status: "succeeded", phase: "Complete" });
 
-  const result = await renderExistingRun({ runDir });
-  const [runHtml, stableHtml] = await Promise.all([
-    readFile(path.join(runDir, "index.html"), "utf8"),
-    readFile(path.join(slugDir, "index.html"), "utf8"),
-  ]);
+  const latest = await getLatestReviewPayload(store, "example-repo-1");
+  assert.equal(latest.slug, "example-repo-1");
+  assert.equal(latest.runId, "run-1");
+  assert.equal(latest.metadata.title, "Hosting check");
+  assert.equal(latest.analysis.intent, "Hosting check");
 
-  assert.equal(result.stableHtmlPath, path.join(slugDir, "index.html"));
-  assert.equal(stableHtml, runHtml);
-  assert.match(stableHtml, /Hosting check/);
+  const specific = await getReviewPayloadForRun(store, "example-repo-1", "run-1");
+  assert.equal(specific.runId, "run-1");
 } finally {
+  store.close();
   await rm(reviewsDir, { force: true, recursive: true });
 }

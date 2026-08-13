@@ -1,102 +1,97 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { renderDiffHtml } from "../src/review/render.js";
+import { createDiffInventory } from "../../analysis-worker/workflow/03-build-diff-inventory/diff-inventory.js";
+import { buildReviewData, buildReviewTreeData } from "../src/review/build-review-tree-data.js";
+import { getSyntaxHighlighter, languagesForFilePaths } from "../src/review/shiki-highlighter.js";
 
-const html = await renderDiffHtml({
-  analysis: {
-    schemaVersion: "pr-review-analysis/v1",
-    intent: "Check review tree rendering",
-    summary: "A minimal Section Tree verifies the embedded review bundle.",
-    confidence: 1,
-    reviewStacks: [
-      {
-        id: "stack-1",
-        title: "Runtime change",
-        explanation: "Review the runtime change as one stack.",
-        fileIds: ["file-1"],
-        fileTree: { branches: [] },
+const analysis = {
+  schemaVersion: "pr-review-analysis/v1",
+  intent: "Check review tree rendering",
+  summary: "A minimal Section Tree verifies the embedded review bundle.",
+  confidence: 1,
+  reviewStacks: [
+    {
+      id: "stack-1",
+      title: "Runtime change",
+      explanation: "Review the runtime change as one stack.",
+      fileIds: ["file-1"],
+      fileTree: { branches: [] },
+    },
+  ],
+  files: [
+    {
+      id: "file-1",
+      path: "src/example.js",
+      reviewPriority: "primary",
+      changeKind: "runtime",
+      explanation: "This file owns the runtime behavior under review.",
+      changedLineIds: ["file-1:hunk-1:line-1", "file-1:hunk-1:line-2"],
+      sectionTree: {
+        sections: [
+          {
+            id: "replace-old-value",
+            title: "Replace old value",
+            reviewPriority: "primary",
+            changeKind: "runtime",
+            explanation: "Callers must observe the updated behavior.",
+            changedLineIds: ["file-1:hunk-1:line-1"],
+          },
+          {
+            id: "set-new-value",
+            title: "Set new value",
+            reviewPriority: "secondary",
+            changeKind: "runtime",
+            explanation: "The replacement value supports the reviewed behavior.",
+            changedLineIds: ["file-1:hunk-1:line-2"],
+          },
+        ],
+        branches: [
+          {
+            parentId: "replace-old-value",
+            childId: "set-new-value",
+            order: 0,
+            explanation: "The assignment supplies the value callers now observe.",
+          },
+        ],
       },
-    ],
-    files: [
-      {
-        id: "file-1",
-        path: "src/example.js",
-        reviewPriority: "primary",
-        changeKind: "runtime",
-        explanation: "This file owns the runtime behavior under review.",
-        changedLineIds: ["file-1:hunk-1:line-1", "file-1:hunk-1:line-2"],
-        sectionTree: {
-          sections: [
-            {
-              id: "replace-old-value",
-              title: "Replace old value",
-              reviewPriority: "primary",
-              changeKind: "runtime",
-              explanation: "Callers must observe the updated behavior.",
-              changedLineIds: ["file-1:hunk-1:line-1"],
-            },
-            {
-              id: "set-new-value",
-              title: "Set new value",
-              reviewPriority: "secondary",
-              changeKind: "runtime",
-              explanation: "The replacement value supports the reviewed behavior.",
-              changedLineIds: ["file-1:hunk-1:line-2"],
-            },
-          ],
-          branches: [
-            {
-              parentId: "replace-old-value",
-              childId: "set-new-value",
-              order: 0,
-              explanation: "The assignment supplies the value callers now observe.",
-            },
-          ],
-        },
-      },
-    ],
-  },
-  diff: `diff --git a/src/example.js b/src/example.js
+    },
+  ],
+};
+
+const diff = `diff --git a/src/example.js b/src/example.js
 index 0000000..1111111 100644
 --- a/src/example.js
 +++ b/src/example.js
 @@ -1 +1 @@
 -const value = 1;
 +const value = 2;
-`,
-  pr: {
-    additions: 1,
-    author: { avatarUrl: "https://example.com/check.png", login: "check" },
-    baseRefName: "main",
-    body: "## Description\n\nReview the change.",
-    changedFiles: 1,
-    createdAt: "2026-08-09T12:00:00Z",
-    deletions: 1,
-    headRefName: "branch",
-    number: 1,
-    state: "OPEN",
-    title: "Check",
-    url: "https://github.com/example/repo/pull/1",
-  },
-});
+`;
 
-for (const marker of [
-  "pr-review-root",
-  "review-tree",
-  "review-section-gap-divider",
-  "file-node-label",
-  "section-tree-edge",
-  "explanation-hover-card",
-  "review-group",
-  "--section-tree-color",
-  "--file-tree-color",
-  "PrReviewTree",
-]) {
-  assert.ok(html.includes(marker), `Missing review bundle marker: ${marker}`);
-}
+const pr = {
+  additions: 1,
+  author: { avatarUrl: "https://example.com/check.png", login: "check" },
+  baseRefName: "main",
+  body: "## Description\n\nReview the change.",
+  changedFiles: 1,
+  createdAt: "2026-08-09T12:00:00Z",
+  deletions: 1,
+  headRefName: "branch",
+  number: 1,
+  state: "OPEN",
+  title: "Check",
+  url: "https://github.com/example/repo/pull/1",
+};
 
-const treeData = extractJsonScript(html, "pr-analysis-data");
-const reviewData = extractJsonScript(html, "pr-review-data");
+assert.deepEqual(languagesForFilePaths(["src/example.js", "README.md"]), [
+  "javascript",
+  "markdown",
+]);
+
+const syntaxHighlighter = await getSyntaxHighlighter(languagesForFilePaths(["src/example.js"]));
+const diffInventory = createDiffInventory(diff);
+const treeData = buildReviewTreeData({ analysis, diffInventory, syntaxHighlighter });
+const reviewData = buildReviewData({ pr });
+
 assert.equal(reviewData.body, "## Description\n\nReview the change.");
 assert.equal(reviewData.authorAvatarUrl, "https://example.com/check.png");
 assert.equal(treeData.schemaVersion, "pr-review-analysis/v1");
@@ -113,7 +108,7 @@ assert.ok(
   treeData.files[0].sourceCodeChunks[0].lines
     .flatMap((line) => line.syntaxTokens)
     .some((token) => token.style?.includes("--shiki-light")),
-  "the server-side highlighter should provide styled syntax tokens",
+  "the browser highlighter should provide styled syntax tokens",
 );
 assert.ok(!("relations" in treeData.files[0].sectionTree));
 
@@ -152,6 +147,8 @@ assert.match(treeAppSource, /MIN_TREE_ZOOM/);
 assert.match(treeAppSource, /if \(item\.kind === "description"\) return 0;/);
 assert.match(treeAppSource, /FILE_TREE_TARGET_HANDLE/);
 assert.match(treeAppSource, /text-pr-open/);
+assert.match(treeAppSource, /export function ReviewTreeApp/);
+assert.doesNotMatch(treeAppSource, /createRoot\(/);
 assert.doesNotMatch(treeAppSource, /What \/ Why/);
 assert.doesNotMatch(treeAppSource, /formatExplanationForHover/);
 assert.doesNotMatch(treeAppSource, /state-badge/);
@@ -162,11 +159,3 @@ assert.match(webStyles, /\.review-branch-hit-path/);
 assert.match(webStyles, /\.review-tree-map/);
 assert.doesNotMatch(webStyles, /\.change-pill\.is-add/);
 assert.doesNotMatch(webStyles, /\.review-mark\.is-open/);
-
-function extractJsonScript(documentHtml, id) {
-  const match = documentHtml.match(
-    new RegExp(`<script id="${id}" type="application/json">([\\s\\S]*?)<\\/script>`),
-  );
-  assert.ok(match, `Missing JSON script: ${id}`);
-  return JSON.parse(match[1]);
-}

@@ -26,15 +26,7 @@ export function readReviewSlug() {
   return parts[0] === "reviews" && parts[1] ? parts[1] : "";
 }
 
-export function readReviewData() {
-  return readJsonScript("pr-review-data", {});
-}
-
-export function readTreeData() {
-  return readJsonScript("pr-analysis-data", null);
-}
-
-function readJsonScript(id, fallback) {
-  const target = document.getElementById(id);
-  return target ? JSON.parse(target.textContent) : fallback;
+export function readReviewRunId() {
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  return parts[0] === "reviews" && parts[2] && !parts[2].includes(".") ? parts[2] : "";
 }

@@ -72,7 +72,6 @@ export class DashboardService {
   #now;
   #onChange;
   #projectRoot;
-  #publishReview;
   #runExecutor;
   #store;
 
@@ -82,7 +81,6 @@ export class DashboardService {
     now = () => new Date(),
     onChange = () => {},
     projectRoot = process.cwd(),
-    publishReview = publishDefaultReview,
     reviewsDir,
     runExecutor = runDefaultAnalysis,
     store = new RunStore({ reviewsDir }),
@@ -97,7 +95,6 @@ export class DashboardService {
     this.#now = now;
     this.#onChange = onChange;
     this.#projectRoot = path.resolve(projectRoot);
-    this.#publishReview = publishReview;
     this.#runExecutor = runExecutor;
     this.#store = store;
   }
@@ -783,16 +780,6 @@ export class DashboardService {
           : createAbortError("Analysis was canceled before success could be committed.");
       }
 
-      const hasPublicationPath = Boolean(result.htmlPath || result.stableHtmlPath);
-      if (hasPublicationPath) {
-        if (typeof result.htmlPath !== "string" || typeof result.stableHtmlPath !== "string") {
-          throw new Error("A completed review must provide both htmlPath and stableHtmlPath.");
-        }
-        await this.#publishReview({
-          htmlPath: result.htmlPath,
-          stableHtmlPath: result.stableHtmlPath,
-        });
-      }
       this.#emitChange({ runId: job.runId, slug: job.slug, type: "succeeded" });
     } catch (error) {
       const inputFingerprint = await tryReadInputFingerprint(runDir);
@@ -1230,11 +1217,6 @@ export class DashboardService {
 async function runDefaultAnalysis(options) {
   const { createBenchmarkRun } = await import("../../analysis-worker/review-run.js");
   return createBenchmarkRun(options);
-}
-
-async function publishDefaultReview(options) {
-  const { publishStableReview } = await import("../../analysis-worker/review-run.js");
-  return publishStableReview(options);
 }
 
 function assertFrozenSourceIdentity(run, parsed) {

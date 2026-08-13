@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createBenchmarkRun, publishStableReview } from "../review-run.js";
+import { createBenchmarkRun } from "../review-run.js";
 import { parseGitHubPrUrl } from "../workflow/02-fetch-pr/github.js";
 
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "pr-review-benchmark-"));
@@ -14,8 +14,6 @@ const targetRunDir = path.join(reviewsDir, reviewSlug, "target-run");
 const events = [];
 const codexCalls = [];
 const runController = new AbortController();
-const stableHtmlPath = path.join(reviewsDir, reviewSlug, "index.html");
-const previousStableHtml = "<p>previous successful review</p>";
 const reviewStacksFixtureResult = {
   schemaVersion: "pr-review-stacks/v1",
   reviewStacks: [
@@ -71,7 +69,6 @@ const judgeFixtureResult = {
 try {
   await mkdir(sourceRunDir, { recursive: true });
   await Promise.all([
-    writeFile(stableHtmlPath, previousStableHtml, "utf8"),
     writeFile(
       path.join(sourceRunDir, "metadata.json"),
       `${JSON.stringify({
@@ -131,6 +128,10 @@ index 1111111..2222222 100644
   assert.equal(result.metadata.headRefOid, "head-sha");
   assert.equal(result.diffSummary.changedLineCount, 2);
   assert.equal(result.runDir, targetRunDir);
+  assert.ok(result.analysisPath.endsWith("analysis.json"));
+  assert.equal(result.htmlPath, undefined);
+  assert.equal(result.stableHtmlPath, undefined);
+  assert.match(await readFile(result.analysisPath, "utf8"), /Replace the fixture value/);
   assert.equal(codexCalls.length, 2);
   assert.deepEqual(
     codexCalls.map(({ model, reasoningEffort }) => ({
@@ -142,8 +143,6 @@ index 1111111..2222222 100644
       { model: "gpt-fixture", reasoningEffort: "low" },
     ],
   );
-  assert.match(await readFile(result.htmlPath, "utf8"), /Benchmark fixture/);
-  assert.equal(await readFile(result.stableHtmlPath, "utf8"), previousStableHtml);
   const claudeCalls = [];
   const claudeRunDir = path.join(reviewsDir, reviewSlug, "claude-run");
   await createBenchmarkRun({
@@ -169,31 +168,6 @@ index 1111111..2222222 100644
     { model: "claude-sonnet-4-6", reasoningEffort: "max" },
   ]);
 
-  await assert.rejects(
-    publishStableReview({
-      htmlPath: path.join(targetRunDir, "missing-index.html"),
-      stableHtmlPath,
-    }),
-    { code: "ENOENT" },
-  );
-  assert.equal(await readFile(stableHtmlPath, "utf8"), previousStableHtml);
-  assert.equal(
-    (await readdir(path.dirname(stableHtmlPath))).some(
-      (entry) => entry.startsWith(".index.html.") && entry.endsWith(".tmp"),
-    ),
-    false,
-  );
-
-  await publishStableReview({
-    htmlPath: result.htmlPath,
-    stableHtmlPath: result.stableHtmlPath,
-  });
-  assert.equal(
-    await readFile(result.stableHtmlPath, "utf8"),
-    await readFile(result.htmlPath, "utf8"),
-  );
-  await writeFile(stableHtmlPath, previousStableHtml, "utf8");
-
   const starts = new Set(
     events.filter((event) => event.type === "stage-start").map((event) => event.stageId),
   );
@@ -214,94 +188,14 @@ index 1111111..2222222 100644
     "analysis.attempt-1.evaluation",
     "analysis.attempt-1.evaluation.validate-candidate",
     "analysis.persist-artifacts",
-    "render",
-    "render.build",
-    "render.persist",
   ]) {
     assert.equal(starts.has(stageId), true, `Missing start event for ${stageId}`);
     assert.equal(finishes.get(stageId)?.status, "completed");
     assert.equal(typeof finishes.get(stageId)?.metrics?.elapsedMs, "number");
   }
   assert.equal(finishes.get("analysis.attempt-1.evaluation.judge-candidate")?.status, "skipped");
-
   assert.equal(finishes.get("inventory.parse").parentStageId, "inventory");
-  assert.equal(finishes.get("render.persist").parentStageId, "render");
-
-  const renderCancelController = new AbortController();
-  const renderCancelEvents = [];
-  const canceledRenderRunDir = path.join(reviewsDir, reviewSlug, "canceled-render-run");
-  let renderCancelError;
-
-  await assert.rejects(
-    createBenchmarkRun({
-      executeCodex: async ({ outputPath, schemaPath, signal }) => {
-        assert.equal(signal, renderCancelController.signal);
-        await writeFile(
-          outputPath,
-          schemaPath.includes("02-create-review-stacks")
-            ? `${JSON.stringify(reviewStacksFixtureResult)}\n`
-            : schemaPath.includes("06-judge-candidate")
-              ? `${JSON.stringify(judgeFixtureResult)}\n`
-              : `${JSON.stringify(reviewTreesFixtureResult)}\n`,
-          "utf8",
-        );
-        return {
-          usage: {
-            inputTokens: 12,
-            cachedInputTokens: 4,
-            outputTokens: 3,
-            totalTokens: 15,
-          },
-        };
-      },
-      model: "gpt-fixture",
-      onEvent: async (event) => {
-        renderCancelEvents.push(event);
-        if (event.type === "stage-start" && event.stageId === "render.persist") {
-          renderCancelController.abort(new Error("Canceled before persisting the review page."));
-        }
-      },
-      prUrl,
-      reasoningEffort: "low",
-      reviewsDir,
-      runDir: canceledRenderRunDir,
-      signal: renderCancelController.signal,
-      sourceRunDir,
-    }),
-    (error) => {
-      renderCancelError = error;
-      return error?.name === "AbortError" && error?.code === "ABORT_ERR";
-    },
-  );
-
-  assert.deepEqual(renderCancelError.usage, {
-    inputTokens: 24,
-    cachedInputTokens: 8,
-    outputTokens: 6,
-    totalTokens: 30,
-  });
-  assert.equal(
-    renderCancelEvents.find(
-      (event) => event.type === "stage-finish" && event.stageId === "analysis",
-    )?.status,
-    "completed",
-  );
-  assert.equal(
-    renderCancelEvents.find((event) => event.type === "stage-finish" && event.stageId === "render")
-      ?.status,
-    "canceled",
-  );
-  assert.equal(
-    renderCancelEvents.find(
-      (event) => event.type === "stage-finish" && event.stageId === "render.persist",
-    )?.status,
-    "completed",
-  );
-  assert.match(
-    await readFile(path.join(canceledRenderRunDir, "index.html"), "utf8"),
-    /Benchmark fixture/,
-  );
-  assert.equal(await readFile(stableHtmlPath, "utf8"), previousStableHtml);
+  assert.equal(starts.has("render"), false);
 } finally {
   await rm(temporaryRoot, { force: true, recursive: true });
 }

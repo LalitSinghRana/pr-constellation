@@ -11,6 +11,7 @@ import {
 } from "../inbox/inbox-service.js";
 import { createSyncScheduler } from "../inbox/sync-scheduler.js";
 import { handleReviewDraftApiRequest } from "../review/review-draft-api.js";
+import { handleReviewPayloadApiRequest } from "../review/review-payload-api.js";
 import {
   clientDistRoot,
   clientRoot,
@@ -107,6 +108,13 @@ export async function startServer({
       .then(async (handled) => {
         if (handled) return;
         if (await handleReviewDraftApiRequest(request, response)) return;
+        if (
+          await handleReviewPayloadApiRequest(request, response, {
+            store: dashboardService.store,
+          })
+        ) {
+          return;
+        }
         let dashboardHandled = true;
         await dashboardApi(request, response, () => {
           dashboardHandled = false;

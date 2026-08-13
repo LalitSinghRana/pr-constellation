@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { publishStableReview } from "../../analysis-worker/review-run.js";
 import { parseGitHubPrUrl } from "../../analysis-worker/workflow/02-fetch-pr/github.js";
 import { createDashboardApiMiddleware } from "../analysis/dashboard-api.js";
 import {
@@ -470,7 +469,6 @@ try {
   await checkSequentialScheduling();
   await checkCancellation();
   await checkCancellationCommitRace();
-  await checkSuccessPublicationWinsCancellation();
   await checkApiMiddleware();
 } finally {
   await rm(temporaryRoot, { force: true, recursive: true });
@@ -767,11 +765,6 @@ async function checkCancellation() {
 async function checkCancellationCommitRace() {
   const raceReviewsDir = path.join(temporaryRoot, ".cancel-race-reviews");
   const racePrUrl = "https://github.com/example/cancel-race/pull/14";
-  const raceSlug = parseGitHubPrUrl(racePrUrl).slug;
-  const stableHtmlPath = path.join(raceReviewsDir, raceSlug, "index.html");
-  const previousStableHtml = "<p>previous successful race review</p>";
-  await mkdir(path.dirname(stableHtmlPath), { recursive: true });
-  await writeFile(stableHtmlPath, previousStableHtml, "utf8");
   const backingStore = new RunStore({ reviewsDir: raceReviewsDir });
   let releaseCompletedTiming;
   let reportCompletedTiming;
@@ -843,7 +836,18 @@ async function checkCancellationCommitRace() {
           "diff --git a/race.js b/race.js\n+race fixture\n",
           "utf8",
         ),
-        writeFile(path.join(runDir, "index.html"), "<p>canceled race review</p>", "utf8"),
+        writeFile(
+          path.join(runDir, "analysis.json"),
+          `${JSON.stringify({
+            schemaVersion: "pr-review-analysis/v1",
+            intent: "race",
+            summary: "race",
+            confidence: 1,
+            reviewStacks: [],
+            files: [],
+          })}\n`,
+          "utf8",
+        ),
       ]);
       await onEvent({
         at: new Date().toISOString(),
@@ -863,9 +867,7 @@ async function checkCancellationCommitRace() {
           changedLineCount: 1,
           files: [{}],
         },
-        htmlPath: path.join(runDir, "index.html"),
         metadata,
-        stableHtmlPath,
       };
     },
     store: gatedStore,
@@ -892,11 +894,6 @@ async function checkCancellationCommitRace() {
   assert.equal(
     immediateTimings.stages.find((stage) => stage.stageId === "run.total")?.status,
     "canceled",
-  );
-  assert.equal(await readFile(stableHtmlPath, "utf8"), previousStableHtml);
-  assert.equal(
-    await readFile(path.join(service.store.getRunDir(run.slug, run.runId), "index.html"), "utf8"),
-    "<p>canceled race review</p>",
   );
 
   const restartedService = new DashboardService({
@@ -926,202 +923,7 @@ async function checkCancellationCommitRace() {
     "canceled",
   );
   assert.ok(finalTimings.stages.every((stage) => stage.endedAt));
-  assert.equal(await readFile(stableHtmlPath, "utf8"), previousStableHtml);
   await service.close();
-}
-
-async function checkSuccessPublicationWinsCancellation() {
-  const reviewsDir = path.join(temporaryRoot, ".success-publish-race-reviews");
-  const prUrl = "https://github.com/example/success-publish-race/pull/15";
-  const slug = parseGitHubPrUrl(prUrl).slug;
-  const stableHtmlPath = path.join(reviewsDir, slug, "index.html");
-  const previousStableHtml = "<p>previous successful review</p>";
-  const promotedHtml = "<p>new successful review</p>";
-  await mkdir(path.dirname(stableHtmlPath), { recursive: true });
-  await writeFile(stableHtmlPath, previousStableHtml, "utf8");
-
-  let releasePublication;
-  let reportPublicationStarted;
-  const publicationGate = new Promise((resolve) => {
-    releasePublication = resolve;
-  });
-  const publicationStarted = new Promise((resolve) => {
-    reportPublicationStarted = resolve;
-  });
-  const service = new DashboardService({
-    configuration: {
-      defaultModel: "gpt-fixture",
-      models: ["gpt-fixture"],
-      reasoningEfforts: ["low", "medium"],
-    },
-    getCodeVersion: async () => ({
-      commit: "publish-race-fixture",
-      dirty: false,
-      fingerprint: "publish-race-fixture",
-    }),
-    projectRoot: temporaryRoot,
-    publishReview: async (paths) => {
-      reportPublicationStarted(paths);
-      await publicationGate;
-      await publishStableReview(paths);
-    },
-    reviewsDir,
-    runExecutor: async ({ prUrl: executionUrl, runDir, signal }) => {
-      assert.equal(signal.aborted, false);
-      const parsed = parseFixturePrUrl(executionUrl);
-      const metadata = {
-        additions: 1,
-        baseRefOid: "publish-base",
-        changedFiles: 1,
-        deletions: 0,
-        headRefOid: "publish-head",
-        number: parsed.number,
-        title: `Publish PR ${parsed.number}`,
-        url: executionUrl,
-      };
-      const htmlPath = path.join(runDir, "index.html");
-      await mkdir(runDir, { recursive: true });
-      await Promise.all([
-        writeFile(path.join(runDir, "metadata.json"), `${JSON.stringify(metadata)}\n`, "utf8"),
-        writeFile(
-          path.join(runDir, "diff.patch"),
-          "diff --git a/publish.js b/publish.js\n+publish fixture\n",
-          "utf8",
-        ),
-        writeFile(htmlPath, promotedHtml, "utf8"),
-      ]);
-      return {
-        diffSummary: {
-          changedLineCount: 1,
-          files: [{}],
-        },
-        htmlPath,
-        metadata,
-        stableHtmlPath,
-      };
-    },
-  });
-  await service.initialize();
-
-  const batch = await service.enqueueBatch({
-    prUrl,
-    refresh: true,
-  });
-  const publicationPaths = await publicationStarted;
-  assert.equal(
-    publicationPaths.htmlPath,
-    path.join(service.store.getRunDir(batch.runs[0].slug, batch.runs[0].runId), "index.html"),
-  );
-  const committedBeforePublication = await service.store.readRun(
-    batch.runs[0].slug,
-    batch.runs[0].runId,
-  );
-  assert.equal(committedBeforePublication.status, "succeeded");
-  assert.equal(await readFile(stableHtmlPath, "utf8"), previousStableHtml);
-
-  const cancellation = await service.cancelBatch({
-    batchId: batch.batchId,
-  });
-  assert.deepEqual(cancellation.canceledRunIds, [batch.runs[1].runId]);
-  assert.equal(cancellation.canceledRunCount, 1);
-
-  releasePublication();
-  await service.waitForIdle();
-
-  const [successfulRun, canceledSibling] = await Promise.all(
-    batch.runs.map((run) => service.store.readRun(run.slug, run.runId)),
-  );
-  assert.equal(successfulRun.status, "succeeded");
-  assert.equal(canceledSibling.status, "canceled");
-  const successfulTimings = await service.store.readTimings(
-    successfulRun.slug,
-    successfulRun.runId,
-  );
-  assert.equal(
-    successfulTimings.stages.find((stage) => stage.stageId === "run.total")?.status,
-    "completed",
-  );
-  assert.equal(await readFile(stableHtmlPath, "utf8"), promotedHtml);
-  await service.close();
-
-  const failedPublicationHtml = "<p>failed publication review</p>";
-  const failedPublicationService = new DashboardService({
-    configuration: {
-      defaultModel: "gpt-fixture",
-      models: ["gpt-fixture"],
-      reasoningEfforts: ["low"],
-    },
-    getCodeVersion: async () => ({
-      commit: "failed-publish-fixture",
-      dirty: false,
-      fingerprint: "failed-publish-fixture",
-    }),
-    projectRoot: temporaryRoot,
-    publishReview: async () => {
-      throw new Error("Fixture publication failed before atomic rename.");
-    },
-    reviewsDir,
-    runExecutor: async ({ prUrl: executionUrl, runDir }) => {
-      const parsed = parseFixturePrUrl(executionUrl);
-      const metadata = {
-        additions: 1,
-        baseRefOid: "failed-publish-base",
-        changedFiles: 1,
-        deletions: 0,
-        headRefOid: "failed-publish-head",
-        number: parsed.number,
-        title: `Failed publish PR ${parsed.number}`,
-        url: executionUrl,
-      };
-      const htmlPath = path.join(runDir, "index.html");
-      await mkdir(runDir, { recursive: true });
-      await Promise.all([
-        writeFile(path.join(runDir, "metadata.json"), `${JSON.stringify(metadata)}\n`, "utf8"),
-        writeFile(
-          path.join(runDir, "diff.patch"),
-          "diff --git a/failed.js b/failed.js\n+failed publish fixture\n",
-          "utf8",
-        ),
-        writeFile(htmlPath, failedPublicationHtml, "utf8"),
-      ]);
-      return {
-        diffSummary: {
-          changedLineCount: 1,
-          files: [{}],
-        },
-        htmlPath,
-        metadata,
-        stableHtmlPath,
-      };
-    },
-  });
-  await failedPublicationService.initialize();
-  const failedPublicationRun = await failedPublicationService.enqueue({
-    prUrl,
-    refresh: true,
-  });
-  await failedPublicationService.waitForIdle();
-  const storedFailedPublication = await failedPublicationService.store.readRun(
-    failedPublicationRun.slug,
-    failedPublicationRun.runId,
-  );
-  assert.equal(storedFailedPublication.status, "failed");
-  assert.equal(storedFailedPublication.error.code, "RUN_FAILED");
-  assert.equal(await readFile(stableHtmlPath, "utf8"), promotedHtml);
-  assert.equal(
-    await readFile(
-      path.join(
-        failedPublicationService.store.getRunDir(
-          failedPublicationRun.slug,
-          failedPublicationRun.runId,
-        ),
-        "index.html",
-      ),
-      "utf8",
-    ),
-    failedPublicationHtml,
-  );
-  await failedPublicationService.close();
 }
 
 async function checkApiMiddleware() {

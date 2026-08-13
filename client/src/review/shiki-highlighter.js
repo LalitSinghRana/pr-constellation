@@ -1,7 +1,7 @@
 import { createHighlighter } from "shiki";
 
 const themes = { light: "light-plus", dark: "dark-plus" };
-const languages = [
+const supportedLanguages = [
   "bash",
   "css",
   "diff",
@@ -26,7 +26,7 @@ const languages = [
   "xml",
   "yaml",
 ];
-const languageSet = new Set(languages);
+const languageSet = new Set(supportedLanguages);
 const languageByExtension = new Map([
   ["bash", "bash"],
   ["cjs", "javascript"],
@@ -68,14 +68,50 @@ const languageAliases = new Map([
   ["ts", "typescript"],
   ["yml", "yaml"],
 ]);
-let highlighterPromise;
 
-export function getSyntaxHighlighter() {
-  highlighterPromise ||= createHighlighter({
-    langs: languages,
-    themes: [themes.light, themes.dark],
-  });
-  return highlighterPromise;
+let highlighterPromise = null;
+let loadedLanguages = new Set();
+
+export function languagesForFilePaths(filePaths) {
+  const languages = new Set();
+  for (const filePath of filePaths || []) {
+    const language = languageForPath(filePath);
+    if (language !== "plaintext") {
+      languages.add(language);
+    }
+  }
+  return [...languages];
+}
+
+/**
+ * Session-scoped Shiki highlighter. Loads only the requested languages (plus any
+ * previously loaded ones) instead of every grammar up front.
+ */
+export async function getSyntaxHighlighter(languages = []) {
+  const requested = [
+    ...new Set((languages || []).filter((language) => language && languageSet.has(language))),
+  ];
+
+  if (!highlighterPromise) {
+    const initialLangs = requested.length > 0 ? requested : [];
+    highlighterPromise = createHighlighter({
+      langs: initialLangs,
+      themes: [themes.light, themes.dark],
+    }).then((highlighter) => {
+      loadedLanguages = new Set(initialLangs);
+      return highlighter;
+    });
+  }
+
+  const highlighter = await highlighterPromise;
+  const missing = requested.filter((language) => !loadedLanguages.has(language));
+  if (missing.length > 0) {
+    await highlighter.loadLanguage(...missing);
+    for (const language of missing) {
+      loadedLanguages.add(language);
+    }
+  }
+  return highlighter;
 }
 
 export function highlightSnippetLines({ contextLines = [], file, lines, syntaxHighlighter }) {
@@ -101,6 +137,13 @@ export function highlightSnippetLines({ contextLines = [], file, lines, syntaxHi
       (line.type === "del" ? oldLineTokens.get(displayIndex) : newLineTokens.get(displayIndex)) ??
       tokensForLine({ code: line.content, lang, syntaxHighlighter }).map(toSyntaxToken),
   }));
+}
+
+export function languageForPath(filePath) {
+  const extension = String(filePath).split(".").pop()?.toLowerCase() || "";
+  const language =
+    languageAliases.get(extension) || languageByExtension.get(extension) || extension;
+  return languageSet.has(language) ? language : "plaintext";
 }
 
 function highlightDiffSideTokens({ entries, lang, syntaxHighlighter }) {
@@ -151,8 +194,8 @@ function tokensForSource({ code, lang, syntaxHighlighter }) {
 
 function shikiTokenStyle(htmlStyle) {
   const declarations = [];
-  const lightColor = htmlStyle.color;
-  const darkColor = htmlStyle["--shiki-dark"];
+  const lightColor = htmlStyle?.color;
+  const darkColor = htmlStyle?.["--shiki-dark"];
 
   if (lightColor) {
     declarations.push(`--shiki-light:${lightColor}`);
@@ -163,18 +206,11 @@ function shikiTokenStyle(htmlStyle) {
     declarations.push(`--shiki-dark:${darkColor}`);
   }
 
-  for (const [property, value] of Object.entries(htmlStyle)) {
+  for (const [property, value] of Object.entries(htmlStyle || {})) {
     if (property !== "color" && property !== "--shiki-dark") {
       declarations.push(`${property}:${value}`);
     }
   }
 
   return declarations.join(";");
-}
-
-function languageForPath(filePath) {
-  const extension = String(filePath).split(".").pop()?.toLowerCase() || "";
-  const language =
-    languageAliases.get(extension) || languageByExtension.get(extension) || extension;
-  return languageSet.has(language) ? language : "plaintext";
 }

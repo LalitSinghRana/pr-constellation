@@ -1,121 +1,14 @@
-import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import tailwindcss from "@tailwindcss/postcss";
-import esbuild from "esbuild";
-import postcss from "postcss";
-import { createDiffInventory } from "../../../analysis-worker/workflow/03-build-diff-inventory/diff-inventory.js";
-import {
-  getSyntaxHighlighter,
-  highlightSnippetLines,
-} from "../../../server/analysis/shiki-highlighter.js";
+import { highlightSnippetLines } from "./shiki-highlighter.js";
 
-const require = createRequire(import.meta.url);
-const REVIEW_TREE_APP_ENTRY = fileURLToPath(new URL("./review-tree-app.jsx", import.meta.url));
-const SRC_DIR = fileURLToPath(new URL("..", import.meta.url));
-const WEB_STYLES_ENTRY = fileURLToPath(new URL("./styles.css", import.meta.url));
-
-export async function renderDiffHtml({ analysis = null, pr, diff }) {
-  const syntaxHighlighter = await getSyntaxHighlighter();
-  const reviewAssets = await getReviewAssets();
-  const treeData = analysis ? buildReviewTreeData({ analysis, diff, syntaxHighlighter }) : null;
-
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escapeHtml(pr.title)} · PR #${escapeHtml(String(pr.number))}</title>
-    <script>
-      (() => {
-        const savedTheme = localStorage.getItem("theme");
-        document.documentElement.classList.toggle(
-          "dark",
-          savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches,
-        );
-      })();
-    </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap" rel="stylesheet" />
-    <style>
-${reviewAssets?.css || ""}
-    </style>
-  </head>
-  <body>
-    <div id="pr-review-root"></div>
-    <script id="pr-review-data" type="application/json">${serializeJsonForScript(buildReviewData({ pr }))}</script>
-    <script id="pr-analysis-data" type="application/json">${serializeJsonForScript(treeData)}</script>
-    <script>${escapeScript(reviewAssets.js)}</script>
-  </body>
-</html>`;
-}
-
-async function getReviewAssets() {
-  return buildReviewAssets();
-}
-
-async function buildReviewAssets() {
-  const [bundle, webCss] = await Promise.all([
-    esbuild.build({
-      entryPoints: [REVIEW_TREE_APP_ENTRY],
-      bundle: true,
-      write: false,
-      format: "iife",
-      globalName: "PrReviewTree",
-      target: "es2020",
-      jsx: "automatic",
-      plugins: [aliasAtPlugin()],
-      logLevel: "silent",
-    }),
-    buildWebCss(),
-  ]);
-
-  const js = bundle.outputFiles[0]?.text;
-
-  if (!js) {
-    throw new Error("Failed to build review tree bundle.");
-  }
-
-  const diffViewCss = await readFile(
-    require.resolve("@git-diff-view/react/styles/diff-view.css"),
-    "utf8",
-  );
-
-  return {
-    css: `${await readFile(require.resolve("@xyflow/react/dist/style.css"), "utf8")}\n${diffViewCss}\n${webCss}`,
-    js,
-  };
-}
-
-async function buildWebCss() {
-  const source = await readFile(WEB_STYLES_ENTRY, "utf8");
-  const result = await postcss([tailwindcss()]).process(source, { from: WEB_STYLES_ENTRY });
-  return result.css;
-}
-
-function aliasAtPlugin() {
-  return {
-    name: "alias-at",
-    setup(build) {
-      build.onResolve({ filter: /^@\// }, (args) => {
-        if (args.path === "@/lib/utils") {
-          return { path: path.join(SRC_DIR, "lib/utils.js") };
-        }
-
-        return { path: path.join(SRC_DIR, args.path.slice(2)) };
-      });
-    },
-  };
-}
-
-function buildReviewTreeData({ analysis, diff, syntaxHighlighter }) {
+export function buildReviewTreeData({ analysis, diffInventory, syntaxHighlighter }) {
   if (analysis.schemaVersion !== "pr-review-analysis/v1") {
     throw new Error(`Unsupported review analysis schema: ${analysis.schemaVersion}`);
   }
+  if (!diffInventory || typeof diffInventory !== "object") {
+    throw new Error("diffInventory is required to build review tree data.");
+  }
 
-  const inventoryIndex = indexDiffInventory(createDiffInventory(diff));
+  const inventoryIndex = indexDiffInventory(diffInventory);
   return {
     schemaVersion: analysis.schemaVersion,
     intent: analysis.intent,
@@ -143,6 +36,24 @@ function buildReviewTreeData({ analysis, diff, syntaxHighlighter }) {
         })),
       },
     })),
+  };
+}
+
+export function buildReviewData({ pr }) {
+  return {
+    additions: pr.additions ?? null,
+    authorLogin: pr.author?.login || "",
+    authorAvatarUrl: pr.author?.avatarUrl || "",
+    baseRefName: pr.baseRefName || "",
+    body: pr.body || "",
+    changedFiles: pr.changedFiles ?? null,
+    createdAt: pr.createdAt || "",
+    deletions: pr.deletions ?? null,
+    headRefName: pr.headRefName || "",
+    number: pr.number ?? null,
+    state: pr.state || "",
+    title: pr.title || "",
+    url: pr.url || "",
   };
 }
 
@@ -307,42 +218,4 @@ function inventoryLineToSnippetLine(line) {
     prefix: line.prefix,
     type: line.kind === "insert" ? "add" : line.kind === "delete" ? "del" : "context",
   };
-}
-
-function buildReviewData({ pr }) {
-  return {
-    additions: pr.additions ?? null,
-    authorLogin: pr.author?.login || "",
-    authorAvatarUrl: pr.author?.avatarUrl || "",
-    baseRefName: pr.baseRefName || "",
-    body: pr.body || "",
-    changedFiles: pr.changedFiles ?? null,
-    createdAt: pr.createdAt || "",
-    deletions: pr.deletions ?? null,
-    headRefName: pr.headRefName || "",
-    number: pr.number ?? null,
-    state: pr.state || "",
-    title: pr.title || "",
-    url: pr.url || "",
-  };
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function serializeJsonForScript(value) {
-  return JSON.stringify(value)
-    .replace(/</g, "\\u003c")
-    .replace(/\u2028/g, "\\u2028")
-    .replace(/\u2029/g, "\\u2029");
-}
-
-function escapeScript(value) {
-  return String(value).replace(/<\/script/gi, "<\\/script");
 }

@@ -1,15 +1,19 @@
 import { AnalysisAgentStatusDialog } from "@/components/review-queue/analysis-agent-status-dialog.jsx";
 import { AnalysisPage } from "@/pages/analysis-page.jsx";
 import { QueuePage } from "@/pages/queue-page.jsx";
+import { ReviewPage } from "@/pages/review-page.jsx";
 import { ScoringPage } from "@/pages/scoring-page.jsx";
 import { SettingsPage } from "@/pages/settings-page.jsx";
 
 export default function App() {
-  const page = window.location.pathname.startsWith("/analysis") ? (
+  const pathname = window.location.pathname;
+  const page = pathname.startsWith("/reviews/") ? (
+    <ReviewPage />
+  ) : pathname.startsWith("/analysis") ? (
     <AnalysisPage />
-  ) : window.location.pathname.startsWith("/scoring") ? (
+  ) : pathname.startsWith("/scoring") ? (
     <ScoringPage />
-  ) : window.location.pathname.startsWith("/settings") ? (
+  ) : pathname.startsWith("/settings") ? (
     <SettingsPage />
   ) : (
     <QueuePage />
@@ -18,7 +22,7 @@ export default function App() {
   return (
     <>
       {page}
-      <AnalysisAgentStatusDialog />
+      {pathname.startsWith("/reviews/") ? null : <AnalysisAgentStatusDialog />}
     </>
   );
 }

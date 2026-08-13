@@ -126,7 +126,13 @@ const pr = {
 test("one app serves generated reviews without allowing path traversal", () => {
   assert.equal(reviewArtifactPath("/reviews"), null);
   assert.equal(reviewArtifactPath("/reviews/"), null);
-  assert.match(reviewArtifactPath("/reviews/example-pr/"), /\.reviews\/example-pr$/);
+  // Document URLs are SPA-owned and must not resolve as static artifacts.
+  assert.equal(reviewArtifactPath("/reviews/example-pr/"), null);
+  assert.equal(reviewArtifactPath("/reviews/example-pr/run-1/"), null);
+  assert.match(
+    reviewArtifactPath("/reviews/example-pr/run-1/analysis.json"),
+    /\.reviews\/example-pr\/run-1\/analysis\.json$/,
+  );
   assert.equal(reviewArtifactPath("/reviews/%2e%2e/server.mjs"), null);
   assert.equal(reviewArtifactPath("/reviews/.run-store.sqlite"), null);
   assert.equal(reviewArtifactPath("/reviews/example-pr/.private"), null);

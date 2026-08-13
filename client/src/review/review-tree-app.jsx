@@ -39,7 +39,6 @@ import {
 import { Timeline } from "primereact/timeline";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
@@ -73,12 +72,7 @@ import {
   sectionTreeSections,
   VIEWPORT_PADDING_Y,
 } from "./review-tree/layout.js";
-import {
-  readReviewData,
-  readReviewSlug,
-  readTreeData,
-  usePersistentStringSet,
-} from "./review-tree/state.js";
+import { readReviewSlug, usePersistentStringSet } from "./review-tree/state.js";
 
 const REVIEW_CAMERA_DURATION = 220;
 const REVIEW_CAMERA_PADDING_X = 80;
@@ -122,10 +116,7 @@ const edgeTypes = {
   reviewBranch: React.memo(ReviewBranch),
 };
 
-function App() {
-  const review = useMemo(readReviewData, []);
-  const reviewSlug = useMemo(readReviewSlug, []);
-  const treeData = useMemo(readTreeData, []);
+function App({ review, reviewSlug, treeData }) {
   const hasTree = Boolean(
     (treeData?.files || []).some((file) => sectionTreeSections(file).length > 0),
   );
@@ -1693,5 +1684,6 @@ function measureFixedComposer(row) {
   return { left, top, width };
 }
 
-const root = createRoot(document.getElementById("pr-review-root"));
-root.render(<App />);
+export function ReviewTreeApp({ review, reviewSlug, treeData }) {
+  return <App review={review} reviewSlug={reviewSlug || readReviewSlug()} treeData={treeData} />;
+}

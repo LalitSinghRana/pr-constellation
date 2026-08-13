@@ -64,7 +64,7 @@ function tokensToAstNodes(tokens) {
   );
 }
 
-// The shiki tokens are highlighted server-side (render.js); this highlighter just hands
+// The shiki tokens are highlighted in the browser (build-review-tree-data.js); this highlighter just hands
 // pre-built per-file ASTs back to @git-diff-view/react instead of running a highlighter
 // engine (e.g. lowlight) in the browser.
 function createPreHighlightedHighlighter({ newAst, newFileContent, oldAst }) {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
-import { lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
+import { chmodSync, constants, lstatSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { access, lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import Database from "better-sqlite3";
 
@@ -158,6 +158,36 @@ export class RunStore {
     assertStorageId(slug, "slug");
     assertStorageId(runId, "runId");
     return path.join(this.#reviewsDir, slug, runId);
+  }
+
+  /**
+   * Newest succeeded run for a slug that has a readable analysis.json on disk.
+   * Scan order is newest-first (createdAt, then runId).
+   */
+  async getLatestSucceededReviewRun(slug) {
+    assertStorageId(slug, "slug");
+    const manifests = (await this.scanRuns()).filter(
+      (manifest) => manifest.slug === slug && manifest.status === "succeeded",
+    );
+
+    for (const manifest of manifests) {
+      const runDir = this.getRunDir(slug, manifest.runId);
+      try {
+        await Promise.all([
+          access(path.join(runDir, "analysis.json"), constants.R_OK),
+          access(path.join(runDir, "diff-inventory.json"), constants.R_OK),
+          access(path.join(runDir, "diff.patch"), constants.R_OK),
+          access(path.join(runDir, "metadata.json"), constants.R_OK),
+        ]);
+        return structuredClone(manifest);
+      } catch (error) {
+        if (error?.code !== "ENOENT") {
+          throw error;
+        }
+      }
+    }
+
+    return null;
   }
 
   close() {
