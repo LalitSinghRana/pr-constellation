@@ -11,7 +11,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.jsx";
 import { useAnalysisDashboard } from "@/hooks/use-analysis-dashboard.js";
 import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { useInbox } from "@/hooks/use-inbox.js";
-import { useSettingsQuery } from "@/hooks/use-settings.js";
+import { useMutation } from "@/hooks/use-mutation.js";
+import { readJson } from "@/hooks/use-query.js";
+import { putSettings, useSettingsQuery } from "@/hooks/use-settings.js";
 import { EMPTY_SETTINGS, groupByUpdatedDate, matchesPrFilter } from "@/lib/queue.js";
 
 export function QueuePage() {
@@ -29,12 +31,103 @@ export function QueuePage() {
   const settingsQuery = useSettingsQuery();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
-  const [doneMutation, setDoneMutation] = useState([]);
   const [queueActionError, setQueueActionError] = useState("");
   const [analysisActionError, setAnalysisActionError] = useState("");
-  const [analysisMutation, setAnalysisMutation] = useState("");
-  const [prioritizeMutation, setPrioritizeMutation] = useState("");
   const analysisError = analysisActionError || analysisServiceError;
+
+  const saveSettingsMutation = useMutation({
+    mutationFn: putSettings,
+  });
+  const analyzeMutation = useMutation({
+    mutationFn: async ({ item, options }) => {
+      const response = await fetch("/api/analyses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...item,
+          score: item.score,
+          ...(options.prioritize ? { prioritize: true } : {}),
+        }),
+      });
+      return readJson(response);
+    },
+    onSuccess: () => refreshAnalyses(),
+    onError: (caught) => {
+      setAnalysisActionError(caught.message || "AI analysis could not be queued.");
+    },
+  });
+  const prioritizeMutation = useMutation({
+    mutationFn: async (analysis) => {
+      const response = await fetch(
+        `/api/runs/${encodeURIComponent(analysis.slug)}/${encodeURIComponent(analysis.runId)}/prioritize`,
+        { method: "POST", headers: { "Content-Type": "application/json" } },
+      );
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Could not prioritize analysis.");
+      return result;
+    },
+    onSuccess: () => refreshAnalyses(),
+    onError: (caught) => {
+      setAnalysisActionError(caught.message || "Could not prioritize analysis.");
+    },
+  });
+  const markReadMutation = useMutation({
+    mutationFn: async (item) => {
+      const response = await fetch("/api/inbox/items", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id, read: true }),
+      });
+      return readJson(response);
+    },
+    onSuccess: (result) => {
+      setData((current) => ({
+        ...current,
+        items: current.items.map((entry) =>
+          entry.id === result.id ? { ...entry, ...result } : entry,
+        ),
+      }));
+    },
+    onError: (caught) => {
+      setQueueActionError(caught.message || "Read state could not be saved.");
+    },
+  });
+  const toggleDoneMutation = useMutation({
+    mutationFn: async ({ value, ids }) => {
+      const response = await fetch("/api/inbox/items", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          Array.isArray(value) ? { ids, done: true } : { id: value.id, done: !value.done },
+        ),
+      });
+      return readJson(response);
+    },
+    onSuccess: (result) => {
+      if (result.warning) setQueueActionError(result.warning);
+      const updated = new Set(result.ids ?? [result.id]);
+      const patch = result.ids ? { done: result.done, hasUpdates: result.hasUpdates } : result;
+      const update = (entry) => (updated.has(entry.id) ? { ...entry, ...patch } : entry);
+      setData((current) => ({
+        ...current,
+        items: current.items.map(update),
+        notifications: current.notifications.map(update),
+      }));
+    },
+    onError: (caught) => {
+      setQueueActionError(caught.message || "Done state could not be saved.");
+    },
+  });
+
+  const doneMutation = toggleDoneMutation.isPending
+    ? (toggleDoneMutation.variables?.ids ?? [])
+    : [];
+  const analysisMutation = analyzeMutation.isPending
+    ? analyzeMutation.variables?.item?.id || ""
+    : "";
+  const prioritizeMutationKey = prioritizeMutation.isPending
+    ? prioritizeMutation.variables?.url || prioritizeMutation.variables?.slug || ""
+    : "";
 
   const isDone = useCallback((item) => Boolean(item.done), []);
 
@@ -146,13 +239,7 @@ export function QueuePage() {
   async function saveSettings(nextSettings) {
     setError("");
     try {
-      const response = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(nextSettings),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
+      const result = await saveSettingsMutation.mutateAsync(nextSettings);
       setSettings(result);
       await refresh();
       return true;
@@ -162,99 +249,28 @@ export function QueuePage() {
     }
   }
 
-  async function analyze(item, options = {}) {
-    setAnalysisMutation(item.id);
+  function analyze(item, options = {}) {
     setAnalysisActionError("");
-    try {
-      const response = await fetch("/api/analyses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...item,
-          score: item.score,
-          ...(options.prioritize ? { prioritize: true } : {}),
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
-      await refreshAnalyses();
-    } catch (caught) {
-      setAnalysisActionError(caught.message || "AI analysis could not be queued.");
-    } finally {
-      setAnalysisMutation("");
-    }
+    analyzeMutation.mutate({ item, options });
   }
 
-  async function prioritize(analysis) {
+  function prioritize(analysis) {
     if (!analysis?.slug || !analysis?.runId) return;
-    setPrioritizeMutation(analysis.url || analysis.slug);
     setAnalysisActionError("");
-    try {
-      const response = await fetch(
-        `/api/runs/${encodeURIComponent(analysis.slug)}/${encodeURIComponent(analysis.runId)}/prioritize`,
-        { method: "POST", headers: { "Content-Type": "application/json" } },
-      );
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || "Could not prioritize analysis.");
-      await refreshAnalyses();
-    } catch (caught) {
-      setAnalysisActionError(caught.message || "Could not prioritize analysis.");
-    } finally {
-      setPrioritizeMutation("");
-    }
+    prioritizeMutation.mutate(analysis);
   }
 
-  async function markRead(item) {
+  function markRead(item) {
     if (item.read) return;
-    try {
-      const response = await fetch("/api/inbox/items", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: item.id, read: true }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
-      setData((current) => ({
-        ...current,
-        items: current.items.map((entry) =>
-          entry.id === result.id ? { ...entry, ...result } : entry,
-        ),
-      }));
-    } catch (caught) {
-      setQueueActionError(caught.message || "Read state could not be saved.");
-    }
+    markReadMutation.mutate(item);
   }
 
-  async function toggleDone(value) {
+  function toggleDone(value) {
     const items = Array.isArray(value) ? value.filter((item) => !item.done) : [value];
     const ids = items.map((item) => item.id);
     if (!ids.length) return;
-    setDoneMutation(ids);
     setQueueActionError("");
-    try {
-      const response = await fetch("/api/inbox/items", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          Array.isArray(value) ? { ids, done: true } : { id: value.id, done: !value.done },
-        ),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
-      if (result.warning) setQueueActionError(result.warning);
-      const updated = new Set(result.ids ?? [result.id]);
-      const patch = result.ids ? { done: result.done, hasUpdates: result.hasUpdates } : result;
-      const update = (entry) => (updated.has(entry.id) ? { ...entry, ...patch } : entry);
-      setData((current) => ({
-        ...current,
-        items: current.items.map(update),
-        notifications: current.notifications.map(update),
-      }));
-    } catch (caught) {
-      setQueueActionError(caught.message || "Done state could not be saved.");
-    } finally {
-      setDoneMutation([]);
-    }
+    toggleDoneMutation.mutate({ value, ids });
   }
 
   const visibleCount = visiblePrs.length + visibleNotifications.length;
@@ -350,7 +366,7 @@ export function QueuePage() {
                     analysisMutation={analysisMutation}
                     onAnalyze={analyze}
                     onPrioritize={prioritize}
-                    prioritizeMutation={prioritizeMutation}
+                    prioritizeMutation={prioritizeMutationKey}
                     onMarkRead={markRead}
                     showHeader={activeFilter === "done"}
                   />

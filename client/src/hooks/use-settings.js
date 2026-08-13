@@ -5,6 +5,15 @@ export async function fetchSettings({ signal } = {}) {
   return readJson(response);
 }
 
+export async function putSettings(settings) {
+  const response = await fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  return readJson(response);
+}
+
 export function useSettingsQuery() {
   return useQuery({
     queryKey: ["settings"],

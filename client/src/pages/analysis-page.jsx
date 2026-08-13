@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs.jsx";
 import { useAnalysisDashboard } from "@/hooks/use-analysis-dashboard.js";
 import { useDocumentTitle } from "@/hooks/use-document-title.js";
+import { useMutation } from "@/hooks/use-mutation.js";
 import { readJson, useQuery } from "@/hooks/use-query.js";
 import { analysisState } from "@/lib/analysis.js";
 import { cn } from "@/lib/utils.js";
@@ -31,8 +32,25 @@ export function AnalysisPage() {
   });
   const queueItems = inboxQuery.data?.items ?? [];
   const [canceling, setCanceling] = useState(false);
-  const [prioritizingRunId, setPrioritizingRunId] = useState("");
   const [actionError, setActionError] = useState("");
+  const prioritizeRunMutation = useMutation({
+    mutationFn: async ({ entry, run }) => {
+      const response = await fetch(
+        `/api/runs/${encodeURIComponent(entry.pr.slug)}/${encodeURIComponent(run.runId)}/prioritize`,
+        { method: "POST", headers: { "Content-Type": "application/json" } },
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "Could not prioritize analysis.");
+      return body;
+    },
+    onSuccess: () => refreshDashboard(),
+    onError: (caught) => {
+      setActionError(caught.message || "Could not prioritize analysis.");
+    },
+  });
+  const prioritizingRunId = prioritizeRunMutation.isPending
+    ? prioritizeRunMutation.variables?.run?.runId || ""
+    : "";
   const [activeTab, setActiveTab] = useQueryState(
     "tab",
     parseAsStringEnum(analysisTabs).withDefault("ongoing"),
@@ -160,25 +178,12 @@ export function AnalysisPage() {
   );
 
   const prioritizeRun = useCallback(
-    async (entry, run) => {
+    (entry, run) => {
       if (!entry?.pr?.slug || !run?.runId) return;
-      setPrioritizingRunId(run.runId);
       setActionError("");
-      try {
-        const response = await fetch(
-          `/api/runs/${encodeURIComponent(entry.pr.slug)}/${encodeURIComponent(run.runId)}/prioritize`,
-          { method: "POST", headers: { "Content-Type": "application/json" } },
-        );
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(body.error || "Could not prioritize analysis.");
-        await refreshDashboard();
-      } catch (caught) {
-        setActionError(caught.message || "Could not prioritize analysis.");
-      } finally {
-        setPrioritizingRunId("");
-      }
+      prioritizeRunMutation.mutate({ entry, run });
     },
-    [refreshDashboard],
+    [prioritizeRunMutation.mutate],
   );
 
   const cancelAll = useCallback(

@@ -20,7 +20,8 @@ import {
 } from "@/components/ui/select.jsx";
 import { Switch } from "@/components/ui/switch.jsx";
 import { useDocumentTitle } from "@/hooks/use-document-title.js";
-import { useSettingsQuery } from "@/hooks/use-settings.js";
+import { useMutation } from "@/hooks/use-mutation.js";
+import { putSettings, useSettingsQuery } from "@/hooks/use-settings.js";
 import { EMPTY_SETTINGS } from "@/lib/queue.js";
 import {
   DEFAULT_ANALYSIS_MODEL,
@@ -31,38 +32,32 @@ export function SettingsPage() {
   useDocumentTitle({ title: "Settings · PR Review Cockpit" });
   const settingsQuery = useSettingsQuery();
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
-  const [savingField, setSavingField] = useState("");
-  const [saveError, setSaveError] = useState("");
+  const saveSettings = useMutation({
+    mutationFn: ({ body }) => putSettings(body),
+  });
 
   useEffect(() => {
     if (settingsQuery.data) setSettings(settingsQuery.data);
   }, [settingsQuery.data]);
 
   async function patchSetting(field, value) {
-    if (settingsQuery.isLoading || savingField) return;
-    setSavingField(field);
-    setSaveError("");
+    if (settingsQuery.isLoading || saveSettings.isPending) return;
     const previous = settings;
-    setSettings((current) => ({ ...current, [field]: value }));
+    const body = { ...settings, [field]: value };
+    setSettings(body);
     try {
-      const response = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...settings, [field]: value }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
+      const result = await saveSettings.mutateAsync({ field, body });
       setSettings(result);
-    } catch (caught) {
+    } catch {
       setSettings(previous);
-      setSaveError(caught.message || "Setting could not be saved.");
-    } finally {
-      setSavingField("");
     }
   }
 
-  const error = saveError || settingsQuery.error?.message || "";
-  const busy = settingsQuery.isLoading || Boolean(savingField);
+  const error =
+    (saveSettings.isError && (saveSettings.error?.message || "Setting could not be saved.")) ||
+    settingsQuery.error?.message ||
+    "";
+  const busy = settingsQuery.isLoading || saveSettings.isPending;
   const defaultAnalysisModel = settings.defaultAnalysisModel || DEFAULT_ANALYSIS_MODEL;
 
   return (
