@@ -24,7 +24,7 @@ Next improvements
 - useQuery and refactor all existing api calls
 - RSC for things that should come local server/db. but do we need it if it's running locally and is super fast.
 - ~Settings page. Auto queue, mini-map toggle.~
-- Long git-diff files break out of node boundaries. http://127.0.0.1:4397/reviews/gh-17-picnicsupermarket-19-picnic-store-config-4993/ or http://127.0.0.1:4397/reviews/gh-17-picnicsupermarket-19-picnic-store-config-4993/
+- Long git-diff files break out of node boundaries. http://127.0.0.1:4397/reviews/gh-17-picnicsupermarket-19-picnic-store-config-4993/ or http://127.0.0.1:4397/reviews/gh-17-picnicsupermarket-19-picnic-store-config-4993/ or http://127.0.0.1:4397/reviews/gh-17-picnicsupermarket-16-picnic-store-app-3558/
 - Move 0.1x / 1x / 10x toggle from header to inside the scope of review-trees
 - sorting by simple-smallest, simple-large, complex-large to get smaller ones get finished quickly
 - set-up notifications
@@ -41,6 +41,7 @@ Next improvements
 - ~setup biome~
 - ~cleanup code using agent.md~
 - ~do proper server project. Should be light weight to run continously with low CPU usage. We can go other language other than JS here.~
+- remove any codex or claude specific mention, instructions, code, etc
 
 ---
 
