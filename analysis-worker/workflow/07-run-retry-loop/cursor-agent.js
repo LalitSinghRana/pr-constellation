@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { analysisCliModelId } from "../../../shared/analysis-models.js";
 import { createAbortError, isAbortError, throwIfAborted } from "../abort.js";
 import {
   createChildProcessTerminator,
@@ -28,19 +29,7 @@ export function buildCursorAgentArgs({ model, reasoningEffort }) {
 }
 
 export function resolveCursorModelId({ model, reasoningEffort }) {
-  const selected = typeof model === "string" ? model.trim() : "";
-  if (!selected) return selected;
-  const effort = typeof reasoningEffort === "string" ? reasoningEffort.trim().toLowerCase() : "";
-  if (!/^grok(?:-|$)/i.test(selected)) {
-    return selected;
-  }
-  if (!effort || /-(?:high|medium|low)$/i.test(selected)) {
-    return selected;
-  }
-  if (effort === "high" || effort === "medium" || effort === "low") {
-    return `${selected}-${effort}`;
-  }
-  return selected;
+  return analysisCliModelId(model, reasoningEffort);
 }
 
 export function serializeCursorExecutor(executor) {
@@ -66,7 +55,7 @@ ${JSON.stringify(schema)}
 export function parseCursorAgentJson(stdout) {
   const trimmed = String(stdout || "").trim();
   if (!trimmed) {
-    throw new Error("Cursor agent returned empty output.");
+    throw new Error("Analysis executor returned empty output.");
   }
 
   try {
@@ -201,7 +190,7 @@ export async function runCursorAgentExec({
       try {
         const structured = parseCursorAgentJson(stdout);
         if (!structured || typeof structured !== "object" || Array.isArray(structured)) {
-          throw new Error("Cursor agent did not return a JSON object.");
+          throw new Error("Analysis executor did not return a JSON object.");
         }
         throwIfAborted(signal);
         await writeFile(outputPath, `${JSON.stringify(structured, null, 2)}\n`, "utf8");
@@ -255,7 +244,7 @@ function parseJsonObject(text) {
     if (start >= 0 && end > start) {
       return JSON.parse(trimmed.slice(start, end + 1));
     }
-    throw new Error("Cursor agent did not return a JSON object.");
+    throw new Error("Analysis executor did not return a JSON object.");
   }
 }
 

@@ -9,10 +9,12 @@ import {
 } from "../../shared/analysis-queue-policy.js";
 import {
   analysisModelReasoningEffort,
-  DEFAULT_CLAUDE_REASONING_EFFORTS,
+  DEFAULT_ANALYSIS_REASONING_EFFORT,
   DEFAULT_REASONING_EFFORTS,
   inferModelProvider,
+  isAnalysisModelId,
   loadDashboardConfiguration,
+  normalizeAnalysisProvider,
   normalizeDashboardConfiguration,
   normalizeTokenUsage,
 } from "./dashboard-service/configuration.js";
@@ -48,7 +50,6 @@ const STAGE_FINISH_EVENT_TYPES = new Set([
 
 export {
   createInputFingerprint,
-  DEFAULT_CLAUDE_REASONING_EFFORTS,
   DEFAULT_REASONING_EFFORTS,
   loadDashboardConfiguration,
   readCodeVersion,
@@ -184,6 +185,7 @@ export class DashboardService {
   async enqueueBatch({
     prUrl,
     model,
+    provider,
     refresh = false,
     sourceRunId = null,
     sourceSlug = null,
@@ -193,8 +195,8 @@ export class DashboardService {
     this.#assertOpen();
 
     const parsed = parseGitHubPrUrl(prUrl);
-    const selectedModel = this.#resolveModel(model);
-    const selectedProvider = this.#resolveProvider(selectedModel);
+    const selectedModel = this.#resolveModel(model, provider);
+    const selectedProvider = this.#resolveProvider(selectedModel, provider);
     const reasoningEfforts =
       this.#configuration.modelReasoningEfforts[selectedModel] ||
       this.#configuration.reasoningEfforts;
@@ -248,6 +250,7 @@ export class DashboardService {
   async enqueue({
     prUrl,
     model,
+    provider,
     reasoningEffort,
     refresh = false,
     sourceRunId = null,
@@ -269,6 +272,7 @@ export class DashboardService {
       inboxScore,
       model,
       prioritize,
+      provider,
       prUrl,
       queueBand,
       reasoningEffort,
@@ -975,6 +979,7 @@ export class DashboardService {
       prUrl,
       model,
       prioritize = false,
+      provider,
       queueBand = null,
       reasoningEffort,
       refresh = false,
@@ -985,9 +990,13 @@ export class DashboardService {
     resolvedSource = null,
   ) {
     const parsed = parseGitHubPrUrl(prUrl);
-    const selectedModel = this.#resolveModel(model);
-    const selectedProvider = this.#resolveProvider(selectedModel);
-    const selectedReasoningEffort = this.#resolveReasoningEffort(selectedModel, reasoningEffort);
+    const selectedModel = this.#resolveModel(model, provider);
+    const selectedProvider = this.#resolveProvider(selectedModel, provider);
+    const selectedReasoningEffort = this.#resolveReasoningEffort(
+      selectedModel,
+      reasoningEffort,
+      selectedProvider,
+    );
     const frozenSource = await this.#resolveRequestedSource({
       parsed,
       refresh,
@@ -1157,29 +1166,26 @@ export class DashboardService {
     }
   }
 
-  #resolveModel(model) {
+  #resolveModel(model, provider) {
     const selected =
       typeof model === "string" && model.trim() ? model.trim() : this.#configuration.defaultModel;
-    if (!this.#configuration.models.includes(selected)) {
-      const error = new Error(
-        `Unsupported model "${selected}". Select one of: ${this.#configuration.models.join(", ")}.`,
-      );
-      error.code = "INVALID_MODEL";
-      throw error;
-    }
-    return selected;
+    if (this.#configuration.models.includes(selected)) return selected;
+    if (normalizeAnalysisProvider(provider) && isAnalysisModelId(selected)) return selected;
+    const error = new Error(
+      `Unsupported model "${selected}". Select one of: ${this.#configuration.models.join(", ")}.`,
+    );
+    error.code = "INVALID_MODEL";
+    throw error;
   }
 
-  #resolveReasoningEffort(model, reasoningEffort) {
+  #resolveReasoningEffort(model, reasoningEffort, provider) {
     const supported =
       this.#configuration.modelReasoningEfforts[model] || this.#configuration.reasoningEfforts;
     const preferred =
-      analysisModelReasoningEffort(model) ||
-      (supported.includes("xhigh")
-        ? "xhigh"
-        : supported.includes("max")
-          ? "max"
-          : supported.at(-1));
+      analysisModelReasoningEffort(model, provider) ||
+      (supported.includes(DEFAULT_ANALYSIS_REASONING_EFFORT)
+        ? DEFAULT_ANALYSIS_REASONING_EFFORT
+        : supported.at(-1));
     const selected =
       typeof reasoningEffort === "string" && reasoningEffort.trim()
         ? reasoningEffort.trim()
@@ -1192,8 +1198,12 @@ export class DashboardService {
     return selected;
   }
 
-  #resolveProvider(model) {
-    return this.#configuration.modelProviders[model] || inferModelProvider(model);
+  #resolveProvider(model, provider) {
+    return (
+      normalizeAnalysisProvider(provider) ||
+      this.#configuration.modelProviders[model] ||
+      inferModelProvider(model)
+    );
   }
 
   #nowDate() {

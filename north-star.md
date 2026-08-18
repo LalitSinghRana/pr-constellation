@@ -7,8 +7,9 @@ Next improvements
 - [x] Setting and Analyze queue to open in same tab by default now.
 - [ ] Move 0.1x / 1x / 10x toggle from header to inside the scope of review-trees
 - [ ] Merge rows b/w home-page and /analysis-queue. The expand feature in /analysis-queue row is behind a flag in this component. First check and find all the difference, so there's no regression.
-- [ ] We need closed PR tab also on left. Anything else we are missing?
-- [ ] clean up AI agentic workflow to not mention claude/codex/grok/or any other LLM name or do anything specific for them. The whole pipeline should be agnostic to LLM provider.
+- [x] We need closed PR tab also on left. Anything else we are missing?
+- [x] clean up AI agentic workflow to not mention claude/codex/grok/or any other LLM name or do anything specific for them. The whole pipeline should be agnostic to LLM provider.
+- [ ] Fix sync with GH notifications
 
 #### Time consuming
 - [x] Remove Picnic as the product default. In settings Users should provide PRs to track. Do we need these now or only rely on notifications?

@@ -17,7 +17,6 @@ test("dashboard orders queued runs by band, score, and manual prioritize", async
     configuration: {
       defaultModel: "gpt-fixture",
       models: ["gpt-fixture"],
-      modelProviders: { "gpt-fixture": "codex" },
       modelReasoningEfforts: { "gpt-fixture": ["xhigh"] },
       reasoningEfforts: ["xhigh"],
     },

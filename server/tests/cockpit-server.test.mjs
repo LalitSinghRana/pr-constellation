@@ -727,23 +727,40 @@ test("settings lists are validated before writing", () => {
       teams: ["example/platform"],
       autoQueue: true,
       showMinimap: true,
-      defaultAnalysisModel: "grok-4.5",
+      defaultAnalysisProvider: "cursor",
+      defaultAnalysisModel: "cursor-grok-4.5",
+      defaultAnalysisReasoningEffort: "xhigh",
     },
   );
   assert.equal(normalizeSettings({}).autoQueue, false);
   assert.equal(normalizeSettings({}).showMinimap, false);
-  assert.equal(normalizeSettings({}).defaultAnalysisModel, "grok-4.5");
+  assert.equal(normalizeSettings({}).defaultAnalysisModel, "cursor-grok-4.6");
+  assert.equal(normalizeSettings({}).defaultAnalysisProvider, "cursor");
+  assert.equal(normalizeSettings({}).defaultAnalysisReasoningEffort, "xhigh");
   assert.equal(normalizeSettings({ autoQueue: false }).autoQueue, false);
   assert.equal(normalizeSettings({ showMinimap: false }).showMinimap, false);
   assert.equal(normalizeSettings({ autoQueue: true }).autoQueue, true);
   assert.equal(normalizeSettings({ showMinimap: true }).showMinimap, true);
   assert.equal(
-    normalizeSettings({ defaultAnalysisModel: "not-a-real-model" }).defaultAnalysisModel,
-    "grok-4.5",
+    normalizeSettings({ defaultAnalysisModel: "not a real model" }).defaultAnalysisModel,
+    "cursor-grok-4.6",
   );
-  assert.equal(
-    normalizeSettings({ defaultAnalysisModel: "gpt-5.6-sol" }).defaultAnalysisModel,
-    "grok-4.5",
+  assert.deepEqual(
+    normalizeSettings({
+      defaultAnalysisProvider: "codex",
+      defaultAnalysisModel: "gpt-5.6-sol",
+      defaultAnalysisReasoningEffort: "xhigh",
+    }),
+    {
+      username: "",
+      people: [],
+      teams: [],
+      autoQueue: false,
+      showMinimap: false,
+      defaultAnalysisProvider: "codex",
+      defaultAnalysisModel: "gpt-5.6-sol",
+      defaultAnalysisReasoningEffort: "xhigh",
+    },
   );
 });
 

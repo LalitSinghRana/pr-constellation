@@ -13,7 +13,7 @@ macOS launchd user agent
     ├── conditional GitHub notification poller
     ├── SQLite queue and run metadata
     └── bounded analysis scheduler
-        └── Codex or Claude subprocesses
+        └── analysis CLI subprocesses
 ```
 
 ## Runtime responsibilities

@@ -45,7 +45,7 @@ Open it automatically:
 pnpm prc -- https://github.com/OWNER/REPO/pull/123 --open
 ```
 
-Generate a Codex-backed logical review tree:
+Generate a logical review tree:
 
 ```sh
 pnpm prc -- analyze https://github.com/OWNER/REPO/pull/123
@@ -81,8 +81,8 @@ http://127.0.0.1:4397/analysis
 
 The inbox persists tracked PRs independently from GitHub's read state. The
 analysis page shows not-started, queued, running, completed, and failed work;
-File Tree and Section Tree generation and repair use the provider's highest configured effort
-(`xhigh` for Codex, `max` for Claude).
+File Tree and Section Tree generation and repair use the configured model's
+reasoning effort.
 
 The latest generated run for each PR is available at a stable URL:
 
@@ -113,7 +113,7 @@ See [`docs/backend-architecture.md`](docs/backend-architecture.md) for runtime b
 concurrency limits, notification delivery, persistence, and the reasons for keeping one lightweight
 Node.js daemon.
 
-The `analyze` command is headless. It invokes `codex exec` in read-only mode and
+The `analyze` command is headless. It runs the review-tree workflow and
 writes one Section Tree per changed file to `analysis.json`; it does not
 render the review page. The page nests each file's Review Sections beneath its
 Review Stack's File Tree and renders those sections as code diffs. Ordered

@@ -1,4 +1,6 @@
+import { settingsAnalysisRunOptions } from "../../../shared/analysis-models.js";
 import { probeAnalysisAgent } from "../../analysis/analysis-agent-probe.js";
+import { loadAnalysisCatalog } from "../../analysis/analysis-model-catalog.js";
 import { host } from "../../runtime-config.js";
 import {
   automaticallyQueueNewAnalyses,
@@ -107,7 +109,7 @@ export function createInboxApi({
           changedFiles: candidate.changedFiles,
           deletions: candidate.deletions,
           inboxScore: candidate.inboxScore,
-          model: settings.defaultAnalysisModel,
+          ...settingsAnalysisRunOptions(settings),
           prioritize: candidate.prioritize,
           prUrl: candidate.url,
           refresh: true,
@@ -128,7 +130,7 @@ export function createInboxApi({
         const runs = await enqueueMissingAnalyses(
           Array.isArray(body.pullRequests) ? body.pullRequests : [],
           dashboardService,
-          { model: settings.defaultAnalysisModel },
+          settingsAnalysisRunOptions(settings),
         );
         eventHub.publish("analysis", { queued: runs.length });
         sendJson(response, 202, { runs });
@@ -143,11 +145,20 @@ export function createInboxApi({
       return true;
     }
 
+    if (url.pathname === "/api/analysis-models" && request.method === "GET") {
+      try {
+        sendJson(response, 200, await loadAnalysisCatalog());
+      } catch (error) {
+        sendJson(response, 502, { error: error.message || "Analysis models could not be listed." });
+      }
+      return true;
+    }
+
     if (url.pathname === "/api/analysis-agent/probe" && request.method === "POST") {
       try {
         await readRequestJson(request);
         const settings = await readSettings();
-        const agent = await probeAnalysisAgent({ model: settings.defaultAnalysisModel });
+        const agent = await probeAnalysisAgent(settingsAnalysisRunOptions(settings));
         sendJson(response, 200, {
           agent,
           checkedAt: new Date().toISOString(),
@@ -168,7 +179,7 @@ export function createInboxApi({
           const automaticAnalysis = await automaticallyQueueNewAnalyses(
             inboxFromQueue(queueState).items,
             dashboardService,
-            { model: settings.defaultAnalysisModel },
+            settingsAnalysisRunOptions(settings),
           );
           if (automaticAnalysis.runs.length) {
             eventHub.publish("analysis", { queued: automaticAnalysis.runs.length });

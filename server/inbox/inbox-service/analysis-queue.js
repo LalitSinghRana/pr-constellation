@@ -74,6 +74,14 @@ export async function enqueueMissingAnalyses(values, dashboardService, options =
   const ordered = sortAnalysisCandidates(candidates, historyByUrl);
   const model =
     typeof options.model === "string" && options.model.trim() ? options.model.trim() : undefined;
+  const provider =
+    typeof options.provider === "string" && options.provider.trim()
+      ? options.provider.trim()
+      : undefined;
+  const reasoningEffort =
+    typeof options.reasoningEffort === "string" && options.reasoningEffort.trim()
+      ? options.reasoningEffort.trim()
+      : undefined;
   const runs = [];
   for (const candidate of ordered) {
     if (alreadyAnalyzed(dashboard, candidate)) continue;
@@ -81,9 +89,11 @@ export async function enqueueMissingAnalyses(values, dashboardService, options =
       await dashboardService.enqueue({
         inboxScore: candidate.inboxScore,
         model,
+        provider,
         prioritize: candidate.prioritize,
         prUrl: candidate.url,
         queueBand: candidate.queueBand,
+        reasoningEffort,
         refresh: true,
         title: candidate.title,
         additions: candidate.additions,

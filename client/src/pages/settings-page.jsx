@@ -1,5 +1,9 @@
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
+import {
+  AnalysisAgentSettings,
+  useAnalysisCatalog,
+} from "@/components/settings/analysis-agent-settings.jsx";
 import { ScoringCard } from "@/components/settings/scoring-card.jsx";
 import { SettingsExpandableRow } from "@/components/settings/settings-expandable-row.jsx";
 import { TeamSettingsForm } from "@/components/settings/team-settings-form.jsx";
@@ -14,22 +18,11 @@ import {
   ItemTitle,
 } from "@/components/ui/item.jsx";
 import { Label } from "@/components/ui/label.jsx";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select.jsx";
 import { Switch } from "@/components/ui/switch.jsx";
 import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { useMutation } from "@/hooks/use-mutation.js";
 import { putSettings, useSettingsQuery } from "@/hooks/use-settings.js";
 import { EMPTY_SETTINGS } from "@/lib/queue.js";
-import {
-  DEFAULT_ANALYSIS_MODEL,
-  SETTINGS_ANALYSIS_AGENTS,
-} from "../../../shared/analysis-models.js";
 
 function sectionFromLocation() {
   if (window.location.pathname.startsWith("/scoring")) return "scoring";
@@ -92,7 +85,7 @@ export function SettingsPage() {
     settingsQuery.error?.message ||
     "";
   const busy = settingsQuery.isLoading || saveSettings.isPending;
-  const defaultAnalysisModel = settings.defaultAnalysisModel || DEFAULT_ANALYSIS_MODEL;
+  const analysisCatalog = useAnalysisCatalog();
 
   return (
     <main className="min-h-screen">
@@ -136,36 +129,23 @@ export function SettingsPage() {
             Feature toggles
           </h2>
           <ItemGroup className="gap-0 overflow-hidden rounded-lg border bg-card/82 shadow-lg backdrop-blur">
-            <Item size="sm" className="rounded-none border-0 px-5 py-4">
+            <Item size="sm" className="items-start rounded-none border-0 px-5 py-4 max-sm:flex-col">
               <ItemContent>
                 <ItemTitle>
-                  <Label htmlFor="default-agent">Default agent</Label>
+                  <Label>Default analysis</Label>
                 </ItemTitle>
                 <ItemDescription className="line-clamp-none">
-                  Used for Analyze, Retry, and auto-queue.
+                  Provider, model, and effort used for Analyze, Retry, and auto-queue. Cursor Agent
+                  runs Composer and Grok; GPT models use Codex; Claude models use Claude.
                 </ItemDescription>
               </ItemContent>
-              <ItemActions>
-                <Select
-                  value={defaultAnalysisModel}
-                  disabled={busy}
-                  onValueChange={(value) => patchSettings({ defaultAnalysisModel: value })}
-                >
-                  <SelectTrigger
-                    id="default-agent"
-                    className="w-[11.5rem]"
-                    aria-label="Default agent"
-                  >
-                    <SelectValue placeholder="Select agent" />
-                  </SelectTrigger>
-                  <SelectContent align="end" position="popper">
-                    {SETTINGS_ANALYSIS_AGENTS.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
-                        {agent.label} {agent.providerLabel}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <ItemActions className="max-sm:w-full max-sm:justify-stretch">
+                <AnalysisAgentSettings
+                  busy={busy}
+                  catalog={analysisCatalog}
+                  onSave={(patch) => patchSettings(patch)}
+                  settings={settings}
+                />
               </ItemActions>
             </Item>
             <ItemSeparator />

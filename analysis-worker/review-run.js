@@ -1,17 +1,17 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  DEFAULT_ANALYSIS_MODEL,
+  inferAnalysisProvider,
+  normalizeAnalysisProvider,
+} from "../shared/analysis-models.js";
 import { fetchPullRequest, parseGitHubPrUrl } from "./workflow/02-fetch-pr/github.js";
 import {
   createDiffInventory,
   createDiffSummary,
 } from "./workflow/03-build-diff-inventory/diff-inventory.js";
-import {
-  inferAnalysisProvider,
-  normalizeAnalysisProvider,
-  resolveAnalysisExecutor,
-} from "./workflow/07-run-retry-loop/analysis-providers.js";
-import { runCodexReviewAnalysis } from "./workflow/07-run-retry-loop/codex-agent.js";
-import { serializeCursorExecutor } from "./workflow/07-run-retry-loop/cursor-agent.js";
+import { resolveAnalysisExecutor } from "./workflow/07-run-retry-loop/analysis-providers.js";
+import { runReviewAnalysis } from "./workflow/07-run-retry-loop/review-analysis.js";
 import { isAbortError, throwIfAborted } from "./workflow/abort.js";
 
 export async function createReviewRun({ prUrl, reviewsDir }) {
@@ -28,7 +28,12 @@ export async function createReviewRun({ prUrl, reviewsDir }) {
 
 export async function createAnalysisRun({ prUrl, reviewsDir }) {
   const { paths, runDir } = await createPrInputRun({ prUrl, reviewsDir });
-  const analysisResult = await runCodexReviewAnalysis({ runDir });
+  const model = DEFAULT_ANALYSIS_MODEL;
+  const analysisResult = await runReviewAnalysis({
+    execute: resolveAnalysisExecutor({ model }),
+    model,
+    runDir,
+  });
 
   return {
     analysisPath: analysisResult.analysisPath,
@@ -42,8 +47,7 @@ export async function createAnalysisRun({ prUrl, reviewsDir }) {
 }
 
 export async function createBenchmarkRun({
-  executeClaude,
-  executeCodex,
+  execute,
   model,
   onEvent,
   prUrl,
@@ -55,7 +59,11 @@ export async function createBenchmarkRun({
   sourceRunDir = null,
 }) {
   throwIfAborted(signal);
-  const selectedProvider = normalizeAnalysisProvider(provider || inferAnalysisProvider(model));
+  const selectedModel =
+    typeof model === "string" && model.trim() ? model.trim() : DEFAULT_ANALYSIS_MODEL;
+  const selectedProvider = normalizeAnalysisProvider(
+    provider || inferAnalysisProvider(selectedModel),
+  );
 
   const parsed = parseGitHubPrUrl(prUrl);
   const resolvedReviewsDir = path.resolve(reviewsDir);
@@ -158,13 +166,10 @@ export async function createBenchmarkRun({
       ]),
   });
 
-  const selectedExecutor =
-    executeCodex || executeClaude || resolveAnalysisExecutor(selectedProvider);
-  const executeAnalysis =
-    selectedProvider === "cursor" ? serializeCursorExecutor(selectedExecutor) : selectedExecutor;
-  const analysisResult = await runCodexReviewAnalysis({
-    executeCodex: executeAnalysis,
-    model,
+  const analysisResult = await runReviewAnalysis({
+    execute:
+      execute || resolveAnalysisExecutor({ model: selectedModel, provider: selectedProvider }),
+    model: selectedModel,
     onEvent,
     reasoningEffort,
     runDir: resolvedRunDir,

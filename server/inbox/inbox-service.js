@@ -1,6 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { normalizeSettingsAnalysisModel } from "../../shared/analysis-models.js";
+import {
+  normalizeSettingsAnalysisChoice,
+  settingsAnalysisRunOptions,
+} from "../../shared/analysis-models.js";
 import {
   ACTIVITY_SIGNAL_KINDS,
   LIFECYCLE_SCORES,
@@ -158,7 +161,7 @@ export function normalizeSettings(value = {}) {
     teams: parseList(value.teams, teamPattern, 10),
     autoQueue: value.autoQueue === true,
     showMinimap: value.showMinimap === true,
-    defaultAnalysisModel: normalizeSettingsAnalysisModel(value.defaultAnalysisModel),
+    ...normalizeSettingsAnalysisChoice(value),
   };
 }
 
@@ -1129,9 +1132,7 @@ export async function syncNotifications(now = new Date(), { dashboardService } =
         ? await automaticallyQueueNewAnalyses(
             inboxFromQueue(initialState).items,
             dashboardService,
-            {
-              model: saved.defaultAnalysisModel,
-            },
+            settingsAnalysisRunOptions(saved),
           )
         : { runs: [], warnings: [] };
     return {
@@ -1185,9 +1186,11 @@ export async function syncNotifications(now = new Date(), { dashboardService } =
   const [conversationCache, automaticAnalysis] = await Promise.all([
     cacheReviewConversations(entries),
     dashboardService && saved.autoQueue
-      ? automaticallyQueueNewAnalyses(inboxFromQueue(queueState).items, dashboardService, {
-          model: saved.defaultAnalysisModel,
-        })
+      ? automaticallyQueueNewAnalyses(
+          inboxFromQueue(queueState).items,
+          dashboardService,
+          settingsAnalysisRunOptions(saved),
+        )
       : { runs: [], warnings: [] },
   ]);
   return {
@@ -1280,9 +1283,11 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
   const [conversationCache, automaticAnalysis] = await Promise.all([
     cacheReviewConversations(activeQueueItems(queueState)),
     dashboardService && saved.autoQueue
-      ? automaticallyQueueNewAnalyses(inbox.items, dashboardService, {
-          model: saved.defaultAnalysisModel,
-        })
+      ? automaticallyQueueNewAnalyses(
+          inbox.items,
+          dashboardService,
+          settingsAnalysisRunOptions(saved),
+        )
       : { runs: [], warnings: [] },
   ]);
   return {

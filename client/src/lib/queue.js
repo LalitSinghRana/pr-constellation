@@ -1,3 +1,8 @@
+import {
+  DEFAULT_ANALYSIS_MODEL,
+  DEFAULT_ANALYSIS_PROVIDER,
+  DEFAULT_ANALYSIS_REASONING_EFFORT,
+} from "../../../shared/analysis-models.js";
 import { ACTIVITY_SIGNAL_KINDS as ACTIVITY_SIGNAL_KIND_VALUES } from "../../../shared/queue-policy.js";
 
 export const EMPTY_SETTINGS = {
@@ -6,7 +11,9 @@ export const EMPTY_SETTINGS = {
   teams: [],
   autoQueue: false,
   showMinimap: false,
-  defaultAnalysisModel: "grok-4.5",
+  defaultAnalysisProvider: DEFAULT_ANALYSIS_PROVIDER,
+  defaultAnalysisModel: DEFAULT_ANALYSIS_MODEL,
+  defaultAnalysisReasoningEffort: DEFAULT_ANALYSIS_REASONING_EFFORT,
 };
 
 export const ACTIVITY_SIGNAL_KINDS = new Set(ACTIVITY_SIGNAL_KIND_VALUES);

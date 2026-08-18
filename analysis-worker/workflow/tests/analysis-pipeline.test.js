@@ -5,15 +5,11 @@ import path from "node:path";
 import { fetchPullRequest, ghText, parseGitHubPrUrl } from "../02-fetch-pr/github.js";
 import { createDiffInventory } from "../03-build-diff-inventory/diff-inventory.js";
 import {
-  buildCodexExecArgs,
   createTaskLimiter,
   materializeLineOwnership,
-  parseCodexJsonUsage,
-  resolveCodexExecutionConfig,
-  runCodexExec,
-  runCodexReviewAnalysis,
+  runReviewAnalysis,
   validateReviewAnalysis,
-} from "../07-run-retry-loop/codex-agent.js";
+} from "../07-run-retry-loop/review-analysis.js";
 
 const limitOneTask = createTaskLimiter(1);
 let releaseLimitedTask;
@@ -232,67 +228,6 @@ assert.match(
 );
 assert.match(sectionTreeSchema.$defs.branch.properties.explanation.description, /What:\/Why:/);
 
-assert.deepEqual(
-  resolveCodexExecutionConfig({
-    env: {
-      PRC_CODEX_MODEL: "env-model",
-      PRC_CODEX_REASONING_EFFORT: "medium",
-    },
-  }),
-  {
-    model: "env-model",
-    reasoningEffort: "medium",
-  },
-);
-assert.deepEqual(
-  resolveCodexExecutionConfig({
-    env: {
-      PRC_CODEX_MODEL: "env-model",
-      PRC_CODEX_REASONING_EFFORT: "medium",
-    },
-    model: "selected-model",
-    reasoningEffort: "high",
-  }),
-  {
-    model: "selected-model",
-    reasoningEffort: "high",
-  },
-);
-assert.throws(() => resolveCodexExecutionConfig({ model: 123 }), /model must be a string/);
-
-const codexArgs = buildCodexExecArgs({
-  cwd: "/tmp/review",
-  model: "selected-model",
-  outputPath: "/tmp/output.json",
-  reasoningEffort: "high",
-  schemaPath: "/tmp/schema.json",
-});
-assert.ok(codexArgs.includes("--json"));
-assert.deepEqual(codexArgs.slice(codexArgs.indexOf("--model"), codexArgs.indexOf("--model") + 2), [
-  "--model",
-  "selected-model",
-]);
-assert.deepEqual(
-  codexArgs.slice(codexArgs.indexOf("--config"), codexArgs.indexOf("--config") + 2),
-  ["--config", 'model_reasoning_effort="high"'],
-);
-assert.deepEqual(
-  parseCodexJsonUsage(
-    [
-      '{"type":"thread.started","thread_id":"thread-1"}',
-      '{"type":"turn.completed","usage":{"input_tokens":120,"cached_input_tokens":80,"output_tokens":30,"reasoning_output_tokens":10}}',
-      "not-json",
-      '{"type":"turn.completed","usage":{"input_tokens":20,"cached_input_tokens":5,"output_tokens":4,"reasoning_output_tokens":1}}',
-    ].join("\n"),
-  ),
-  {
-    inputTokens: 140,
-    cachedInputTokens: 85,
-    outputTokens: 34,
-    totalTokens: 174,
-  },
-);
-
 const fakeProcessDir = await mkdtemp(path.join(tmpdir(), "prc-cancel-processes-"));
 const originalPath = process.env.PATH;
 
@@ -314,27 +249,17 @@ spawn(
   { stdio: "ignore" },
 );
 writeFileSync(process.env.PRC_TEST_PROCESS_PID_PATH, String(process.pid));
-if (process.env.PRC_TEST_EMIT_USAGE === "1") {
-  process.stdout.write(
-    '{"type":"turn.completed","usage":{"input_tokens":9,"cached_input_tokens":3,"output_tokens":2}}\\n',
-  );
-}
 setInterval(() => {}, 1000);
 `;
   const fakeGhPath = path.join(fakeProcessDir, "gh");
-  const fakeCodexPath = path.join(fakeProcessDir, "codex");
-  await Promise.all([
-    writeFile(fakeGhPath, fakeProcessSource, "utf8"),
-    writeFile(fakeCodexPath, fakeProcessSource, "utf8"),
-  ]);
-  await Promise.all([chmod(fakeGhPath, 0o755), chmod(fakeCodexPath, 0o755)]);
+  await writeFile(fakeGhPath, fakeProcessSource, "utf8");
+  await chmod(fakeGhPath, 0o755);
   process.env.PATH = `${fakeProcessDir}:${originalPath}`;
 
   const ghPidPath = path.join(fakeProcessDir, "gh.pid");
   const ghDescendantPidPath = path.join(fakeProcessDir, "gh-descendant.pid");
   process.env.PRC_TEST_PROCESS_PID_PATH = ghPidPath;
   process.env.PRC_TEST_DESCENDANT_PID_PATH = ghDescendantPidPath;
-  delete process.env.PRC_TEST_EMIT_USAGE;
   const ghAbortController = new AbortController();
   const ghPromise = ghText(["--version"], {
     signal: ghAbortController.signal,
@@ -356,49 +281,9 @@ setInterval(() => {}, 1000);
     false,
     "gh cancellation must terminate descendants in its detached process group",
   );
-
-  const codexPidPath = path.join(fakeProcessDir, "codex.pid");
-  const codexDescendantPidPath = path.join(fakeProcessDir, "codex-descendant.pid");
-  process.env.PRC_TEST_PROCESS_PID_PATH = codexPidPath;
-  process.env.PRC_TEST_DESCENDANT_PID_PATH = codexDescendantPidPath;
-  process.env.PRC_TEST_EMIT_USAGE = "1";
-  const codexAbortController = new AbortController();
-  const codexPromise = runCodexExec({
-    cwd: fakeProcessDir,
-    outputPath: path.join(fakeProcessDir, "unused-output.json"),
-    prompt: "Analyze this PR.",
-    schemaPath: path.join(fakeProcessDir, "unused-schema.json"),
-    signal: codexAbortController.signal,
-  });
-  const codexPid = Number(await waitForFileText(codexPidPath));
-  const codexDescendantPid = Number(await waitForFileText(codexDescendantPidPath));
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  codexAbortController.abort(new Error("Stop Codex analysis."));
-  let codexAbortError;
-  await assert.rejects(codexPromise, (error) => {
-    codexAbortError = error;
-    return error?.name === "AbortError" && error?.code === "ABORT_ERR";
-  });
-  assert.deepEqual(codexAbortError.usage, {
-    inputTokens: 9,
-    cachedInputTokens: 3,
-    outputTokens: 2,
-    totalTokens: 11,
-  });
-  assert.equal(
-    isProcessAlive(codexPid),
-    false,
-    "Codex cancellation must not settle before the direct process exits",
-  );
-  assert.equal(
-    isProcessAlive(codexDescendantPid),
-    false,
-    "Codex cancellation must terminate descendants in its detached process group",
-  );
 } finally {
   process.env.PATH = originalPath;
   delete process.env.PRC_TEST_DESCENDANT_PID_PATH;
-  delete process.env.PRC_TEST_EMIT_USAGE;
   delete process.env.PRC_TEST_PROCESS_PID_PATH;
   await rm(fakeProcessDir, { force: true, recursive: true });
 }
@@ -575,7 +460,7 @@ try {
     runDir,
   });
 
-  const executeCodex = async ({ model, outputPath, prompt, reasoningEffort, schemaPath }) => {
+  const execute = async ({ model, outputPath, prompt, reasoningEffort, schemaPath }) => {
     executionOptions.push({ model, reasoningEffort });
 
     if (schemaPath.includes("02-create-review-stacks")) {
@@ -649,8 +534,8 @@ try {
     };
   };
 
-  const result = await runCodexReviewAnalysis({
-    executeCodex,
+  const result = await runReviewAnalysis({
+    execute,
     model: "selected-model",
     onEvent: async (event) => {
       events.push(event);
@@ -812,8 +697,8 @@ try {
 
   let canceledError;
   await assert.rejects(
-    runCodexReviewAnalysis({
-      executeCodex: async ({ signal }) => {
+    runReviewAnalysis({
+      execute: async ({ signal }) => {
         executeCalls += 1;
         assert.equal(signal, controller.signal);
         queueMicrotask(() =>
@@ -887,7 +772,7 @@ try {
     runDir: failedRunDir,
   });
 
-  const executeCodex = async ({ outputPath, prompt, schemaPath }) => {
+  const execute = async ({ outputPath, prompt, schemaPath }) => {
     if (schemaPath.includes("02-create-review-stacks")) {
       calls.push("review-stacks-1");
       await writeFile(
@@ -965,8 +850,8 @@ try {
 
   let terminalError;
   await assert.rejects(
-    runCodexReviewAnalysis({
-      executeCodex,
+    runReviewAnalysis({
+      execute,
       onEvent: async (event) => {
         events.push(event);
       },
@@ -1095,7 +980,7 @@ try {
     })),
   });
 
-  const executeCodex = async ({ outputPath, prompt, schemaPath }) => {
+  const execute = async ({ outputPath, prompt, schemaPath }) => {
     if (schemaPath.includes("02-create-review-stacks")) {
       calls.push("review-stacks-1");
       await writeFile(outputPath, `${JSON.stringify(shardedReviewStacks)}\n`, "utf8");
@@ -1131,8 +1016,8 @@ try {
   };
 
   const shardedEvents = [];
-  const result = await runCodexReviewAnalysis({
-    executeCodex,
+  const result = await runReviewAnalysis({
+    execute,
     model: "selected-model",
     onEvent: async (event) => {
       shardedEvents.push(event);
@@ -1198,8 +1083,8 @@ try {
   });
 
   await assert.rejects(
-    runCodexReviewAnalysis({
-      executeCodex: async ({ outputPath, prompt, schemaPath, signal }) => {
+    runReviewAnalysis({
+      execute: async ({ outputPath, prompt, schemaPath, signal }) => {
         if (schemaPath.includes("02-create-review-stacks")) {
           await writeFile(outputPath, `${JSON.stringify(reviewStacks)}\n`, "utf8");
           return { usage: {} };
