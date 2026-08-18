@@ -23,7 +23,7 @@ pnpm prc -- view <run-dir>
 Use a small known PR for smoke tests when the task is generic:
 
 ```sh
-https://github.com/PicnicSupermarket/picnic-store-app/pull/3504
+https://github.com/OWNER/REPO/pull/123
 ```
 
 ## Semantic Review

@@ -42,25 +42,23 @@ assert.equal(waitingTaskStarted, false);
 releaseLimitedTask();
 await activeLimitedTask;
 
-const parsedPr = parseGitHubPrUrl(
-  "https://github.com/PicnicSupermarket/picnic-store-config/pull/4812",
-);
+const parsedPr = parseGitHubPrUrl("https://github.com/ExampleOwner/example-repo/pull/4812");
 assert.deepEqual(parsedPr, {
-  owner: "PicnicSupermarket",
-  repo: "picnic-store-config",
+  owner: "ExampleOwner",
+  repo: "example-repo",
   number: "4812",
-  slug: "gh-17-picnicsupermarket-19-picnic-store-config-4812",
+  slug: "gh-12-exampleowner-12-example-repo-4812",
 });
 assert.notEqual(
   parsedPr.slug,
-  parseGitHubPrUrl("https://github.com/AnotherOwner/picnic-store-config/pull/4812").slug,
+  parseGitHubPrUrl("https://github.com/AnotherOwner/example-repo/pull/4812").slug,
 );
 assert.notEqual(
   parseGitHubPrUrl("https://github.com/a-b/c/pull/1").slug,
   parseGitHubPrUrl("https://github.com/a/b-c/pull/1").slug,
 );
 assert.equal(
-  parseGitHubPrUrl("https://github.com/PICNICSUPERMARKET/PICNIC-STORE-CONFIG/pull/4812").slug,
+  parseGitHubPrUrl("https://github.com/EXAMPLEOWNER/EXAMPLE-REPO/pull/4812").slug,
   parsedPr.slug,
 );
 

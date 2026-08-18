@@ -1,4 +1,4 @@
-import { ArrowUpRight, GitPullRequest, Settings, Sparkles } from "lucide-react";
+import { GitPullRequest, Settings, Sparkles } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle.jsx";
 import {
   SidebarContent,
@@ -78,19 +78,17 @@ export function QueueSidebar({ activeFilter, counts, onFilter }) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild className={menuButtonClass}>
-              <a href="/analysis" target="_blank" rel="noreferrer">
+              <a href="/analysis">
                 <Sparkles />
                 <span>AI analyzer queue</span>
-                <ArrowUpRight className="ml-auto" />
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton asChild className={menuButtonClass}>
-              <a href="/settings" target="_blank" rel="noreferrer">
+              <a href="/settings">
                 <Settings />
                 <span>Settings</span>
-                <ArrowUpRight className="ml-auto" />
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
