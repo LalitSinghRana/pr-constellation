@@ -16,6 +16,56 @@ async function readRequestJson(request) {
   return JSON.parse(body || "{}");
 }
 
+export function githubNotificationThreadIds(state, ids, validNotificationThreadId) {
+  const threadIds = [];
+  const missing = [];
+  for (const id of ids) {
+    const fromId = /^notification:(\d+)$/.exec(id)?.[1];
+    const fromRecord = validNotificationThreadId(state.items[id]?.item?.notificationThreadId);
+    const threadId = fromId ?? fromRecord ?? null;
+    if (threadId) threadIds.push(threadId);
+    else missing.push(id);
+  }
+  return { missing, threadIds: [...new Set(threadIds)] };
+}
+
+async function markMatchingGitHubNotificationsDone({
+  getNotifications,
+  ids,
+  markGitHubNotificationDone,
+  prKey,
+  state,
+  validNotificationThreadId,
+}) {
+  const collected = githubNotificationThreadIds(state, ids, validNotificationThreadId);
+  const threadIds = [...collected.threadIds];
+  let missing = collected.missing;
+  if (missing.length) {
+    try {
+      const live = await getNotifications();
+      const byPr = new Map(
+        (live.pullRequests ?? []).map(({ pr }) => [prKey(pr), pr.notificationThreadId]),
+      );
+      const byNotification = new Map(
+        (live.other ?? []).map((item) => [item.id, item.notificationThreadId]),
+      );
+      missing = missing.filter((id) => {
+        const threadId = validNotificationThreadId(byPr.get(id) ?? byNotification.get(id));
+        if (!threadId) return true;
+        threadIds.push(threadId);
+        return false;
+      });
+    } catch {
+      // Keep missing ids and still mark any threads already known.
+    }
+  }
+
+  const outcomes = await Promise.allSettled(
+    [...new Set(threadIds)].map(markGitHubNotificationDone),
+  );
+  return outcomes.some((outcome) => outcome.status === "rejected") || missing.length > 0;
+}
+
 export function createInboxApi({
   getInboxStore,
   getNotifications,
@@ -155,43 +205,32 @@ export function createInboxApi({
           throw new Error("One tracked queue item update is required.");
         }
         const targetIds = ids ?? [body.id];
+        let queueState = null;
         const result = await mutateQueueState(
-          (state) =>
-            bulkDone
+          (state) => {
+            const update = bulkDone
               ? setQueueItemsDone(state, ids)
               : mutations[0] === "done"
                 ? setQueueItemDone(state, body.id, body.done)
-                : setQueueItemRead(state, body.id, body.read),
+                : setQueueItemRead(state, body.id, body.read);
+            if (update && body.done) queueState = state;
+            return update;
+          },
           { ids: targetIds },
         );
         if (!result) throw new Error("That queue item is not tracked.");
-        if (body.done) {
-          const state = await readQueueState();
-          const threadIds = new Set(
-            targetIds.flatMap((id) => {
-              const stored = state.items[id]?.item?.notificationThreadId;
-              const threadId =
-                /^notification:(\d+)$/.exec(id)?.[1] ?? validNotificationThreadId(stored);
-              return threadId ? [threadId] : [];
-            }),
-          );
-          try {
-            if (threadIds.size < targetIds.length) {
-              for (const { pr } of (await getNotifications()).pullRequests) {
-                if (targetIds.includes(prKey(pr)) && pr.notificationThreadId) {
-                  threadIds.add(pr.notificationThreadId);
-                }
-              }
-            }
-            const outcomes = await Promise.allSettled(
-              [...threadIds].map(markGitHubNotificationDone),
-            );
-            if (outcomes.some(({ status }) => status === "rejected")) {
-              throw new Error("GitHub notification update failed");
-            }
-          } catch {
-            result.warning = "Saved locally, but GitHub could not mark the notification done.";
-          }
+        if (
+          body.done &&
+          (await markMatchingGitHubNotificationsDone({
+            getNotifications,
+            ids: targetIds,
+            markGitHubNotificationDone,
+            prKey,
+            state: queueState ?? { items: {} },
+            validNotificationThreadId,
+          }))
+        ) {
+          result.warning = "Saved locally, but GitHub could not mark the notification done.";
         }
         eventHub.publish("inbox", { ids: targetIds });
         sendJson(response, 200, result);

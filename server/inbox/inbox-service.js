@@ -10,7 +10,10 @@ import {
 } from "../../shared/queue-policy.js";
 import { fetchPullRequestConversation } from "../review/github-review-client.js";
 import { databasePath, queuePath, settingsPath } from "../runtime-config.js";
-import { getGitHubNotifications } from "./github-notifications.js";
+import {
+  getGitHubNotifications,
+  markGitHubNotificationThreadDone,
+} from "./github-notifications.js";
 import {
   automaticallyQueueNewAnalyses,
   sortPullRequestsBySize,
@@ -113,10 +116,7 @@ async function ghJson(args, timeout = 45_000) {
 }
 
 async function markGitHubNotificationDone(threadId) {
-  await exec("gh", ["api", "--method", "DELETE", `notifications/threads/${threadId}`], {
-    encoding: "utf8",
-    timeout: 45_000,
-  });
+  await markGitHubNotificationThreadDone(threadId);
 }
 
 let detectedUser;

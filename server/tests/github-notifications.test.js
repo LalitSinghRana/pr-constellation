@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createGitHubNotificationsClient } from "../inbox/github-notifications.js";
+import {
+  createGitHubNotificationsClient,
+  createMarkGitHubNotificationDone,
+} from "../inbox/github-notifications.js";
 
 test("GitHub notification polling preserves cursors and follows safe pagination", async () => {
   const requests = [];
@@ -47,6 +50,52 @@ test("GitHub notification polling returns a 304 without reading a body", async (
     pollIntervalSeconds: 120,
     threads: [],
   });
+});
+
+test("marking a GitHub notification done sends DELETE and accepts an empty 204", async () => {
+  const requests = [];
+  const markDone = createMarkGitHubNotificationDone({
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return response(null, {}, 204);
+    },
+    getToken: async () => "secret",
+  });
+
+  await markDone("58392017462");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, "https://api.github.com/notifications/threads/58392017462");
+  assert.equal(requests[0].options.method, "DELETE");
+  assert.equal(requests[0].options.headers.Authorization, "Bearer secret");
+});
+
+test("marking a GitHub notification done treats a missing thread as already done", async () => {
+  const markDone = createMarkGitHubNotificationDone({
+    fetchImpl: async () => response(null, {}, 404),
+    getToken: async () => "secret",
+  });
+  await markDone("123");
+});
+
+test("marking a GitHub notification done rejects unauthorized responses", async () => {
+  const markDone = createMarkGitHubNotificationDone({
+    fetchImpl: async () => response(null, {}, 403),
+    getToken: async () => "secret",
+  });
+  await assert.rejects(markDone("123"), /HTTP 403/);
+});
+
+test("marking a GitHub notification done rejects invalid thread ids without fetching", async () => {
+  let fetched = false;
+  const markDone = createMarkGitHubNotificationDone({
+    fetchImpl: async () => {
+      fetched = true;
+      return response(null, {}, 204);
+    },
+    getToken: async () => "secret",
+  });
+  await assert.rejects(markDone("../1"), /invalid/);
+  assert.equal(fetched, false);
 });
 
 function response(body, headers = {}, status = 200) {

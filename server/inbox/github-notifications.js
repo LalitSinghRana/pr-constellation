@@ -4,27 +4,52 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 const apiOrigin = "https://api.github.com";
 const maximumPages = 20;
+const githubApiVersion = "2026-03-10";
 
-export function createGitHubNotificationsClient({
-  fetchImpl = fetch,
-  getToken = async () => {
-    const { stdout } = await exec("gh", ["auth", "token"], {
-      encoding: "utf8",
-      timeout: 15_000,
-    });
-    return stdout.trim();
-  },
-} = {}) {
+function defaultGetToken() {
+  return exec("gh", ["auth", "token"], {
+    encoding: "utf8",
+    timeout: 15_000,
+  }).then(({ stdout }) => stdout.trim());
+}
+
+function githubHeaders(token, extra = {}) {
+  return {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "User-Agent": "pr-review-cockpit",
+    "X-GitHub-Api-Version": githubApiVersion,
+    ...extra,
+  };
+}
+
+function createGitHubAuth({ fetchImpl = fetch, getToken = defaultGetToken } = {}) {
   let tokenPromise;
 
-  return async function getNotifications({ lastModified, since } = {}) {
-    tokenPromise ??= getToken().catch((error) => {
+  return {
+    fetchImpl,
+    resetToken() {
       tokenPromise = undefined;
-      throw error;
-    });
-    const token = await tokenPromise;
-    if (!token) throw new Error("GitHub CLI did not return an authentication token.");
+    },
+    async token() {
+      tokenPromise ??= Promise.resolve()
+        .then(getToken)
+        .catch((error) => {
+          tokenPromise = undefined;
+          throw error;
+        });
+      const token = await tokenPromise;
+      if (!token) throw new Error("GitHub CLI did not return an authentication token.");
+      return token;
+    },
+  };
+}
 
+export function createGitHubNotificationsClient(options) {
+  const auth = createGitHubAuth(options);
+
+  return async function getNotifications({ lastModified, since } = {}) {
+    const token = await auth.token();
     const url = new URL("/notifications", apiOrigin);
     url.searchParams.set("all", "true");
     url.searchParams.set("per_page", "100");
@@ -35,14 +60,11 @@ export function createGitHubNotificationsClient({
     let responseLastModified = "";
     let pollIntervalSeconds = 60;
     for (let page = 0; nextUrl && page < maximumPages; page += 1) {
-      const response = await fetchImpl(nextUrl, {
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${token}`,
-          ...(page === 0 && lastModified ? { "If-Modified-Since": lastModified } : {}),
-          "User-Agent": "pr-review-cockpit",
-          "X-GitHub-Api-Version": "2026-03-10",
-        },
+      const response = await auth.fetchImpl(nextUrl, {
+        headers: githubHeaders(
+          token,
+          page === 0 && lastModified ? { "If-Modified-Since": lastModified } : {},
+        ),
         signal: AbortSignal.timeout(45_000),
       });
       pollIntervalSeconds = positiveInteger(
@@ -57,7 +79,7 @@ export function createGitHubNotificationsClient({
           threads: [],
         };
       }
-      if ([401, 403].includes(response.status)) tokenPromise = undefined;
+      if ([401, 403].includes(response.status)) auth.resetToken();
       if (!response.ok) throw githubResponseError(response);
 
       responseLastModified ||= response.headers.get("last-modified") ?? "";
@@ -77,7 +99,27 @@ export function createGitHubNotificationsClient({
   };
 }
 
+export function createMarkGitHubNotificationDone(options) {
+  const auth = createGitHubAuth(options);
+
+  return async function markGitHubNotificationDone(threadId) {
+    const id = typeof threadId === "string" || typeof threadId === "number" ? String(threadId) : "";
+    if (!/^\d+$/.test(id)) throw new Error("GitHub notification thread id is invalid.");
+
+    const token = await auth.token();
+    const response = await auth.fetchImpl(`${apiOrigin}/notifications/threads/${id}`, {
+      headers: githubHeaders(token),
+      method: "DELETE",
+      signal: AbortSignal.timeout(45_000),
+    });
+    if (response.status === 404) return;
+    if ([401, 403].includes(response.status)) auth.resetToken();
+    if (!response.ok) throw githubResponseError(response);
+  };
+}
+
 export const getGitHubNotifications = createGitHubNotificationsClient();
+export const markGitHubNotificationThreadDone = createMarkGitHubNotificationDone();
 
 function nextLink(value) {
   if (!value) return "";
