@@ -6,16 +6,27 @@ import {
   FileClock,
   GitMerge,
   GitPullRequest,
+  GitPullRequestClosed,
 } from "lucide-react";
 import { LIFECYCLE_SCORES } from "../../../../shared/queue-policy.js";
 
-export const LIFECYCLE_ORDER = ["reviewed", "new", "approved", "merged", "draft", "mine", "other"];
+export const LIFECYCLE_ORDER = [
+  "reviewed",
+  "new",
+  "approved",
+  "merged",
+  "closed",
+  "draft",
+  "mine",
+  "other",
+];
 
 export const LIFECYCLE_META = {
   reviewed: { label: "Reviewed", score: LIFECYCLE_SCORES.reviewed, icon: Eye },
   new: { label: "Unreviewed", score: LIFECYCLE_SCORES.new, icon: GitPullRequest },
   approved: { label: "Approved", score: LIFECYCLE_SCORES.approved, icon: CheckCircle2 },
   merged: { label: "Merged", score: LIFECYCLE_SCORES.merged, icon: GitMerge },
+  closed: { label: "Closed", score: LIFECYCLE_SCORES.closed, icon: GitPullRequestClosed },
   draft: { label: "Draft", score: LIFECYCLE_SCORES.draft, icon: FileClock },
   mine: { label: "My pull requests", score: LIFECYCLE_SCORES.mine, icon: GitPullRequest },
   other: { label: "Other PR notifications", score: LIFECYCLE_SCORES.other, icon: Archive },
@@ -25,7 +36,7 @@ export const LIFECYCLE_META = {
 export const FILTER_GROUPS = [
   {
     label: "Lifecycle",
-    filters: LIFECYCLE_ORDER.filter((id) => !["mine", "other", "draft"].includes(id)).map((id) => ({
+    filters: LIFECYCLE_ORDER.filter((id) => !["mine", "other"].includes(id)).map((id) => ({
       id,
       label: LIFECYCLE_META[id].label,
       icon: LIFECYCLE_META[id].icon,
@@ -49,6 +60,7 @@ export const LIFECYCLE_STYLES = {
   new: "border-sky/25 bg-sky/10 text-sky-strong",
   approved: "border-lilac/25 bg-lilac/10 text-lilac-strong",
   merged: "border-lilac/25 bg-lilac/10 text-lilac-strong",
+  closed: "border-border bg-muted text-muted-foreground",
   draft: "border-border bg-muted text-muted-foreground",
   mine: "border-ochre/25 bg-ochre/10 text-ochre-strong",
   other: "border-border bg-secondary/70 text-muted-foreground",

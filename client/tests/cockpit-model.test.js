@@ -138,4 +138,5 @@ test("my pull request shows one highest-priority status", () => {
     myPullRequestStatus({ draft: true, reviewDecision: "APPROVED", state: "MERGED" }),
     "merged",
   );
+  assert.equal(myPullRequestStatus({ draft: false, state: "CLOSED" }), "closed");
 });

@@ -48,6 +48,7 @@ const myPrStatuses = {
   opened: { label: "Opened", className: LIFECYCLE_STYLES.new },
   approved: { label: "Approved", className: LIFECYCLE_STYLES.approved },
   merged: { label: "Merged", className: LIFECYCLE_STYLES.merged },
+  closed: { label: "Closed", className: LIFECYCLE_STYLES.closed },
 };
 
 export function LoadingQueue() {

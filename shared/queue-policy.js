@@ -15,6 +15,7 @@ export const LIFECYCLE_SCORES = Object.freeze({
   new: 0,
   approved: -5,
   merged: -5,
+  closed: -5,
   draft: -10,
   mine: 0,
   other: 0,
@@ -50,6 +51,7 @@ export const SIGNAL_LABELS = Object.freeze({
 
 export function lifecycleForQueueItem(item) {
   if (item.state === "MERGED") return "merged";
+  if (item.state === "CLOSED") return "closed";
   if (item.draft) return "draft";
   if (item.authored) return "mine";
   if (item.latestReviewState === "APPROVED") return "approved";

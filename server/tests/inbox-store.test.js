@@ -118,11 +118,13 @@ test("inbox store pages every active item and counts categories across pages", a
   assert.deepEqual(store.queueCounts(), { active: 1_006, done: 1, total: 1_007 });
   assert.deepEqual(store.activeQueueCounts(), {
     approved: 1,
+    closed: 1,
+    draft: 0,
     merged: 1,
     mine: 1,
     new: 1_001,
     nonpr: 1,
-    other: 1,
+    other: 0,
     reviewed: 1,
   });
 });

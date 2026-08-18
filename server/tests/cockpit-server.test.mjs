@@ -13,6 +13,7 @@ import {
   inboxFromQueue,
   normalizeSettings,
   otherNotificationFromThread,
+  PARTICIPATING_NOTIFICATION_REASONS,
   prFromNotification,
   queueVersion,
   rankItems,
@@ -26,7 +27,6 @@ import {
   sortPullRequestsBySize,
   summarizeActivity,
   trackedQueueItems,
-  trackedRepositories,
 } from "../server.mjs";
 
 test("automatic queue includes only active new pull requests", async () => {
@@ -157,7 +157,7 @@ test("lifecycle base and fresh signals add once", () => {
   );
 });
 
-test("approved and draft lifecycle scores never reset", () => {
+test("approved scores stay and drafts keep their lifecycle", () => {
   const approvedItems = new Map();
   addSource(approvedItems, pr, "reviewed");
   approvedItems.get("example/repo#42").latestReviewState = "APPROVED";
@@ -175,6 +175,12 @@ test("approved and draft lifecycle scores never reset", () => {
   const [draft] = rankItems(draftItems);
   assert.equal(draft.lifecycle, "draft");
   assert.equal(draft.score, 0);
+
+  const closedItems = new Map();
+  addSource(closedItems, { ...pr, state: "CLOSED" }, "reviewed");
+  const [closed] = rankItems(closedItems);
+  assert.equal(closed.lifecycle, "closed");
+  assert.equal(closed.score, -5);
 });
 
 test("my pull requests get their own lifecycle", () => {
@@ -366,52 +372,68 @@ test("notifications prioritize changed tracked PRs without adding unknown PRs", 
   assert.equal(items.has("example/repo#99"), false);
 });
 
-test("a read review-request notification can seed a scoped missing PR", () => {
-  const items = new Map();
-  const notification = {
-    thread: {
-      reason: "review_requested",
-      unread: false,
-      updated_at: "2026-07-06T00:00:00Z",
-    },
-    pr: {
-      number: 3541,
-      title: "Do not miss short-lived pull requests",
-      url: "https://github.com/example/app/pull/3541",
-      repository: { nameWithOwner: "example/app" },
-      updatedAt: "2026-07-06T00:00:00Z",
-      state: "UNKNOWN",
-      notificationThreadId: "456",
-    },
-  };
+test("participating notifications seed any repository and skip watch noise", () => {
+  for (const [index, reason] of PARTICIPATING_NOTIFICATION_REASONS.entries()) {
+    const items = new Map();
+    const number = 3541 + index;
+    const notification = {
+      thread: {
+        reason,
+        unread: false,
+        updated_at: "2026-07-06T00:00:00Z",
+      },
+      pr: {
+        number,
+        title: "Do not miss short-lived pull requests",
+        url: `https://github.com/other-org/other-repo/pull/${number}`,
+        repository: { nameWithOwner: "other-org/other-repo" },
+        updatedAt: "2026-07-06T00:00:00Z",
+        state: "UNKNOWN",
+        notificationThreadId: "456",
+      },
+    };
+    seedNotificationPullRequests(items, [notification]);
+    assert.equal(items.has(`other-org/other-repo#${number}`), true, reason);
+  }
 
-  seedNotificationPullRequests(items, [notification], ["example/app"]);
-  assert.equal(items.get("example/app#3541").state, "UNKNOWN");
-  assert.equal(items.get("example/app#3541").notificationThreadId, "456");
-  items.get("example/app#3541").state = "OPEN";
-  seedNotificationPullRequests(
-    items,
-    [{ ...notification, thread: { ...notification.thread, reason: "comment" } }],
-    ["example/app"],
-  );
-  assert.equal(items.get("example/app#3541").state, "OPEN");
+  const reviewRequested = new Map();
+  seedNotificationPullRequests(reviewRequested, [
+    {
+      thread: {
+        reason: "review_requested",
+        unread: false,
+        updated_at: "2026-07-06T00:00:00Z",
+      },
+      pr: {
+        number: 3541,
+        title: "Do not miss short-lived pull requests",
+        url: "https://github.com/other-org/other-repo/pull/3541",
+        repository: { nameWithOwner: "other-org/other-repo" },
+        updatedAt: "2026-07-06T00:00:00Z",
+        state: "UNKNOWN",
+        notificationThreadId: "456",
+      },
+    },
+  ]);
+  assert.equal(reviewRequested.get("other-org/other-repo#3541").notificationThreadId, "456");
 
-  seedNotificationPullRequests(
-    items,
-    [
+  for (const reason of ["subscribed", "ci_activity", "manual"]) {
+    const items = new Map();
+    seedNotificationPullRequests(items, [
       {
-        ...notification,
-        thread: { ...notification.thread, reason: "comment" },
+        thread: { reason, unread: true, updated_at: "2026-07-06T00:00:00Z" },
         pr: {
-          ...notification.pr,
-          number: 3542,
-          url: "https://github.com/example/app/pull/3542",
+          number: 99,
+          title: "Watch noise",
+          url: "https://github.com/other-org/other-repo/pull/99",
+          repository: { nameWithOwner: "other-org/other-repo" },
+          updatedAt: "2026-07-06T00:00:00Z",
+          state: "UNKNOWN",
         },
       },
-    ],
-    ["example/app"],
-  );
-  assert.equal(items.has("example/app#3542"), false);
+    ]);
+    assert.equal(items.has("other-org/other-repo#99"), false, reason);
+  }
 });
 
 test("direct and team review requests seed the queue separately", () => {
@@ -594,7 +616,7 @@ test("tracked PR snapshots restore local membership and migrate old records", ()
 
   const localInbox = inboxFromQueue(state, "me");
   assert.equal(localInbox.username, "me");
-  assert.deepEqual(localInbox.repositories, trackedRepositories);
+  assert.deepEqual(localInbox.repositories, ["example/repo"]);
   assert.deepEqual(
     localInbox.items[0].signals.map((signal) => signal.kind),
     ["team-review"],
@@ -615,6 +637,37 @@ test("tracked PR snapshots restore local membership and migrate old records", ()
   assert.equal(migrated.title, "Pull request #7");
   assert.equal(migrated.state, "UNKNOWN");
   assert.equal(applyQueueState([migrated], legacy)[0].done, true);
+});
+
+test("inbox repositories are unique sorted PR repos including persisted sync repos", () => {
+  const items = new Map();
+  addSource(
+    items,
+    {
+      ...pr,
+      number: 1,
+      url: "https://github.com/zebra/app/pull/1",
+      repository: { nameWithOwner: "zebra/app" },
+    },
+    "reviewed",
+  );
+  addSource(
+    items,
+    {
+      ...pr,
+      number: 2,
+      url: "https://github.com/alpha/app/pull/2",
+      repository: { nameWithOwner: "alpha/app" },
+    },
+    "reviewed",
+  );
+  const state = {
+    version: 2,
+    sync: { repositories: ["kept/old", "alpha/app"] },
+    items: {},
+  };
+  rememberQueueItems(state, rankItems(items), "2026-07-04T00:00:00Z");
+  assert.deepEqual(inboxFromQueue(state).repositories, ["alpha/app", "kept/old", "zebra/app"]);
 });
 
 test("old open and merged PRs auto-complete unless explicitly restored", () => {

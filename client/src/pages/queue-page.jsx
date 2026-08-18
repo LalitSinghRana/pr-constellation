@@ -153,6 +153,8 @@ export function QueuePage() {
       new: openPrs.filter((item) => item.lifecycle === "new").length,
       approved: openPrs.filter((item) => item.lifecycle === "approved").length,
       merged: openPrs.filter((item) => item.lifecycle === "merged").length,
+      closed: openPrs.filter((item) => item.lifecycle === "closed").length,
+      draft: openPrs.filter((item) => item.lifecycle === "draft").length,
       mine: openPrs.filter((item) => item.authored).length,
       other: openPrs.filter((item) => item.lifecycle === "other" && !item.authored).length,
       nonpr: openNotifications.length,

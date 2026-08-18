@@ -27,19 +27,23 @@ import {
 import { createInboxStore } from "./inbox-store.js";
 
 const exec = promisify(execFile);
-const searchFields =
-  "author,commentsCount,createdAt,id,isDraft,labels,number,repository,state,title,updatedAt,url";
-const repositoryFields = "author,createdAt,id,isDraft,number,state,title,updatedAt,url";
 const hour = 60 * 60 * 1_000;
 const day = 24 * hour;
 
 export { sortPullRequestsBySize };
 
-export const trackedRepositories = Object.freeze([
-  "PicnicSupermarket/picnic-store-config",
-  "PicnicSupermarket/picnic-store-app",
-  "PicnicSupermarket/picnic-page-platform-modules",
+export const PARTICIPATING_NOTIFICATION_REASONS = Object.freeze([
+  "review_requested",
+  "mention",
+  "assign",
+  "author",
+  "comment",
+  "state_change",
+  "team_mention",
 ]);
+
+const participatingNotificationReasons = new Set(PARTICIPATING_NOTIFICATION_REASONS);
+const repositoryNamePattern = /^[\w.-]{1,100}\/[\w.-]{1,100}$/;
 
 export const weights = SIGNAL_WEIGHTS;
 export const lifecycleScores = LIFECYCLE_SCORES;
@@ -49,6 +53,7 @@ const lifecycleLabels = Object.freeze({
   new: "Unreviewed",
   approved: "Approved",
   merged: "Merged",
+  closed: "Closed",
   draft: "Draft",
   mine: "My PR",
   other: "Other PR notification",
@@ -98,6 +103,14 @@ const activityQuery = `
             isOutdated
             comments(first: 100) {
               nodes { author { login } createdAt url }
+            }
+          }
+        }
+        reviewRequests(first: 20) {
+          nodes {
+            requestedReviewer {
+              ... on User { login }
+              ... on Team { combinedSlug }
             }
           }
         }
@@ -224,9 +237,11 @@ function normalizeQueueState(value = {}) {
         typeof sync.username === "string" && usernamePattern.test(sync.username)
           ? sync.username
           : "",
-      repositories: (Array.isArray(sync.repositories) ? sync.repositories : []).filter(
-        (repository) => trackedRepositories.includes(repository),
-      ),
+      repositories: (Array.isArray(sync.repositories) ? sync.repositories : [])
+        .filter(
+          (repository) => typeof repository === "string" && repositoryNamePattern.test(repository),
+        )
+        .slice(0, 200),
     },
     items,
   };
@@ -519,37 +534,6 @@ async function mutateQueueState(callback, options) {
   return (await getInboxStore()).mutateQueueState(callback, options);
 }
 
-async function attachQueueState(inbox) {
-  return mutateQueueState((state) => {
-    const entries = [...inbox.items, ...inbox.notifications];
-    rememberQueueItems(state, entries, inbox.fetchedAt);
-    return {
-      ...inbox,
-      items: applyQueueState(inbox.items, state),
-      notifications: applyQueueState(inbox.notifications, state),
-    };
-  });
-}
-
-async function searchPrs(args, repositories = trackedRepositories) {
-  return ghJson([
-    "search",
-    "prs",
-    ...args,
-    ...repositories.flatMap((repository) => ["--repo", repository]),
-    "--state",
-    "open",
-    "--sort",
-    "updated",
-    "--order",
-    "desc",
-    "--limit",
-    "100",
-    "--json",
-    searchFields,
-  ]);
-}
-
 function repositoryName(pr) {
   return typeof pr.repository === "string" ? pr.repository : pr.repository.nameWithOwner;
 }
@@ -655,10 +639,6 @@ export function addReviewRequests(items, prs, kind, detail = "") {
   for (const item of prs) addSignal(items, item, kind, detail);
 }
 
-export function trackedPrs(items, prs) {
-  return prs.filter((pr) => items.has(prKey(pr)));
-}
-
 export function rankItems(items) {
   return [...items.values()]
     .map((item) => {
@@ -687,13 +667,26 @@ export function rankItems(items) {
     );
 }
 
+export function inboxRepositories(items, extra = []) {
+  return [
+    ...new Set(
+      [...items.map((item) => item.repository), ...(Array.isArray(extra) ? extra : [])].filter(
+        Boolean,
+      ),
+    ),
+  ]
+    .filter((repository) => repositoryNamePattern.test(repository))
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, 200);
+}
+
 export function inboxFromQueue(state, username = state.sync?.username ?? "") {
   const items = rankItems(new Map(trackedQueueItems(state).map((item) => [item.id, item])));
   const notifications = trackedQueueNotifications(state);
   return {
     username,
     fetchedAt: state.sync?.lastSyncedAt || null,
-    repositories: trackedRepositories,
+    repositories: inboxRepositories(items, state.sync?.repositories),
     items: applyQueueState(items, state),
     notifications: applyQueueState(notifications, state),
     notificationSummary: {
@@ -904,19 +897,12 @@ async function getNotifications({ lastModified, since } = {}) {
   };
 }
 
-export function seedNotificationPullRequests(
-  items,
-  pullRequestNotifications,
-  repositories = trackedRepositories,
-) {
-  const allowed = new Set(repositories);
+export function seedNotificationPullRequests(items, pullRequestNotifications) {
   for (const { thread, pr } of pullRequestNotifications) {
-    if (
-      allowed.has(repositoryName(pr)) &&
-      (items.has(prKey(pr)) || thread.reason === "review_requested")
-    ) {
-      addSource(items, pr, "notification", thread.reason);
-    }
+    if (!participatingNotificationReasons.has(thread.reason)) continue;
+    addSource(items, pr, "notification", thread.reason);
+    if (thread.reason === "mention") addSignal(items, pr, "direct-mention");
+    if (thread.reason === "team_mention") addSignal(items, pr, "team-mention");
   }
   return items;
 }
@@ -952,76 +938,130 @@ export function activityCandidates(items, pullRequestNotifications, limit = 60) 
   return candidates.slice(0, Math.max(limit, changedCount)).map(({ item }) => item);
 }
 
-async function listRepositoryPullRequests(repository, historical, since) {
-  if (historical) {
-    const pullRequests = await ghJson(
-      [
-        "pr",
-        "list",
-        "--repo",
-        repository,
-        "--state",
-        "all",
-        "--limit",
-        "10000",
-        "--json",
-        repositoryFields,
-      ],
-      120_000,
-    );
-    return pullRequests
-      .filter((pr) => ["OPEN", "MERGED"].includes(pr.state))
-      .map((pr) => ({
-        ...pr,
-        repository: { nameWithOwner: repository },
-      }));
+const graphQlSignalKinds = new Set([
+  "direct-review",
+  "team-review",
+  "teammate-pr",
+  "post-merge-comment",
+  "review-reply",
+  "new-commits",
+  "new-comments",
+  "team-covered",
+  "my-pr-activity",
+]);
+
+export function reviewRequestSignals(activity, username, teams = []) {
+  const normalizedUser = username.toLowerCase();
+  const teamSet = new Set(teams.map((team) => team.toLowerCase()));
+  const signals = [];
+  for (const node of activity.reviewRequests?.nodes ?? []) {
+    const reviewer = node?.requestedReviewer;
+    if (!reviewer) continue;
+    const login = typeof reviewer.login === "string" ? reviewer.login : "";
+    const slug = typeof reviewer.combinedSlug === "string" ? reviewer.combinedSlug : "";
+    if (login && login.toLowerCase() === normalizedUser) {
+      signals.push({ kind: "direct-review", detail: "" });
+    } else if (slug && teamSet.has(slug.toLowerCase())) {
+      signals.push({ kind: "team-review", detail: slug });
+    }
+  }
+  return signals;
+}
+
+export function applyInboxActivity(
+  items,
+  item,
+  activity,
+  { username = "", teammates = [], teams = [] } = {},
+) {
+  const pr = prFromActivity(item, activity);
+  addSource(items, pr, "activity");
+  const current = items.get(prKey(pr));
+  current.signals = (Array.isArray(current.signals) ? current.signals : []).filter(
+    (signal) => !graphQlSignalKinds.has(signal.kind),
+  );
+  const authorLogin = activity.author?.login ?? "";
+  current.authored = Boolean(
+    username && authorLogin && authorLogin.toLowerCase() === username.toLowerCase(),
+  );
+  const summary = summarizeActivity(activity, username, teammates);
+  current.latestReviewState = summary.latestReviewState;
+  current.reviewed = Boolean(summary.latestReviewState);
+  items.set(current.id, current);
+
+  if (
+    authorLogin &&
+    teammates.some((person) => person.toLowerCase() === authorLogin.toLowerCase()) &&
+    authorLogin.toLowerCase() !== username.toLowerCase()
+  ) {
+    addSignal(items, pr, "teammate-pr", authorLogin);
   }
 
-  const [open, merged] = await Promise.all([
-    ghJson(
-      [
-        "pr",
-        "list",
-        "--repo",
-        repository,
-        "--state",
-        "open",
-        "--limit",
-        "1000",
-        "--json",
-        repositoryFields,
-      ],
-      60_000,
-    ),
-    ghJson(
-      [
-        "pr",
-        "list",
-        "--repo",
-        repository,
-        "--state",
-        "merged",
-        "--search",
-        `updated:>=${since}`,
-        "--limit",
-        "1000",
-        "--json",
-        repositoryFields,
-      ],
-      60_000,
-    ),
-  ]);
-  return [...new Map([...open, ...merged].map((pr) => [pr.url, pr])).values()].map((pr) => ({
-    ...pr,
-    repository: { nameWithOwner: repository },
-  }));
+  for (const signal of reviewRequestSignals(activity, username, teams)) {
+    addSignal(items, pr, signal.kind, signal.detail);
+  }
+
+  if (summary.postMergeComment) {
+    addSignal(
+      items,
+      pr,
+      "post-merge-comment",
+      summary.postMergeComment.author?.login ?? "",
+      summary.postMergeComment.url ?? pr.url,
+    );
+  } else if (summary.newestReply) {
+    addSignal(
+      items,
+      pr,
+      "review-reply",
+      summary.newestReply.author?.login ?? "",
+      summary.newestReply.url ?? pr.url,
+    );
+  }
+  if (summary.hasNewCommits && pr.state !== "MERGED") {
+    addSignal(items, pr, "new-commits");
+  }
+
+  const afterComments = items.get(prKey(pr));
+  if (
+    summary.newComment &&
+    !summary.postMergeComment &&
+    !afterComments.signals.some((signal) =>
+      ["review-reply", "direct-mention"].includes(signal.kind),
+    )
+  ) {
+    addSignal(
+      items,
+      pr,
+      "new-comments",
+      summary.newComment.author?.login ?? "",
+      summary.newComment.url ?? pr.url,
+    );
+  }
+
+  const enriched = items.get(prKey(pr));
+  if (
+    summary.coveringTeammate &&
+    enriched.signals.some((signal) => signal.kind === "team-review") &&
+    !enriched.signals.some((signal) => signal.kind === "teammate-pr")
+  ) {
+    addSignal(items, pr, "team-covered", summary.coveringTeammate);
+  }
+
+  return items.get(prKey(pr));
 }
 
 export async function refreshNotificationItems(
   items,
   pullRequestNotifications,
   touched,
-  { getActivity = getPrActivity, username = "" } = {},
+  {
+    getActivity = getPrActivity,
+    username = "",
+    teammates = [],
+    teams = [],
+    inspectAll = false,
+  } = {},
 ) {
   const before = new Set(items.keys());
   const notificationTimes = new Map();
@@ -1033,36 +1073,33 @@ export async function refreshNotificationItems(
       notificationTimes.set(id, Math.max(notificationTimes.get(id) ?? 0, timestamp));
     }
   }
-  seedNotificationPullRequests(items, pullRequestNotifications, trackedRepositories);
+  seedNotificationPullRequests(items, pullRequestNotifications);
   for (const id of items.keys()) {
     if (!before.has(id)) touched.add(id);
   }
 
+  const candidates = inspectAll
+    ? [...items.values()]
+    : activityCandidates(items, pullRequestNotifications, 0);
   const warnings = [];
-  const inspected = await mapLimited(
-    activityCandidates(items, pullRequestNotifications, 0),
-    5,
-    async (item) => {
-      try {
-        return { item, activity: await getActivity(item) };
-      } catch {
-        return { failed: true };
-      }
-    },
-  );
+  const inspected = await mapLimited(candidates, 5, async (candidate) => {
+    try {
+      return { item: candidate, activity: await getActivity(candidate) };
+    } catch {
+      return { failed: true };
+    }
+  });
   for (const result of inspected) {
     if (result.failed) {
       warnings.push("Some notified pull requests could not be refreshed.");
       continue;
     }
-    const pr = prFromActivity(result.item, result.activity);
-    addSource(items, pr, "activity");
-    const item = items.get(prKey(pr));
-    item.authored ||= pr.author?.login?.toLowerCase() === username.toLowerCase();
-    item.latestReviewState = summarizeActivity(result.activity, username).latestReviewState;
-    item.reviewed ||= Boolean(item.latestReviewState);
-    items.set(item.id, item);
-    const id = prKey(pr);
+    const enriched = applyInboxActivity(items, result.item, result.activity, {
+      username,
+      teammates,
+      teams,
+    });
+    const id = enriched.id;
     const notificationAt = notificationTimes.get(id);
     if (notificationAt) {
       items.get(id).notificationUpdatedAt = new Date(notificationAt).toISOString();
@@ -1112,6 +1149,8 @@ export async function syncNotifications(now = new Date(), { dashboardService } =
   const touched = new Set();
   const warnings = await refreshNotificationItems(items, notifications.pullRequests, touched, {
     username,
+    teammates: saved.people,
+    teams: saved.teams,
   });
   const entries = [
     ...[...touched].map((id) => items.get(id)).filter(Boolean),
@@ -1124,6 +1163,10 @@ export async function syncNotifications(now = new Date(), { dashboardService } =
       for (const notification of notifications.other) {
         if (!notification.unread) setQueueItemDone(state, notification.id, true);
       }
+      state.sync.repositories = inboxRepositories(
+        entries.filter((item) => item.kind !== "notification"),
+        state.sync.repositories,
+      );
       state.sync.notificationLastModified = notifications.lastModified;
       state.sync.notificationPollIntervalSeconds = notifications.pollIntervalSeconds;
       state.sync.notificationsSyncedAt = startedAt;
@@ -1166,54 +1209,36 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
   const startedAt = now.toISOString();
   const [initialState, saved] = await Promise.all([readQueueState(), readSettings()]);
   const username = saved.username || initialState.sync.username || (await getDetectedUser());
-  const backfilled = new Set(initialState.sync.repositories);
   const previousSync = new Date(initialState.sync.lastSyncedAt).getTime();
   const since = new Date(
     (Number.isFinite(previousSync) ? previousSync : now.getTime() - day) - 5 * 60_000,
   ).toISOString();
-  const repositoryTasks = trackedRepositories.map(async (repository) => ({
-    repository,
-    historical: !backfilled.has(repository),
-    pullRequests: await listRepositoryPullRequests(repository, !backfilled.has(repository), since),
-  }));
-  const [notificationsResult, ...repositoryResults] = await Promise.allSettled([
-    getNotifications({
+  const warnings = [];
+  let notifications = null;
+  try {
+    notifications = await getNotifications({
       lastModified: initialState.sync.notificationLastModified,
       since,
-    }),
-    ...repositoryTasks,
-  ]);
+    });
+  } catch {
+    warnings.push("GitHub notifications could not be synchronized.");
+  }
 
   const items = new Map(trackedQueueItems(initialState).map((item) => [item.id, item]));
   const initialIds = new Set(Object.keys(initialState.items));
   const touched = new Set();
-  const warnings = [];
+  const pullRequestNotifications =
+    notifications && !notifications.notModified ? notifications.pullRequests : [];
+  warnings.push(
+    ...(await refreshNotificationItems(items, pullRequestNotifications, touched, {
+      username,
+      teammates: saved.people,
+      teams: saved.teams,
+      inspectAll: true,
+    })),
+  );
 
-  for (const result of repositoryResults) {
-    if (result.status === "rejected") {
-      warnings.push("One repository could not be synchronized.");
-      continue;
-    }
-    for (const pr of result.value.pullRequests) {
-      addSource(items, pr, "repository");
-      touched.add(prKey(pr));
-    }
-  }
-
-  let pullRequestNotifications = [];
-  if (notificationsResult.status === "fulfilled") {
-    pullRequestNotifications = notificationsResult.value.pullRequests;
-    warnings.push(
-      ...(await refreshNotificationItems(items, pullRequestNotifications, touched, {
-        username,
-      })),
-    );
-  } else {
-    warnings.push("GitHub notifications could not be synchronized.");
-  }
-
-  const notificationItems =
-    notificationsResult.status === "fulfilled" ? notificationsResult.value.other : [];
+  const notificationItems = notifications && !notifications.notModified ? notifications.other : [];
   const entries = [
     ...[...touched].map((id) => items.get(id)).filter(Boolean),
     ...notificationItems,
@@ -1225,26 +1250,16 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
     }
     applyAutomaticDone(
       state,
-      [
-        ...trackedQueueItems(state).filter((item) => trackedRepositories.includes(item.repository)),
-        ...trackedQueueNotifications(state),
-      ],
+      [...trackedQueueItems(state), ...trackedQueueNotifications(state)],
       now.getTime(),
     );
-    for (const result of repositoryResults) {
-      if (result.status === "fulfilled" && result.value.historical) {
-        backfilled.add(result.value.repository);
+    state.sync.repositories = inboxRepositories(trackedQueueItems(state));
+    if (notifications) {
+      if (!notifications.notModified) {
+        state.sync.notificationLastModified = notifications.lastModified;
+        state.sync.notificationsSyncedAt = startedAt;
       }
-    }
-    state.sync.repositories = [...backfilled].filter((repository) =>
-      trackedRepositories.includes(repository),
-    );
-    if (notificationsResult.status === "fulfilled") {
-      state.sync.notificationLastModified = notificationsResult.value.lastModified;
-      state.sync.notificationPollIntervalSeconds = notificationsResult.value.pollIntervalSeconds;
-      state.sync.notificationsSyncedAt = startedAt;
-    }
-    if (repositoryResults.every((result) => result.status === "fulfilled")) {
+      state.sync.notificationPollIntervalSeconds = notifications.pollIntervalSeconds;
       state.sync.lastSyncedAt = startedAt;
     }
     state.sync.username = username;
@@ -1261,36 +1276,25 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
   });
 
   const queueState = await readQueueState();
-  const [conversationCache, inbox] = await Promise.all([
+  const inbox = inboxFromQueue(queueState);
+  const [conversationCache, automaticAnalysis] = await Promise.all([
     cacheReviewConversations(activeQueueItems(queueState)),
-    collectInbox({
-      username,
-      teammates: saved.people,
-      teams: saved.teams,
-      queueState,
-      notificationData:
-        notificationsResult.status === "fulfilled" ? notificationsResult.value : undefined,
-    }).then(attachQueueState),
-  ]);
-  const automaticAnalysis =
     dashboardService && saved.autoQueue
-      ? await automaticallyQueueNewAnalyses(inbox.items, dashboardService, {
+      ? automaticallyQueueNewAnalyses(inbox.items, dashboardService, {
           model: saved.defaultAnalysisModel,
         })
-      : { runs: [], warnings: [] };
+      : { runs: [], warnings: [] },
+  ]);
   return {
     ...summary,
     active: inbox.items.filter((item) => !item.done).length,
     autoQueued: automaticAnalysis.runs.length,
     pollIntervalSeconds:
-      notificationsResult.status === "fulfilled"
-        ? notificationsResult.value.pollIntervalSeconds
-        : initialState.sync.notificationPollIntervalSeconds,
+      notifications?.pollIntervalSeconds ?? initialState.sync.notificationPollIntervalSeconds,
     warnings: [
       ...new Set([
         ...summary.warnings,
         ...conversationCache.warnings,
-        ...inbox.warnings,
         ...automaticAnalysis.warnings,
       ]),
     ],
@@ -1339,189 +1343,6 @@ function prFromActivity(item, activity) {
     changedFiles: activity.changedFiles,
     headSha: activity.headRefOid,
     labels: activity.labels?.nodes ?? [],
-  };
-}
-
-export async function collectInbox({
-  username,
-  teammates,
-  teams,
-  repositories = trackedRepositories,
-  queueState = { items: {} },
-  notificationData,
-}) {
-  const items = new Map(
-    trackedQueueItems(queueState).map((item) => [
-      item.id,
-      { ...item, signals: [], notification: null },
-    ]),
-  );
-  const warnings = [];
-  let notifications = [];
-  let pullRequestNotifications = [];
-  let notificationSummary = { total: 0, pullRequests: 0, nonPullRequests: 0 };
-  const tasks = [
-    {
-      kind: "direct-review",
-      args: [`user-review-requested:${username}`],
-    },
-    ...teammates
-      .filter((person) => person.toLowerCase() !== username.toLowerCase())
-      .map((person) => ({
-        kind: "teammate-pr",
-        detail: person,
-        args: ["--author", person],
-      })),
-    ...teams.flatMap((team) => [
-      {
-        kind: "team-review",
-        detail: team,
-        args: [`team-review-requested:${team}`],
-      },
-    ]),
-  ];
-
-  const [notificationsResult, authoredResult, reviewedResult, ...taskResults] =
-    await Promise.allSettled([
-      notificationData ? Promise.resolve(notificationData) : getNotifications(),
-      searchPrs(["--author", username], repositories),
-      searchPrs(["--reviewed-by", username], repositories),
-      ...tasks.map(async (task) => ({
-        task,
-        prs: await searchPrs(task.args, repositories),
-      })),
-    ]);
-
-  if (notificationsResult.status === "fulfilled") {
-    const result = notificationsResult.value;
-    notifications = result.other.filter((item) => item.unread);
-    pullRequestNotifications = result.pullRequests;
-    seedNotificationPullRequests(items, pullRequestNotifications, repositories);
-    notificationSummary = {
-      total: result.total,
-      pullRequests: result.pullRequests.length,
-      nonPullRequests: notifications.length,
-    };
-  } else {
-    warnings.push("GitHub notifications could not be loaded.");
-  }
-
-  if (authoredResult.status === "fulfilled") {
-    for (const pr of authoredResult.value) addSource(items, pr, "authored");
-  } else {
-    warnings.push("Your pull requests could not be loaded.");
-  }
-
-  for (const result of taskResults) {
-    if (
-      result.status === "fulfilled" &&
-      ["direct-review", "team-review"].includes(result.value.task.kind)
-    ) {
-      const { task, prs } = result.value;
-      addReviewRequests(items, prs, task.kind, task.detail);
-    }
-  }
-
-  if (reviewedResult.status === "fulfilled") {
-    for (const pr of trackedPrs(items, reviewedResult.value)) {
-      addSource(items, pr, "reviewed");
-    }
-  } else {
-    warnings.push("Your reviewed pull requests could not be loaded.");
-  }
-
-  for (const result of taskResults) {
-    if (result.status === "rejected") {
-      warnings.push("One GitHub search could not be loaded.");
-      continue;
-    }
-    const { task, prs } = result.value;
-    if (["direct-review", "team-review"].includes(task.kind)) continue;
-    for (const pr of trackedPrs(items, prs)) {
-      addSignal(items, pr, task.kind, task.detail);
-    }
-  }
-
-  // ponytail: inspect the newest 60 plus any tracked PR with a newer notification.
-  const candidates = activityCandidates(items, pullRequestNotifications);
-  const inspected = await mapLimited(candidates, 5, async (item) => {
-    try {
-      return { item, activity: await getPrActivity(item) };
-    } catch {
-      return { failed: true };
-    }
-  });
-
-  let failedInspections = 0;
-  for (const result of inspected) {
-    if (result.failed) {
-      failedInspections++;
-      continue;
-    }
-
-    const pr = prFromActivity(result.item, result.activity);
-    addSource(items, pr, "activity");
-    const summary = summarizeActivity(result.activity, username, teammates);
-    const item = items.get(prKey(pr));
-    item.authored ||= pr.author?.login?.toLowerCase() === username.toLowerCase();
-    item.latestReviewState = summary.latestReviewState;
-    item.reviewed ||= Boolean(summary.latestReviewState);
-    items.set(item.id, item);
-
-    if (summary.postMergeComment) {
-      addSignal(
-        items,
-        pr,
-        "post-merge-comment",
-        summary.postMergeComment.author?.login ?? "",
-        summary.postMergeComment.url ?? pr.url,
-      );
-    } else if (summary.newestReply) {
-      addSignal(
-        items,
-        pr,
-        "review-reply",
-        summary.newestReply.author?.login ?? "",
-        summary.newestReply.url ?? pr.url,
-      );
-    }
-    if (summary.hasNewCommits && pr.state !== "MERGED") {
-      addSignal(items, pr, "new-commits");
-    }
-
-    const current = items.get(prKey(pr));
-    if (
-      summary.newComment &&
-      !summary.postMergeComment &&
-      !current.signals.some((signal) => ["review-reply", "direct-mention"].includes(signal.kind))
-    ) {
-      addSignal(
-        items,
-        pr,
-        "new-comments",
-        summary.newComment.author?.login ?? "",
-        summary.newComment.url ?? pr.url,
-      );
-    }
-
-    const enriched = items.get(prKey(pr));
-    if (
-      summary.coveringTeammate &&
-      enriched.signals.some((signal) => signal.kind === "team-review") &&
-      !enriched.signals.some((signal) => signal.kind === "teammate-pr")
-    ) {
-      addSignal(items, pr, "team-covered", summary.coveringTeammate);
-    }
-  }
-  if (failedInspections) warnings.push("Some pull request activity could not be inspected.");
-
-  return {
-    username,
-    fetchedAt: new Date().toISOString(),
-    items: rankItems(items),
-    notifications,
-    notificationSummary,
-    warnings: [...new Set(warnings)],
   };
 }
 

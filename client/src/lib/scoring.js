@@ -6,6 +6,7 @@ export const SCORING_LIFECYCLE_BARS = Object.freeze([
   { id: "mine", label: "My pull request", score: LIFECYCLE_SCORES.mine },
   { id: "approved", label: "Approved", score: LIFECYCLE_SCORES.approved },
   { id: "merged", label: "Merged", score: LIFECYCLE_SCORES.merged },
+  { id: "closed", label: "Closed", score: LIFECYCLE_SCORES.closed },
   { id: "draft", label: "Draft", score: LIFECYCLE_SCORES.draft },
 ]);
 

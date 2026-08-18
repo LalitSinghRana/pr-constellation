@@ -34,6 +34,7 @@ export function matchesPrFilter(item, filter) {
 
 export function myPullRequestStatus(item) {
   if (item.state === "MERGED") return "merged";
+  if (item.state === "CLOSED") return "closed";
   if (item.reviewDecision === "APPROVED") return "approved";
   return item.draft ? "draft" : "opened";
 }
