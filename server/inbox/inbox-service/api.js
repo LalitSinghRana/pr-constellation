@@ -260,27 +260,13 @@ export function createInboxApi({
 
     if (url.pathname === "/api/inbox/sync" && request.method === "POST") {
       try {
-        sendJson(response, 200, await scheduler.runFullSync());
+        sendJson(response, 200, await scheduler.runSync());
       } catch (error) {
         sendJson(response, 502, {
           error:
             error?.code === "ENOENT"
               ? "GitHub CLI is not installed."
               : "GitHub could not be reached. Run `gh auth status` and try again.",
-        });
-      }
-      return true;
-    }
-
-    if (url.pathname === "/api/inbox/notifications/sync" && request.method === "POST") {
-      try {
-        sendJson(response, 200, await scheduler.runNotificationSync());
-      } catch (error) {
-        sendJson(response, 502, {
-          error:
-            error?.code === "ENOENT"
-              ? "GitHub CLI is not installed."
-              : "GitHub notifications could not be refreshed.",
         });
       }
       return true;

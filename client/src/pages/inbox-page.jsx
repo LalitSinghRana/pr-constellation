@@ -17,6 +17,7 @@ import {
   EMPTY_SETTINGS,
   groupByUpdatedDate,
   inboxProjectTabs,
+  isOpenAuthoredPullRequest,
   matchesPrFilter,
 } from "@/lib/queue.js";
 
@@ -157,10 +158,10 @@ export function InboxPage() {
       reviewed: openPrs.filter((item) => !item.authored && item.lifecycle === "reviewed").length,
       new: openPrs.filter((item) => !item.authored && item.lifecycle === "new").length,
       approved: openPrs.filter((item) => !item.authored && item.lifecycle === "approved").length,
-      merged: openPrs.filter((item) => !item.authored && item.lifecycle === "merged").length,
-      closed: openPrs.filter((item) => !item.authored && item.lifecycle === "closed").length,
+      merged: openPrs.filter((item) => item.lifecycle === "merged").length,
+      closed: openPrs.filter((item) => item.lifecycle === "closed").length,
       draft: openPrs.filter((item) => !item.authored && item.lifecycle === "draft").length,
-      mine: openPrs.filter((item) => item.authored).length,
+      mine: openPrs.filter((item) => isOpenAuthoredPullRequest(item)).length,
       other: openPrs.filter((item) => item.lifecycle === "other" && !item.authored).length,
       nonpr: openNotifications.length,
     };

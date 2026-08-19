@@ -6,7 +6,6 @@ import {
   handleApiRequest,
   rejectUntrustedApiMutation,
   rejectUntrustedRequestHost,
-  syncNotifications,
   syncQueue,
 } from "../inbox/inbox-service.js";
 import { createSyncScheduler } from "../inbox/sync-scheduler.js";
@@ -69,12 +68,11 @@ export async function startServer({
       )
     : null;
   const scheduler = createSyncScheduler({
-    fullSync: () => syncQueue(new Date(), { dashboardService }),
-    notificationSync: () => syncNotifications(new Date(), { dashboardService }),
     onUpdate: ({ result }) => {
       eventHub.publish("inbox", result);
       if (result?.autoQueued) eventHub.publish("analysis", { queued: result.autoQueued });
     },
+    sync: () => syncQueue(new Date(), { dashboardService }),
   });
   let resourcesClosePromise;
   const closeResources = () => {

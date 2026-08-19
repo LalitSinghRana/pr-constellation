@@ -473,10 +473,6 @@ test("inbox notifications seed any repository including watch-subscribed pull re
     };
     seedNotificationPullRequests(items, [notification]);
     const item = items.get(`other-org/other-repo#${number}`);
-    if (reason === "author") {
-      assert.equal(item, undefined, reason);
-      continue;
-    }
     assert.equal(item != null, true, reason);
     assert.equal(item.authored, false, reason);
   }
@@ -807,6 +803,49 @@ test("inbox membership keeps authored pull requests that are not in GitHub inbox
   setQueueItemDone(state, "example/repo#42", true);
   applyInboxMembership(state, [], ["example/repo#42"]);
   assert.equal(applyQueueState(entries, state).find((item) => item.number === 42).done, true);
+});
+
+test("inbox membership archives authored pull requests that are no longer open", () => {
+  const items = new Map();
+  addSource(items, { ...pr, state: "MERGED" }, "authored");
+  const entries = rankItems(items);
+  const state = { version: 2, sync: {}, items: {} };
+  rememberQueueItems(state, entries, "2026-07-31T12:00:00Z");
+
+  applyInboxMembership(state, [], []);
+  assert.equal(applyQueueState(entries, state)[0].done, true);
+});
+
+test("an unchanged inbox still drops authored pull requests GitHub no longer lists as open", () => {
+  const items = new Map();
+  addSource(items, pr, "authored");
+  addSource(
+    items,
+    {
+      ...pr,
+      number: 99,
+      url: "https://github.com/example/repo/pull/99",
+    },
+    "authored",
+  );
+  addSource(
+    items,
+    {
+      ...pr,
+      number: 43,
+      url: "https://github.com/example/repo/pull/43",
+    },
+    "repository",
+  );
+  const entries = rankItems(items);
+  const state = { version: 2, sync: {}, items: {} };
+  rememberQueueItems(state, entries, "2026-07-31T12:00:00Z");
+
+  applyInboxMembership(state, null, ["example/repo#42"]);
+  const next = applyQueueState(entries, state);
+  assert.equal(next.find((item) => item.number === 42).done, false);
+  assert.equal(next.find((item) => item.number === 99).done, true);
+  assert.equal(next.find((item) => item.number === 43).done, false);
 });
 
 test("authored pull requests stay in My PRs and look read without new notifications", () => {

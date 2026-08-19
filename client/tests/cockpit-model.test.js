@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { analysisState, analysisTimeline, formatDuration } from "../src/lib/analysis.js";
-import { groupByUpdatedDate, inboxProjectTabs, myPullRequestStatus } from "../src/lib/queue.js";
+import {
+  groupByUpdatedDate,
+  inboxProjectTabs,
+  matchesPrFilter,
+  myPullRequestStatus,
+} from "../src/lib/queue.js";
 
 test("analysis entries have one visible section", () => {
   assert.equal(analysisState({ runningRun: {}, queuedRuns: [{}], latestRun: null }), "running");
@@ -142,10 +147,48 @@ test("repository tab badges count the current lifecycle filter", () => {
   assert.deepEqual(inboxProjectTabs(items, "mine"), [{ repository: "owner/alpha", count: 1 }]);
   assert.deepEqual(
     inboxProjectTabs(
+      [
+        {
+          repository: "owner/alpha",
+          authored: true,
+          state: "MERGED",
+          lifecycle: "merged",
+          done: false,
+        },
+        {
+          repository: "owner/alpha",
+          authored: true,
+          state: "CLOSED",
+          lifecycle: "closed",
+          done: false,
+        },
+      ],
+      "mine",
+    ),
+    [],
+  );
+  assert.deepEqual(
+    inboxProjectTabs(
       [{ repository: "owner/mine", authored: true, lifecycle: "mine", done: false }],
       "new",
     ),
     [],
+  );
+});
+
+test("my pull requests filter only currently open authored pull requests", () => {
+  assert.equal(matchesPrFilter({ authored: true, state: "OPEN", lifecycle: "mine" }, "mine"), true);
+  assert.equal(
+    matchesPrFilter({ authored: true, state: "MERGED", lifecycle: "merged" }, "mine"),
+    false,
+  );
+  assert.equal(
+    matchesPrFilter({ authored: true, state: "CLOSED", lifecycle: "closed" }, "mine"),
+    false,
+  );
+  assert.equal(
+    matchesPrFilter({ authored: true, state: "MERGED", lifecycle: "merged" }, "merged"),
+    true,
   );
 });
 

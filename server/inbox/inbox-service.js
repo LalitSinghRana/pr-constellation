@@ -6,6 +6,7 @@ import {
 } from "../../shared/analysis-models.js";
 import {
   ACTIVITY_SIGNAL_KINDS,
+  isOpenAuthoredPullRequest,
   LIFECYCLE_SCORES,
   lifecycleForQueueItem,
   SIGNAL_LABELS,
@@ -225,8 +226,6 @@ function normalizeQueueState(value = {}) {
     version: 2,
     sync: {
       lastSyncedAt: typeof sync.lastSyncedAt === "string" ? sync.lastSyncedAt : "",
-      notificationLastModified:
-        typeof sync.notificationLastModified === "string" ? sync.notificationLastModified : "",
       notificationPollIntervalSeconds:
         Number.isInteger(sync.notificationPollIntervalSeconds) &&
         sync.notificationPollIntervalSeconds > 0
@@ -536,16 +535,20 @@ export function applyInboxMembership(state, inboxIds, authoredOpenIds = []) {
       continue;
     }
     if (authored.has(id)) continue;
-    if (present && record?.version && !done) setQueueItemDone(state, id, true);
+    if (present && record?.version && !done) {
+      setQueueItemDone(state, id, true);
+      continue;
+    }
+    if (present == null && record?.version && !done && isOpenAuthoredPullRequest(record.item)) {
+      setQueueItemDone(state, id, true);
+    }
   }
   return state;
 }
 
 export function authoredPullRequestNotifications(pullRequestNotifications = [], authoredIds = []) {
   const authored = authoredIds instanceof Set ? authoredIds : new Set(authoredIds);
-  return pullRequestNotifications.filter(({ thread, pr }) =>
-    isMyPrNotification(thread, pr, authored),
-  );
+  return pullRequestNotifications.filter(({ pr }) => isMyPrNotification(pr, authored));
 }
 
 export function stampAuthoredNotificationTimes(
@@ -591,7 +594,9 @@ export function applyAuthoredReadState(state, authoredOpenIds, authoredNotificat
 }
 
 function authoredOpenIdsFromItems(items) {
-  return new Set([...items.values()].filter((item) => item?.authored).map((item) => item.id));
+  return new Set(
+    [...items.values()].filter((item) => isOpenAuthoredPullRequest(item)).map((item) => item.id),
+  );
 }
 
 function activeInboxEntries(state) {
@@ -616,18 +621,15 @@ function writeInboxSnapshot(
   },
 ) {
   rememberQueueItems(state, entries, startedAt);
-  if (inboxIds || authoredOpenIds?.size) {
-    applyInboxMembership(state, inboxIds, authoredOpenIds);
+  if (inboxIds || authoredOpenIds) {
+    applyInboxMembership(state, inboxIds, authoredOpenIds ?? []);
   }
-  if (authoredOpenIds?.size) {
+  if (authoredOpenIds) {
     applyAuthoredReadState(state, authoredOpenIds, authoredNotificationIds);
   }
   state.sync.repositories = inboxRepositories(activeInboxEntries(state));
   if (notifications) {
-    if (!notifications.notModified) {
-      state.sync.notificationLastModified = notifications.lastModified;
-      state.sync.notificationsSyncedAt = startedAt;
-    }
+    state.sync.notificationsSyncedAt = startedAt;
     state.sync.notificationPollIntervalSeconds = notifications.pollIntervalSeconds;
     state.sync.lastSyncedAt = startedAt;
   }
@@ -934,13 +936,6 @@ function conversationCoordinates(item) {
   return owner && repo && rest.length === 0 ? { number: item.number, owner, repo } : null;
 }
 
-function activeQueueItems(state) {
-  return Object.entries(state.items)
-    .filter(([, record]) => record?.version && record.doneVersion !== record.version)
-    .map(([id, record]) => queueItemFromRecord(id, record))
-    .filter((item) => item && item.kind !== "notification");
-}
-
 export function prFromNotification(thread) {
   if (thread.subject?.type !== "PullRequest" || !thread.subject.url) return null;
 
@@ -998,16 +993,13 @@ export function otherNotificationFromThread(thread) {
   };
 }
 
-async function getNotifications({ lastModified } = {}) {
-  const result = await getGitHubNotifications({ lastModified });
+async function getNotifications() {
+  const result = await getGitHubNotifications();
   const threads = result.threads;
   const pullRequests = threads
     .map((thread) => ({ thread, pr: prFromNotification(thread) }))
     .filter(({ pr }) => pr);
   return {
-    lastModified: result.lastModified,
-    membership: result.membership,
-    notModified: result.notModified,
     pollIntervalSeconds: result.pollIntervalSeconds,
     total: threads.length,
     pullRequests,
@@ -1017,7 +1009,6 @@ async function getNotifications({ lastModified } = {}) {
 
 export function seedNotificationPullRequests(items, pullRequestNotifications) {
   for (const { thread, pr } of pullRequestNotifications) {
-    if (isMyPrNotification(thread, pr)) continue;
     addSource(items, pr, "notification", thread.reason);
     if (thread.reason === "mention") addSignal(items, pr, "direct-mention");
     if (thread.reason === "team_mention") addSignal(items, pr, "team-mention");
@@ -1035,13 +1026,10 @@ export function excludeAuthoredPullRequestNotifications(
   authoredIds = [],
 ) {
   const authored = authoredIds instanceof Set ? authoredIds : new Set(authoredIds);
-  return pullRequestNotifications.filter(
-    ({ thread, pr }) => !isMyPrNotification(thread, pr, authored),
-  );
+  return pullRequestNotifications.filter(({ pr }) => !isMyPrNotification(pr, authored));
 }
 
-function isMyPrNotification(thread, pr, authoredIds = new Set()) {
-  if (thread?.reason === "author") return true;
+function isMyPrNotification(pr, authoredIds = new Set()) {
   return Boolean(pr && authoredIds.has(prKey(pr)));
 }
 
@@ -1194,11 +1182,11 @@ export async function refreshNotificationItems(
   pullRequestNotifications,
   touched,
   {
+    authoredOpenIds = null,
     getActivity = getPrActivity,
     username = "",
     teammates = [],
     teams = [],
-    inspectAll = false,
   } = {},
 ) {
   const before = new Set(items.keys());
@@ -1217,9 +1205,22 @@ export async function refreshNotificationItems(
   }
 
   const inboxPrIds = new Set(pullRequestNotifications.map(({ pr }) => prKey(pr)));
-  const candidates = inspectAll
-    ? [...items.values()].filter((item) => inboxPrIds.size === 0 || inboxPrIds.has(item.id))
-    : activityCandidates(items, pullRequestNotifications, 0);
+  const candidates = activityCandidates(items, pullRequestNotifications, 0);
+  if (authoredOpenIds) {
+    const seen = new Set(candidates.map((item) => item.id));
+    for (const item of items.values()) {
+      if (
+        seen.has(item.id) ||
+        !inboxPrIds.has(item.id) ||
+        !isOpenAuthoredPullRequest(item) ||
+        authoredOpenIds.has(item.id)
+      ) {
+        continue;
+      }
+      candidates.push(item);
+      seen.add(item.id);
+    }
+  }
   const warnings = [];
   const inspected = await mapLimited(candidates, 5, async (candidate) => {
     try {
@@ -1248,106 +1249,6 @@ export async function refreshNotificationItems(
   return warnings;
 }
 
-export async function syncNotifications(now = new Date(), { dashboardService } = {}) {
-  const startedAt = now.toISOString();
-  const [initialState, saved] = await Promise.all([readQueueState(), readSettings()]);
-  const username = saved.username || initialState.sync.username || (await getDetectedUser());
-  const notifications = await getNotifications({
-    lastModified: initialState.sync.notificationLastModified,
-  });
-  if (notifications.notModified) {
-    const automaticAnalysis =
-      dashboardService && saved.autoQueue
-        ? await automaticallyQueueNewAnalyses(
-            inboxFromQueue(initialState).items,
-            dashboardService,
-            settingsAnalysisRunOptions(saved),
-          )
-        : { runs: [], warnings: [] };
-    return {
-      added: 0,
-      autoQueued: automaticAnalysis.runs.length,
-      fetched: 0,
-      notModified: true,
-      pollIntervalSeconds: notifications.pollIntervalSeconds,
-      tracked: Object.keys(initialState.items).length,
-      warnings: automaticAnalysis.warnings,
-    };
-  }
-  const items = new Map(trackedQueueItems(initialState).map((item) => [item.id, item]));
-  const authoredOpenIds = authoredOpenIdsFromItems(items);
-  const authoredNotificationIds = stampAuthoredNotificationTimes(
-    items,
-    notifications.pullRequests,
-    authoredOpenIds,
-  );
-  const lifecyclePrNotifications = excludeAuthoredPullRequestNotifications(
-    notifications.pullRequests,
-    authoredOpenIds,
-  );
-  const initialIds = new Set(Object.keys(initialState.items));
-  const touched = new Set();
-  const warnings = [];
-  if (notifications.membership === "unread") {
-    warnings.push("GitHub inbox membership used unread notifications only.");
-  }
-  warnings.push(
-    ...(await refreshNotificationItems(items, lifecyclePrNotifications, touched, {
-      username,
-      teammates: saved.people,
-      teams: saved.teams,
-    })),
-  );
-  const entries = [
-    ...[...touched].map((id) => items.get(id)).filter(Boolean),
-    ...[...authoredNotificationIds].map((id) => items.get(id)).filter(Boolean),
-    ...notifications.other,
-  ];
-  const inboxIds = inboxIdsFromNotifications(lifecyclePrNotifications, notifications.other);
-
-  const summary = await mutateQueueState((state) => {
-    rememberQueueItems(state, entries, startedAt);
-    applyInboxMembership(state, inboxIds, authoredOpenIds);
-    applyAuthoredReadState(state, authoredOpenIds, authoredNotificationIds);
-    state.sync.repositories = inboxRepositories(activeInboxEntries(state));
-    state.sync.notificationLastModified = notifications.lastModified;
-    state.sync.notificationPollIntervalSeconds = notifications.pollIntervalSeconds;
-    state.sync.notificationsSyncedAt = startedAt;
-    state.sync.username = username;
-    const added = entries.filter((item) => !initialIds.has(item.id)).length;
-    return {
-      fetched: entries.length,
-      added,
-      tracked: Object.keys(state.items).length,
-      warnings: [...new Set(warnings)],
-    };
-  });
-  const queueState = await readQueueState();
-  const [conversationCache, automaticAnalysis] = await Promise.all([
-    cacheReviewConversations(entries),
-    dashboardService && saved.autoQueue
-      ? automaticallyQueueNewAnalyses(
-          inboxFromQueue(queueState).items,
-          dashboardService,
-          settingsAnalysisRunOptions(saved),
-        )
-      : { runs: [], warnings: [] },
-  ]);
-  return {
-    ...summary,
-    autoQueued: automaticAnalysis.runs.length,
-    notModified: false,
-    pollIntervalSeconds: notifications.pollIntervalSeconds,
-    warnings: [
-      ...new Set([
-        ...summary.warnings,
-        ...conversationCache.warnings,
-        ...automaticAnalysis.warnings,
-      ]),
-    ],
-  };
-}
-
 export async function syncQueue(now = new Date(), { dashboardService } = {}) {
   const startedAt = now.toISOString();
   const [initialState, saved] = await Promise.all([readQueueState(), readSettings()]);
@@ -1358,9 +1259,6 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
     notifications = await getNotifications();
   } catch {
     warnings.push("GitHub notifications could not be synchronized.");
-  }
-  if (notifications?.membership === "unread") {
-    warnings.push("GitHub inbox membership used unread notifications only.");
   }
 
   let authoredPullRequests = null;
@@ -1373,9 +1271,8 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
   const items = new Map(trackedQueueItems(initialState).map((item) => [item.id, item]));
   const initialIds = new Set(Object.keys(initialState.items));
   const touched = new Set();
-  const pullRequestNotifications =
-    notifications && !notifications.notModified ? notifications.pullRequests : [];
-  const notificationItems = notifications && !notifications.notModified ? notifications.other : [];
+  const pullRequestNotifications = notifications?.pullRequests ?? [];
+  const notificationItems = notifications?.other ?? [];
   const authoredOpenIds = authoredPullRequests
     ? new Set(authoredPullRequests.map((pr) => prKey(pr)))
     : authoredOpenIdsFromItems(items);
@@ -1383,16 +1280,14 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
     pullRequestNotifications,
     authoredOpenIds,
   );
-  const inboxIds =
-    notifications && !notifications.notModified
-      ? inboxIdsFromNotifications(lifecyclePrNotifications, notificationItems)
-      : null;
+  const inboxIds = notifications
+    ? inboxIdsFromNotifications(lifecyclePrNotifications, notificationItems)
+    : null;
 
   if (authoredPullRequests) seedAuthoredPullRequests(items, authoredPullRequests);
-  const authoredNotificationIds =
-    notifications && !notifications.notModified
-      ? stampAuthoredNotificationTimes(items, pullRequestNotifications, authoredOpenIds)
-      : null;
+  const authoredNotificationIds = notifications
+    ? stampAuthoredNotificationTimes(items, pullRequestNotifications, authoredOpenIds)
+    : null;
 
   const shouldWriteMembership = Boolean(inboxIds || authoredPullRequests);
   if (shouldWriteMembership) {
@@ -1417,14 +1312,16 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
     );
   }
 
-  warnings.push(
-    ...(await refreshNotificationItems(items, lifecyclePrNotifications, touched, {
-      username,
-      teammates: saved.people,
-      teams: saved.teams,
-      inspectAll: lifecyclePrNotifications.length > 0,
-    })),
-  );
+  if (notifications) {
+    warnings.push(
+      ...(await refreshNotificationItems(items, lifecyclePrNotifications, touched, {
+        authoredOpenIds: authoredPullRequests ? authoredOpenIds : null,
+        username,
+        teammates: saved.people,
+        teams: saved.teams,
+      })),
+    );
+  }
 
   const entries = [
     ...[...touched].map((id) => items.get(id)).filter(Boolean),
@@ -1448,7 +1345,7 @@ export async function syncQueue(now = new Date(), { dashboardService } = {}) {
   const queueState = await readQueueState();
   const inbox = inboxFromQueue(queueState);
   const [conversationCache, automaticAnalysis] = await Promise.all([
-    cacheReviewConversations(activeQueueItems(queueState)),
+    cacheReviewConversations(entries),
     dashboardService && saved.autoQueue
       ? automaticallyQueueNewAnalyses(
           inbox.items,

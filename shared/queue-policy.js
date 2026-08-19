@@ -65,3 +65,7 @@ export function lifecycleForQueueItem(item) {
   }
   return "other";
 }
+
+export function isOpenAuthoredPullRequest(item) {
+  return Boolean(item?.authored) && item.state !== "MERGED" && item.state !== "CLOSED";
+}

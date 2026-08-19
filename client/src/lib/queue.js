@@ -3,7 +3,10 @@ import {
   DEFAULT_ANALYSIS_PROVIDER,
   DEFAULT_ANALYSIS_REASONING_EFFORT,
 } from "../../../shared/analysis-models.js";
-import { ACTIVITY_SIGNAL_KINDS as ACTIVITY_SIGNAL_KIND_VALUES } from "../../../shared/queue-policy.js";
+import {
+  ACTIVITY_SIGNAL_KINDS as ACTIVITY_SIGNAL_KIND_VALUES,
+  isOpenAuthoredPullRequest,
+} from "../../../shared/queue-policy.js";
 
 export const EMPTY_SETTINGS = {
   username: "",
@@ -17,6 +20,7 @@ export const EMPTY_SETTINGS = {
 };
 
 export const ACTIVITY_SIGNAL_KINDS = new Set(ACTIVITY_SIGNAL_KIND_VALUES);
+export { isOpenAuthoredPullRequest };
 
 export const NOTIFICATION_LABELS = {
   assign: "Assigned to you",
@@ -35,8 +39,8 @@ export const NOTIFICATION_LABELS = {
 
 export function matchesPrFilter(item, filter) {
   if (filter === "done") return true;
-  if (filter === "mine") return item.authored;
-  if (item.authored) return false;
+  if (filter === "mine") return isOpenAuthoredPullRequest(item);
+  if (isOpenAuthoredPullRequest(item)) return false;
   return item.lifecycle === filter;
 }
 

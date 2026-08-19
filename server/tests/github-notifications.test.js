@@ -4,81 +4,21 @@ import {
   createGitHubAuthoredPullRequestsClient,
   createGitHubNotificationsClient,
   createMarkGitHubNotificationDone,
-  inboxKeyFromGraphqlNode,
   notificationSubjectKey,
   prFromAuthoredPullRequest,
   retainInboxNotificationThreads,
-  threadFromGraphqlNode,
 } from "../inbox/github-notifications.js";
 
-test("GraphQL inbox threads are the notification source of truth", async () => {
+test("sync lists the REST GitHub inbox", async () => {
   const requests = [];
   const getNotifications = createGitHubNotificationsClient({
-    fetchInboxThreads: async () => {
-      requests.push("graphql");
-      return {
-        threads: [
-          threadFromGraphqlNode({
-            databaseId: 1,
-            isArchived: false,
-            isUnread: true,
-            lastUpdatedAt: "2026-08-19T00:00:00Z",
-            reason: "REVIEW_REQUESTED",
-            subject: {
-              __typename: "PullRequest",
-              repository: { nameWithOwner: "owner/repo" },
-              title: "Inbox pull request",
-              url: "https://github.com/owner/repo/pull/23",
-            },
-          }),
-        ],
-      };
-    },
-    fetchImpl: async () => {
-      requests.push("rest");
-      return response([{ id: "rest-should-not-run" }]);
-    },
-    getToken: async () => "secret",
-  });
-
-  const result = await getNotifications();
-  assert.equal(result.membership, "inbox");
-  assert.deepEqual(
-    result.threads.map(({ id, reason, subject }) => ({ id, reason, url: subject.url })),
-    [{ id: "1", reason: "review_requested", url: "https://github.com/owner/repo/pull/23" }],
-  );
-  assert.deepEqual(requests, ["graphql"]);
-});
-
-test("archived GraphQL inbox threads are dropped", () => {
-  assert.equal(
-    threadFromGraphqlNode({
-      isArchived: true,
-      subject: { url: "https://github.com/owner/repo/pull/24" },
-    }),
-    null,
-  );
-  assert.equal(
-    inboxKeyFromGraphqlNode({
-      isArchived: false,
-      subject: { url: "https://github.com/owner/repo/pull/23" },
-    }),
-    "owner/repo#pull:23",
-  );
-});
-
-test("sync falls back to unread REST threads when GraphQL inbox fails", async () => {
-  const requests = [];
-  const getNotifications = createGitHubNotificationsClient({
-    fetchInboxThreads: async () => {
-      throw new Error("GraphQL unavailable");
-    },
     fetchImpl: async (url, options) => {
       requests.push({ url, options });
       return response([
         {
           id: "1",
           unread: true,
+          reason: "review_requested",
           subject: {
             type: "PullRequest",
             url: "https://api.github.com/repos/owner/repo/pulls/1",
@@ -86,7 +26,8 @@ test("sync falls back to unread REST threads when GraphQL inbox fails", async ()
         },
         {
           id: "2",
-          unread: false,
+          unread: true,
+          reason: "review_requested",
           subject: {
             type: "PullRequest",
             url: "https://api.github.com/repos/owner/repo/pulls/2",
@@ -98,30 +39,12 @@ test("sync falls back to unread REST threads when GraphQL inbox fails", async ()
   });
 
   const result = await getNotifications();
-  assert.equal(result.membership, "unread");
   assert.deepEqual(
     result.threads.map(({ id }) => id),
-    ["1"],
+    ["1", "2"],
   );
   assert.equal(new URL(requests[0].url).searchParams.get("all"), "false");
-});
-
-test("GitHub notification polling returns a 304 without reading a body", async () => {
-  const getNotifications = createGitHubNotificationsClient({
-    fetchInboxThreads: async () => {
-      throw new Error("GraphQL unavailable");
-    },
-    fetchImpl: async () => response(null, { "x-poll-interval": "120" }, 304),
-    getToken: async () => "secret",
-  });
-
-  assert.deepEqual(await getNotifications({ lastModified: "cursor" }), {
-    lastModified: "cursor",
-    membership: "unread",
-    notModified: true,
-    pollIntervalSeconds: 120,
-    threads: [],
-  });
+  assert.equal(requests[0].options.headers["If-Modified-Since"], undefined);
 });
 
 test("authored pull requests come from a viewer GraphQL query", async () => {
@@ -220,7 +143,6 @@ function response(body, headers = {}, status = 200) {
     ok: status >= 200 && status < 300,
     status,
     async json() {
-      assert.notEqual(body, null, "304 response body must not be read");
       return body;
     },
   };

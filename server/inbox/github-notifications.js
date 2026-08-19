@@ -7,56 +7,6 @@ const maximumPages = 20;
 const githubApiVersion = "2026-03-10";
 const graphqlPath = "/graphql";
 
-const inboxThreadsQuery = `query InboxNotificationThreads($first: Int!, $after: String) {
-  viewer {
-    notificationThreads(first: $first, after: $after) {
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
-      nodes {
-        databaseId
-        isArchived
-        isUnread
-        lastUpdatedAt
-        reason
-        title
-        url
-        subject {
-          __typename
-          ... on PullRequest {
-            number
-            title
-            url
-            repository { nameWithOwner }
-          }
-          ... on Issue {
-            number
-            title
-            url
-            repository { nameWithOwner }
-          }
-          ... on Discussion {
-            number
-            title
-            url
-            repository { nameWithOwner }
-          }
-          ... on Commit {
-            url
-            repository { nameWithOwner }
-          }
-          ... on Release {
-            name
-            url
-            repository { nameWithOwner }
-          }
-        }
-      }
-    }
-  }
-}`;
-
 const authoredPullRequestsQuery = `query AuthoredOpenPullRequests($first: Int!, $after: String) {
   viewer {
     pullRequests(
@@ -93,17 +43,6 @@ const authoredPullRequestsQuery = `query AuthoredOpenPullRequests($first: Int!, 
     }
   }
 }`;
-
-const graphqlSubjectTypes = Object.freeze({
-  Commit: "Commit",
-  Discussion: "Discussion",
-  Issue: "Issue",
-  PullRequest: "PullRequest",
-  Release: "Release",
-  CheckSuite: "CheckSuite",
-  WorkflowRun: "WorkflowRun",
-  RepositoryInvitation: "RepositoryInvitation",
-});
 
 const subjectKinds = Object.freeze({
   commit: "commit",
@@ -170,47 +109,12 @@ export function notificationSubjectKey(thread) {
   return thread?.id ? `thread:${thread.id}` : "";
 }
 
-export function inboxKeyFromGraphqlNode(node) {
-  const thread = threadFromGraphqlNode(node);
-  return thread ? notificationSubjectKey(thread) : "";
-}
-
-export function threadFromGraphqlNode(node) {
-  if (!node || node.isArchived) return null;
-  const subject = node.subject ?? {};
-  const type = graphqlSubjectTypes[subject.__typename] ?? subject.__typename ?? "";
-  const subjectUrl = subject.url || node.url || "";
-  const repository = subject.repository?.nameWithOwner || repositoryNameFromUrl(subjectUrl) || "";
-  const title = subject.title || subject.name || node.title || "";
-  const id = node.databaseId == null ? "" : String(node.databaseId);
-  if (!subjectUrl && !id) return null;
-  return {
-    id: id || `graphql:${node.url || title}`,
-    reason: normalizeNotificationReason(node.reason),
-    repository: {
-      full_name: repository,
-      html_url: repository ? `https://github.com/${repository}` : "",
-    },
-    subject: {
-      title,
-      type: type || "PullRequest",
-      url: subjectUrl,
-    },
-    unread: Boolean(node.isUnread),
-    updated_at: node.lastUpdatedAt,
-  };
-}
-
 export function retainInboxNotificationThreads(threads, inboxKeys) {
   const keys = inboxKeys instanceof Set ? inboxKeys : new Set(inboxKeys);
   return threads.filter((thread) => {
     const key = notificationSubjectKey(thread);
     return Boolean(key) && keys.has(key);
   });
-}
-
-export function unreadNotificationThreads(threads) {
-  return threads.filter((thread) => thread?.unread);
 }
 
 export function prFromAuthoredPullRequest(node) {
@@ -268,43 +172,10 @@ function repositoryNameFromUrl(value) {
   }
 }
 
-function normalizeNotificationReason(value) {
-  if (typeof value !== "string") return "";
-  return value.trim().toLowerCase().replaceAll("-", "_");
-}
-
 export function createGitHubNotificationsClient(options = {}) {
   const auth = createGitHubAuth(options);
-  const fetchInbox =
-    options.fetchInboxThreads === undefined
-      ? () => fetchGraphqlInboxThreads(auth)
-      : options.fetchInboxThreads;
-
-  return async function getNotifications({ lastModified } = {}) {
-    if (typeof fetchInbox === "function") {
-      try {
-        const inbox = await fetchInbox();
-        if (!Array.isArray(inbox?.threads)) {
-          throw new Error("GitHub inbox threads were unavailable.");
-        }
-        return {
-          lastModified: inbox.lastModified ?? "",
-          membership: "inbox",
-          notModified: false,
-          pollIntervalSeconds: inbox.pollIntervalSeconds ?? 60,
-          threads: inbox.threads,
-        };
-      } catch {
-        // Fall through to unread REST when GraphQL inbox is unavailable.
-      }
-    }
-    const rest = await fetchRestNotificationThreads(auth, { lastModified });
-    if (rest.notModified) return rest;
-    return {
-      ...rest,
-      membership: "unread",
-      threads: unreadNotificationThreads(rest.threads),
-    };
+  return async function getNotifications() {
+    return fetchRestNotificationThreads(auth);
   };
 }
 
@@ -324,19 +195,6 @@ export function createGitHubAuthoredPullRequestsClient(options = {}) {
       }
     }
     return fetchRestAuthoredPullRequests(auth);
-  };
-}
-
-async function fetchGraphqlInboxThreads(auth) {
-  const nodes = await paginateGraphql(auth, inboxThreadsQuery, (payload) => {
-    const connection = payload.data?.viewer?.notificationThreads;
-    if (!connection) throw new Error("GitHub inbox threads were unavailable.");
-    return connection;
-  });
-  return {
-    lastModified: "",
-    pollIntervalSeconds: 60,
-    threads: nodes.map(threadFromGraphqlNode).filter(Boolean),
   };
 }
 
@@ -380,41 +238,28 @@ async function graphqlRequest(auth, token, query, variables) {
   return payload;
 }
 
-async function fetchRestNotificationThreads(auth, { lastModified } = {}) {
+async function fetchRestNotificationThreads(auth) {
   const token = await auth.token();
   const url = new URL("/notifications", apiOrigin);
+  // GitHub's current inbox. `all=true` still returns Done threads with no flag.
   url.searchParams.set("all", "false");
   url.searchParams.set("per_page", "100");
 
   const threads = [];
   let nextUrl = url.href;
-  let responseLastModified = "";
   let pollIntervalSeconds = 60;
   for (let page = 0; nextUrl && page < maximumPages; page += 1) {
     const response = await auth.fetchImpl(nextUrl, {
-      headers: githubHeaders(
-        token,
-        page === 0 && lastModified ? { "If-Modified-Since": lastModified } : {},
-      ),
+      headers: githubHeaders(token),
       signal: AbortSignal.timeout(45_000),
     });
     pollIntervalSeconds = positiveInteger(
       response.headers.get("x-poll-interval"),
       pollIntervalSeconds,
     );
-    if (response.status === 304) {
-      return {
-        lastModified,
-        membership: "unread",
-        notModified: true,
-        pollIntervalSeconds,
-        threads: [],
-      };
-    }
     if ([401, 403].includes(response.status)) auth.resetToken();
     if (!response.ok) throw githubResponseError(response);
 
-    responseLastModified ||= response.headers.get("last-modified") ?? "";
     const pageThreads = await response.json();
     if (!Array.isArray(pageThreads)) throw new Error("GitHub notifications were not an array.");
     threads.push(...pageThreads);
@@ -422,12 +267,7 @@ async function fetchRestNotificationThreads(auth, { lastModified } = {}) {
   }
 
   if (nextUrl) throw new Error(`GitHub notifications exceeded ${maximumPages} pages.`);
-  return {
-    lastModified: responseLastModified,
-    notModified: false,
-    pollIntervalSeconds,
-    threads,
-  };
+  return { pollIntervalSeconds, threads };
 }
 
 async function fetchRestAuthoredPullRequests(auth) {

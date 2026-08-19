@@ -1,7 +1,7 @@
 import { chmod, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { lifecycleForQueueItem } from "../../shared/queue-policy.js";
+import { isOpenAuthoredPullRequest, lifecycleForQueueItem } from "../../shared/queue-policy.js";
 import {
   readConversation,
   schema as reviewConversationSchema,
@@ -182,7 +182,7 @@ export class InboxStore {
         latestReviewState: row.latest_review_state,
         signals: row.has_attention_signal ? [{ kind: "attention" }] : [],
       });
-      if (row.authored) {
+      if (isOpenAuthoredPullRequest(row)) {
         counts.mine++;
         continue;
       }

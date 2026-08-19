@@ -105,8 +105,9 @@ SQLite and survive stopping or restarting the local server. See
 layout and benchmark semantics.
 
 Install or update the continuously running macOS user service with `pnpm install:service`. It hosts
-the UI, conditionally polls GitHub notifications, performs an hourly full reconciliation, and runs
-the durable analysis queue. Run `pnpm sync` for a one-off manual reconciliation. Inbox state is
+the UI, polls GitHub on the interval GitHub advertises (about once a minute), and runs
+the durable analysis queue. Each poll uses the same inbox reconciliation as `pnpm sync`. Run
+`pnpm sync` for a one-off pass without starting the HTTP daemon. Inbox state is
 stored in `~/.config/pr-review-cockpit/cockpit.sqlite3`; analysis metadata is stored in
 `.reviews/.run-store.sqlite`; generated artifacts remain under the gitignored `.reviews/` directory.
 

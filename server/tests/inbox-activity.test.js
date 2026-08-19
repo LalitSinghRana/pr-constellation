@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { lifecycleForQueueItem } from "../../shared/queue-policy.js";
+import { isOpenAuthoredPullRequest, lifecycleForQueueItem } from "../../shared/queue-policy.js";
 import {
   applyInboxActivity,
   refreshNotificationItems,
@@ -32,6 +32,13 @@ test("draft and closed pull requests have their own lifecycles", () => {
     lifecycleForQueueItem({ state: "UNKNOWN", draft: false, authored: false, signals: [] }),
     "new",
   );
+});
+
+test("open authored pull requests exclude merged and closed states", () => {
+  assert.equal(isOpenAuthoredPullRequest({ authored: true, state: "OPEN" }), true);
+  assert.equal(isOpenAuthoredPullRequest({ authored: true, state: "UNKNOWN" }), true);
+  assert.equal(isOpenAuthoredPullRequest({ authored: true, state: "MERGED" }), false);
+  assert.equal(isOpenAuthoredPullRequest({ authored: true, state: "CLOSED" }), false);
 });
 
 test("GraphQL review requests become direct and team signals", () => {
@@ -203,14 +210,16 @@ test("activity without an author keeps a notification-authored pull request", ()
   assert.equal(lifecycleForQueueItem(items.get(id)), "mine");
 });
 
-test("a full refresh inspects existing pull requests without new notifications", async () => {
+test("a merged authored pull request still in the inbox leaves My PRs", async () => {
   const id = "owner/repo#9";
   const items = new Map([
     [
       id,
       {
         id,
+        authored: true,
         draft: false,
+        notificationUpdatedAt: "2026-08-10T08:46:31Z",
         number: 9,
         repository: "owner/repo",
         signals: [],
@@ -220,25 +229,42 @@ test("a full refresh inspects existing pull requests without new notifications",
     ],
   ]);
   const touched = new Set();
-  await refreshNotificationItems(items, [], touched, {
-    getActivity: async () => ({
-      author: { login: "alice" },
-      isDraft: false,
-      labels: { nodes: [] },
-      reviews: { nodes: [] },
-      state: "MERGED",
-      title: "Done",
-      updatedAt: "2026-08-10T09:00:00Z",
-      url: "https://github.com/owner/repo/pull/9",
-    }),
-    inspectAll: true,
-    username: "me",
-  });
+  await refreshNotificationItems(
+    items,
+    [
+      {
+        pr: {
+          number: 9,
+          repository: { nameWithOwner: "owner/repo" },
+          title: "Done",
+          updatedAt: "2026-08-10T08:46:31Z",
+          url: "https://github.com/owner/repo/pull/9",
+        },
+        thread: { reason: "author", updated_at: "2026-08-10T08:46:31Z" },
+      },
+    ],
+    touched,
+    {
+      authoredOpenIds: new Set(),
+      getActivity: async () => ({
+        author: { login: "me" },
+        isDraft: false,
+        labels: { nodes: [] },
+        reviews: { nodes: [] },
+        state: "MERGED",
+        title: "Done",
+        updatedAt: "2026-08-10T09:00:00Z",
+        url: "https://github.com/owner/repo/pull/9",
+      }),
+      username: "me",
+    },
+  );
   assert.equal(items.get(id).state, "MERGED");
+  assert.equal(isOpenAuthoredPullRequest(items.get(id)), false);
   assert.equal(touched.has(id), true);
 });
 
-test("a full refresh inspects notified pull requests not the rest of the queue", async () => {
+test("a notification refresh inspects notified pull requests not the rest of the queue", async () => {
   const inspected = [];
   const items = new Map([
     [
@@ -296,7 +322,6 @@ test("a full refresh inspects notified pull requests not the rest of the queue",
           url: "https://github.com/owner/repo/pull/1",
         };
       },
-      inspectAll: true,
       username: "me",
     },
   );

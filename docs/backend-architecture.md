@@ -10,7 +10,7 @@ macOS launchd user agent
 └── Node.js coordinator (127.0.0.1:4397)
     ├── production client/dist hosting + local JSON API
     ├── Server-Sent Events invalidation stream
-    ├── conditional GitHub notification poller
+    ├── GitHub inbox poller
     ├── SQLite queue and run metadata
     └── bounded analysis scheduler
         └── analysis CLI subprocesses
@@ -22,10 +22,10 @@ macOS launchd user agent
 - `server/http/http-server.js` owns HTTP composition, production static hosting, startup, and graceful
   shutdown. Vite is loaded only by `pnpm dev`.
 - `server/inbox/inbox-service.js` owns inbox ranking, GitHub reconciliation, and its local API.
-- `server/inbox/sync-scheduler.js` makes scheduled and manual synchronization single-flight. It performs
-  an initial/full reconciliation, repeats that hourly, and uses lightweight conditional notification
-  requests between reconciliations. GitHub's `X-Poll-Interval`, `Last-Modified`, `Retry-After`, and
-  exponential failure backoff control request frequency.
+- `server/inbox/sync-scheduler.js` makes scheduled and manual synchronization single-flight. It runs
+  the same inbox reconciliation as `pnpm sync` on GitHub's `X-Poll-Interval` (about 60 seconds; 5-minute
+  fallback), with `Retry-After` and exponential failure backoff. Each pass fetches the REST inbox
+  (`all=false`) and current open authored pull requests.
 - `server/analysis/dashboard-service.js` owns the durable analysis queue. At most two different PRs run at
   once; runs for one PR remain serial. Model execution is capped at three subprocesses across the
   process, including sharded File Tree generation. The renderer and analysis worker are loaded only
@@ -77,7 +77,7 @@ pnpm start
 # Install/update the continuously running macOS user service
 pnpm install:service
 
-# One manual full reconciliation without starting the HTTP daemon
+# One manual inbox reconciliation without starting the HTTP daemon
 pnpm sync
 ```
 
