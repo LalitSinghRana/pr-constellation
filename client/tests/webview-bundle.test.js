@@ -112,11 +112,25 @@ assert.ok(
 );
 assert.ok(!("relations" in treeData.files[0].sectionTree));
 
-const [treeAppSource, treeLayoutSource, webStyles] = await Promise.all([
-  readFile(new URL("../src/review/review-tree-app.jsx", import.meta.url), "utf8"),
+const reviewUiFiles = [
+  "review-tree-app.jsx",
+  "review-header.jsx",
+  "pull-request-conversation.jsx",
+  "review-tree-canvas.jsx",
+  "review-tree-nodes.jsx",
+  "diff-chunk-view.jsx",
+  "explanation-hover-card.jsx",
+];
+const [treeAppSources, treeLayoutSource, webStyles] = await Promise.all([
+  Promise.all(
+    reviewUiFiles.map((file) =>
+      readFile(new URL(`../src/review/${file}`, import.meta.url), "utf8"),
+    ),
+  ),
   readFile(new URL("../src/review/review-tree/layout.js", import.meta.url), "utf8"),
   readFile(new URL("../src/review/styles.css", import.meta.url), "utf8"),
 ]);
+const treeAppSource = treeAppSources.join("\n");
 const reviewTreeSource = `${treeAppSource}\n${treeLayoutSource}`;
 assert.match(reviewTreeSource, /nodesDraggable=\{false\}/);
 assert.match(reviewTreeSource, /reviewBranch: React\.memo\(ReviewBranch\)/);
@@ -131,7 +145,7 @@ assert.match(reviewTreeSource, /pointerEvents: "auto"/);
 assert.match(treeAppSource, /text-base leading-relaxed/);
 assert.match(treeAppSource, /const \[activeTab, setActiveTab\] = useState\("conversation"\)/);
 assert.match(treeAppSource, /value="conversation"/);
-assert.match(treeAppSource, /showReviewSheet=\{activeTab === "trees"\}/);
+assert.match(treeAppSource, /activeTab === "trees" \? <ReviewDraftSheet \/> : null/);
 assert.match(treeAppSource, /function conversationIcon/);
 assert.match(treeAppSource, /item\.state === "APPROVED"\) return Check/);
 assert.match(treeAppSource, /item\.state === "COMMENTED"\) return MessageSquare/);

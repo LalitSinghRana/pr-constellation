@@ -546,7 +546,7 @@ function layoutReviewSections(
   };
 }
 
-function reviewSectionHeight(reviewSection) {
+export function reviewSectionHeight(reviewSection) {
   if (reviewSection.reviewGroup) {
     return REVIEW_GROUP_HEIGHT;
   }

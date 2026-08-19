@@ -5,9 +5,9 @@ import {
   useAnalysisCatalog,
 } from "@/components/settings/analysis-agent-settings.jsx";
 import { ScoringCard } from "@/components/settings/scoring-card.jsx";
-import { SettingsExpandableRow } from "@/components/settings/settings-expandable-row.jsx";
 import { TeamSettingsForm } from "@/components/settings/team-settings-form.jsx";
 import { ThemeToggle } from "@/components/theme-toggle.jsx";
+import { Collapsible } from "@/components/ui/collapsible.jsx";
 import {
   Item,
   ItemActions,
@@ -188,29 +188,58 @@ export function SettingsPage() {
               </ItemActions>
             </Item>
             <ItemSeparator />
-            <SettingsExpandableRow
-              description="GitHub username, teammates, and teams used to score the inbox."
-              id="team"
-              onOpenChange={(nextOpen) => setSectionOpen("team", nextOpen)}
+            <Collapsible
               open={teamOpen}
-              title="Team"
+              onOpenChange={(nextOpen) => setSectionOpen("team", nextOpen)}
             >
-              <TeamSettingsForm
-                busy={busy}
-                onSave={(patch) => patchSettings(patch)}
-                settings={settings}
-              />
-            </SettingsExpandableRow>
+              <Item size="sm" className="flex-col items-stretch rounded-none border-0 px-0 py-0">
+                <div className="flex w-full items-center gap-4 px-5 py-4">
+                  <ItemContent>
+                    <ItemTitle>Team</ItemTitle>
+                    <ItemDescription className="line-clamp-none">
+                      GitHub username, teammates, and teams used to score the inbox.
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    <Item.Trigger aria-label="Show team settings" id="team" />
+                  </ItemActions>
+                </div>
+                <Item.Panel>
+                  <div className="border-t px-5 py-4">
+                    <TeamSettingsForm
+                      busy={busy}
+                      onSave={(patch) => patchSettings(patch)}
+                      settings={settings}
+                    />
+                  </div>
+                </Item.Panel>
+              </Item>
+            </Collapsible>
             <ItemSeparator />
-            <SettingsExpandableRow
-              description="Lifecycle bases and activity signals that make a pull request's priority score."
-              id="scoring"
-              onOpenChange={(nextOpen) => setSectionOpen("scoring", nextOpen)}
+            <Collapsible
               open={scoringOpen}
-              title="Scoring model"
+              onOpenChange={(nextOpen) => setSectionOpen("scoring", nextOpen)}
             >
-              <ScoringCard />
-            </SettingsExpandableRow>
+              <Item size="sm" className="flex-col items-stretch rounded-none border-0 px-0 py-0">
+                <div className="flex w-full items-center gap-4 px-5 py-4">
+                  <ItemContent>
+                    <ItemTitle>Scoring model</ItemTitle>
+                    <ItemDescription className="line-clamp-none">
+                      Lifecycle bases and activity signals that make a pull request's priority
+                      score.
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    <Item.Trigger aria-label="Show scoring model" id="scoring" />
+                  </ItemActions>
+                </div>
+                <Item.Panel>
+                  <div className="border-t px-5 py-4">
+                    <ScoringCard />
+                  </div>
+                </Item.Panel>
+              </Item>
+            </Collapsible>
           </ItemGroup>
         </section>
       </div>

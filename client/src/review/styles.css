@@ -2,8 +2,7 @@
 @import "tw-animate-css";
 @import "../theme.css";
 
-@source "./review-tree-app.jsx";
-@source "./review-draft-panel.jsx";
+@source "./**/*.{js,jsx}";
 @source "../components/ui/**/*.{js,jsx}";
 @source "../lib/**/*.{js,jsx}";
 
