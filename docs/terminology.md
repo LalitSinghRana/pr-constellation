@@ -1,5 +1,10 @@
 # Terminology
 
+- **Inbox**: the home page of GitHub notification threads still in the GitHub
+  inbox, ranked into lifecycle views such as Unreviewed, Merged, and Closed.
+  Notifications about your own pull requests are excluded from those lifecycle
+  views. **My pull requests** is a separate list of open PRs you authored.
+  Quiet rows stay in that list as read until a new GitHub notification arrives.
 - **Review Tree**: the complete navigable review view for one pull request.
 - **Review Stack**: a coherent group of changed files reviewed as one unit.
 - **File Tree**: the ordered tree of Files inside one Review Stack.

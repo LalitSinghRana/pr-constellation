@@ -96,7 +96,7 @@ export function SettingsPage() {
             href="/"
           >
             <ArrowLeft className="size-4" />
-            Back to the queue
+            Back to the inbox
           </a>
           <ThemeToggle />
         </div>
@@ -110,7 +110,7 @@ export function SettingsPage() {
             Settings
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Turn cockpit features on or off, configure the team used to score the queue, and inspect
+            Turn cockpit features on or off, configure the team used to score the inbox, and inspect
             the priority model. Preferences are saved in the local SQLite settings store.
           </p>
         </header>
@@ -189,7 +189,7 @@ export function SettingsPage() {
             </Item>
             <ItemSeparator />
             <SettingsExpandableRow
-              description="GitHub username, teammates, and teams used to score the queue."
+              description="GitHub username, teammates, and teams used to score the inbox."
               id="team"
               onOpenChange={(nextOpen) => setSectionOpen("team", nextOpen)}
               open={teamOpen}

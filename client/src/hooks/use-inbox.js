@@ -93,7 +93,7 @@ export function useInbox(view = "active") {
       }));
     } catch (caught) {
       if (requestSequence === refreshSequenceRef.current) {
-        setError(caught.message || "More queue items could not be loaded.");
+        setError(caught.message || "More inbox items could not be loaded.");
       }
     } finally {
       loadMoreRef.current = false;

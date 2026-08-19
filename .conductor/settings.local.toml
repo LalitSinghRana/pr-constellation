@@ -4,7 +4,7 @@
 # .conductor/settings.toml only when explicitly committing them for the team.
 
 [[preview_urls]]
-name = "Review queue"
+name = "Inbox"
 url = "http://127.0.0.1:$CONDUCTOR_PORT/"
 
 [[preview_urls]]

@@ -182,8 +182,11 @@ export class InboxStore {
         latestReviewState: row.latest_review_state,
         signals: row.has_attention_signal ? [{ kind: "attention" }] : [],
       });
-      if (lifecycle !== "mine") counts[lifecycle]++;
-      if (row.authored) counts.mine++;
+      if (row.authored) {
+        counts.mine++;
+        continue;
+      }
+      counts[lifecycle]++;
     }
     return counts;
   }

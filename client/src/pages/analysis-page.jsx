@@ -203,7 +203,7 @@ export function AnalysisPage() {
           <Button asChild variant="ghost">
             <a href="/">
               <ArrowLeft className="size-4" />
-              Review queue
+              Inbox
             </a>
           </Button>
           <div className="flex flex-wrap gap-2">

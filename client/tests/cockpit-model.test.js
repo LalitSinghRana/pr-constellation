@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { analysisState, analysisTimeline, formatDuration } from "../src/lib/analysis.js";
-import { groupByUpdatedDate, myPullRequestStatus } from "../src/lib/queue.js";
+import { groupByUpdatedDate, inboxProjectTabs, myPullRequestStatus } from "../src/lib/queue.js";
 
 test("analysis entries have one visible section", () => {
   assert.equal(analysisState({ runningRun: {}, queuedRuns: [{}], latestRun: null }), "running");
@@ -124,6 +124,28 @@ test("analysis date groups preserve queue order", () => {
   assert.deepEqual(
     groupByUpdatedDate(items, { preserveOrder: true })[0].items.map((item) => item.id),
     ["first", "second"],
+  );
+});
+
+test("repository tab badges count the current lifecycle filter", () => {
+  const items = [
+    { repository: "owner/beta", lifecycle: "new", done: false },
+    { repository: "owner/alpha", lifecycle: "new", done: false },
+    { repository: "owner/alpha", lifecycle: "approved", done: false },
+    { repository: "owner/alpha", authored: true, lifecycle: "mine", done: false },
+  ];
+  assert.deepEqual(inboxProjectTabs(items, "new"), [
+    { repository: "owner/alpha", count: 1 },
+    { repository: "owner/beta", count: 1 },
+  ]);
+  assert.deepEqual(inboxProjectTabs(items, "approved"), [{ repository: "owner/alpha", count: 1 }]);
+  assert.deepEqual(inboxProjectTabs(items, "mine"), [{ repository: "owner/alpha", count: 1 }]);
+  assert.deepEqual(
+    inboxProjectTabs(
+      [{ repository: "owner/mine", authored: true, lifecycle: "mine", done: false }],
+      "new",
+    ),
+    [],
   );
 });
 

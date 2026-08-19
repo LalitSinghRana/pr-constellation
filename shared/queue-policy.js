@@ -56,7 +56,11 @@ export function lifecycleForQueueItem(item) {
   if (item.authored) return "mine";
   if (item.latestReviewState === "APPROVED") return "approved";
   if (item.latestReviewState || item.reviewed) return "reviewed";
-  if (item.state === "OPEN" || item.signals.some((signal) => signal.kind !== "team-covered")) {
+  if (
+    item.state === "OPEN" ||
+    item.state === "UNKNOWN" ||
+    item.signals.some((signal) => signal.kind !== "team-covered")
+  ) {
     return "new";
   }
   return "other";

@@ -36,7 +36,24 @@ export const NOTIFICATION_LABELS = {
 export function matchesPrFilter(item, filter) {
   if (filter === "done") return true;
   if (filter === "mine") return item.authored;
+  if (item.authored) return false;
   return item.lifecycle === filter;
+}
+
+export function inboxProjectTabs(items, filter, isDone = (item) => Boolean(item.done)) {
+  const completed = filter === "done";
+  const matching = new Map();
+  for (const item of items) {
+    if (isDone(item) !== completed) continue;
+    if (!matchesPrFilter(item, filter)) continue;
+    matching.set(item.repository, (matching.get(item.repository) ?? 0) + 1);
+  }
+  return [...matching.keys()]
+    .sort((left, right) => left.localeCompare(right))
+    .map((repository) => ({
+      repository,
+      count: matching.get(repository),
+    }));
 }
 
 export function myPullRequestStatus(item) {

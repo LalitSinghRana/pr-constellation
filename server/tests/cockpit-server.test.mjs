@@ -7,10 +7,13 @@ import {
   addSignal,
   addSource,
   apiMutationRejection,
-  applyAutomaticDone,
+  applyAuthoredReadState,
+  applyInboxMembership,
   applyQueueState,
   defaultPort,
+  excludeAuthoredPullRequestNotifications,
   inboxFromQueue,
+  inboxIdsFromNotifications,
   normalizeSettings,
   otherNotificationFromThread,
   PARTICIPATING_NOTIFICATION_REASONS,
@@ -20,11 +23,13 @@ import {
   rememberQueueItems,
   requestHostRejection,
   reviewArtifactPath,
+  seedAuthoredPullRequests,
   seedNotificationPullRequests,
   setQueueItemDone,
   setQueueItemRead,
   setQueueItemsDone,
   sortPullRequestsBySize,
+  stampAuthoredNotificationTimes,
   summarizeActivity,
   trackedQueueItems,
 } from "../server.mjs";
@@ -190,6 +195,41 @@ test("my pull requests get their own lifecycle", () => {
   const [mine] = rankItems(items);
   assert.equal(mine.lifecycle, "mine");
   assert.equal(mine.score, 0);
+});
+
+test("notification seeding ignores author-reason pull requests", () => {
+  const items = new Map();
+  seedAuthoredPullRequests(items, [pr]);
+  seedNotificationPullRequests(items, [
+    {
+      thread: { reason: "author", updated_at: "2026-07-06T00:00:00Z" },
+      pr,
+    },
+    {
+      thread: { reason: "review_requested", updated_at: "2026-07-06T00:00:00Z" },
+      pr: {
+        ...pr,
+        number: 99,
+        url: "https://github.com/example/repo/pull/99",
+      },
+    },
+  ]);
+  assert.equal(items.get("example/repo#42").authored, true);
+  assert.equal(items.get("example/repo#99").authored, false);
+  const remaining = excludeAuthoredPullRequestNotifications(
+    [
+      { thread: { reason: "comment" }, pr },
+      {
+        thread: { reason: "review_requested" },
+        pr: { ...pr, number: 99, url: "https://github.com/example/repo/pull/99" },
+      },
+    ],
+    ["example/repo#42"],
+  );
+  assert.deepEqual(
+    remaining.map(({ pr: item }) => item.number),
+    [99],
+  );
 });
 
 test("a comment after merge lifts a merged PR back into attention", () => {
@@ -372,7 +412,7 @@ test("notifications prioritize changed tracked PRs without adding unknown PRs", 
   assert.equal(items.has("example/repo#99"), false);
 });
 
-test("participating notifications seed any repository and skip watch noise", () => {
+test("inbox notifications seed any repository including watch-subscribed pull requests", () => {
   for (const [index, reason] of PARTICIPATING_NOTIFICATION_REASONS.entries()) {
     const items = new Map();
     const number = 3541 + index;
@@ -393,7 +433,13 @@ test("participating notifications seed any repository and skip watch noise", () 
       },
     };
     seedNotificationPullRequests(items, [notification]);
-    assert.equal(items.has(`other-org/other-repo#${number}`), true, reason);
+    const item = items.get(`other-org/other-repo#${number}`);
+    if (reason === "author") {
+      assert.equal(item, undefined, reason);
+      continue;
+    }
+    assert.equal(item != null, true, reason);
+    assert.equal(item.authored, false, reason);
   }
 
   const reviewRequested = new Map();
@@ -432,7 +478,7 @@ test("participating notifications seed any repository and skip watch noise", () 
         },
       },
     ]);
-    assert.equal(items.has("other-org/other-repo#99"), false, reason);
+    assert.equal(items.has("other-org/other-repo#99"), true, reason);
   }
 });
 
@@ -639,7 +685,7 @@ test("tracked PR snapshots restore local membership and migrate old records", ()
   assert.equal(applyQueueState([migrated], legacy)[0].done, true);
 });
 
-test("inbox repositories are unique sorted PR repos including persisted sync repos", () => {
+test("inbox repositories are unique sorted active PR repos", () => {
   const items = new Map();
   addSource(
     items,
@@ -667,48 +713,91 @@ test("inbox repositories are unique sorted PR repos including persisted sync rep
     items: {},
   };
   rememberQueueItems(state, rankItems(items), "2026-07-04T00:00:00Z");
-  assert.deepEqual(inboxFromQueue(state).repositories, ["alpha/app", "kept/old", "zebra/app"]);
+  assert.deepEqual(inboxFromQueue(state).repositories, ["alpha/app", "zebra/app"]);
+
+  setQueueItemDone(state, "zebra/app#1", true);
+  assert.deepEqual(inboxFromQueue(state).repositories, ["alpha/app"]);
 });
 
-test("old open and merged PRs auto-complete unless explicitly restored", () => {
-  const now = Date.parse("2026-07-31T12:00:00Z");
+test("GitHub inbox membership reopens local done and archives missing threads", () => {
   const items = new Map();
-  addSource(items, { ...pr, updatedAt: "2026-07-20T00:00:00Z" }, "repository");
+  addSource(items, pr, "repository");
   addSource(
     items,
     {
       ...pr,
       number: 43,
       url: "https://github.com/example/repo/pull/43",
-      state: "MERGED",
-      updatedAt: "2026-07-29T00:00:00Z",
-    },
-    "repository",
-  );
-  addSource(
-    items,
-    {
-      ...pr,
-      number: 44,
-      url: "https://github.com/example/repo/pull/44",
-      state: "MERGED",
-      updatedAt: "2026-07-31T00:00:00Z",
     },
     "repository",
   );
   const entries = rankItems(items);
-  assert.equal(entries.find((item) => item.number === 42).lifecycle, "new");
   const state = { version: 2, sync: {}, items: {} };
   rememberQueueItems(state, entries, "2026-07-31T12:00:00Z");
-  applyAutomaticDone(state, entries, now);
+  setQueueItemDone(state, "example/repo#42", true);
 
+  applyInboxMembership(state, inboxIdsFromNotifications([{ pr }]));
+
+  const next = applyQueueState(entries, state);
+  assert.equal(next.find((item) => item.number === 42).done, false);
+  assert.equal(next.find((item) => item.number === 43).done, true);
+  assert.deepEqual(inboxFromQueue(state).repositories, ["example/repo"]);
+});
+
+test("inbox membership keeps authored pull requests that are not in GitHub inbox", () => {
+  const items = new Map();
+  addSource(items, pr, "authored");
+  addSource(
+    items,
+    {
+      ...pr,
+      number: 43,
+      url: "https://github.com/example/repo/pull/43",
+    },
+    "repository",
+  );
+  const entries = rankItems(items);
+  const state = { version: 2, sync: {}, items: {} };
+  rememberQueueItems(state, entries, "2026-07-31T12:00:00Z");
+
+  applyInboxMembership(state, [], ["example/repo#42"]);
+  const next = applyQueueState(entries, state);
+  assert.equal(next.find((item) => item.number === 42).done, false);
+  assert.equal(next.find((item) => item.number === 43).done, true);
+
+  setQueueItemDone(state, "example/repo#42", true);
+  applyInboxMembership(state, [], ["example/repo#42"]);
   assert.equal(applyQueueState(entries, state).find((item) => item.number === 42).done, true);
-  assert.equal(applyQueueState(entries, state).find((item) => item.number === 43).done, true);
-  assert.equal(applyQueueState(entries, state).find((item) => item.number === 44).done, false);
+});
 
-  setQueueItemDone(state, "example/repo#43", false);
-  applyAutomaticDone(state, entries, now);
-  assert.equal(applyQueueState(entries, state).find((item) => item.number === 43).done, false);
+test("authored pull requests stay in My PRs and look read without new notifications", () => {
+  const items = new Map();
+  addSource(items, pr, "authored");
+  const [item] = rankItems(items);
+  const state = { version: 2, sync: {}, items: {} };
+  rememberQueueItems(state, [item], "2026-07-31T12:00:00Z");
+  setQueueItemDone(state, item.id, true);
+
+  applyAuthoredReadState(state, [item.id], []);
+  const quiet = applyQueueState([item], state)[0];
+  assert.equal(quiet.done, false);
+  assert.equal(quiet.read, true);
+  assert.equal(quiet.hasUnreadUpdates, false);
+
+  const notified = stampAuthoredNotificationTimes(
+    new Map([[item.id, { ...item }]]),
+    [{ thread: { reason: "author", updated_at: "2026-08-01T00:00:00Z" }, pr }],
+    [item.id],
+  );
+  assert.deepEqual([...notified], [item.id]);
+
+  const updated = { ...item, notificationUpdatedAt: "2026-08-01T00:00:00Z" };
+  rememberQueueItems(state, [updated], "2026-08-01T00:00:00Z");
+  applyAuthoredReadState(state, [item.id], [item.id]);
+  const active = applyQueueState([updated], state)[0];
+  assert.equal(active.done, false);
+  assert.equal(active.read, false);
+  assert.equal(active.hasUnreadUpdates, true);
 });
 
 test("settings lists are validated before writing", () => {

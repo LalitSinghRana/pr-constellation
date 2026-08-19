@@ -120,7 +120,7 @@ test("inbox store pages every active item and counts categories across pages", a
     approved: 1,
     closed: 1,
     draft: 0,
-    merged: 1,
+    merged: 0,
     mine: 1,
     new: 1_001,
     nonpr: 1,

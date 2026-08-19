@@ -79,7 +79,8 @@ http://127.0.0.1:4397/
 http://127.0.0.1:4397/analysis
 ```
 
-The inbox persists tracked PRs independently from GitHub's read state. The
+The inbox mirrors GitHub's current inbox, including read threads, and archives
+items locally once they leave it. GitHub's read/unread state is separate. The
 analysis page shows not-started, queued, running, completed, and failed work;
 File Tree and Section Tree generation and repair use the configured model's
 reasoning effort.

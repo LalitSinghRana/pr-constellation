@@ -1,6 +1,6 @@
-import { AnalysisAgentStatusDialog } from "@/components/review-queue/analysis-agent-status-dialog.jsx";
+import { AnalysisAgentStatusDialog } from "@/components/inbox/analysis-agent-status-dialog.jsx";
 import { AnalysisPage } from "@/pages/analysis-page.jsx";
-import { QueuePage } from "@/pages/queue-page.jsx";
+import { InboxPage } from "@/pages/inbox-page.jsx";
 import { ReviewPage } from "@/pages/review-page.jsx";
 import { SettingsPage } from "@/pages/settings-page.jsx";
 
@@ -13,7 +13,7 @@ export default function App() {
   ) : pathname.startsWith("/scoring") || pathname.startsWith("/settings") ? (
     <SettingsPage />
   ) : (
-    <QueuePage />
+    <InboxPage />
   );
 
   return (

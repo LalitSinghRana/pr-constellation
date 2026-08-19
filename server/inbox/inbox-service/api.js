@@ -213,7 +213,7 @@ export function createInboxApi({
             body.id.length > 200 ||
             mutations.length !== 1)
         ) {
-          throw new Error("One tracked queue item update is required.");
+          throw new Error("One tracked inbox item update is required.");
         }
         const targetIds = ids ?? [body.id];
         let queueState = null;
@@ -229,7 +229,7 @@ export function createInboxApi({
           },
           { ids: targetIds },
         );
-        if (!result) throw new Error("That queue item is not tracked.");
+        if (!result) throw new Error("That inbox item is not tracked.");
         if (
           body.done &&
           (await markMatchingGitHubNotificationsDone({
@@ -306,7 +306,7 @@ export function createInboxApi({
           }),
         );
       } catch {
-        sendJson(response, 500, { error: "The local queue could not be loaded." });
+        sendJson(response, 500, { error: "The local inbox could not be loaded." });
       }
       return true;
     }
