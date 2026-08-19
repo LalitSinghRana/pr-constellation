@@ -1,50 +1,49 @@
-import { randomUUID } from "node:crypto";
 import { chmodSync, constants, lstatSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
-import { access, lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
+import { access, lstat, mkdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import Database from "better-sqlite3";
+import {
+  assertImmutableRunFields,
+  assertRunDocument,
+  assertStorageId,
+  compareRunsNewestFirst,
+  createRunManifest,
+  createStoreError,
+  FROZEN_INPUT_FILES,
+  isPlainObject,
+  isStorageId,
+  mergeRunManifest,
+  normalizeRunDocument,
+  RUN_SCHEMA_VERSION,
+  RUN_STATUSES,
+  SOURCE_MODES,
+  timestampValue,
+} from "./run-manifest.js";
+import {
+  applyStageEvent,
+  assertTimingsDocument,
+  createTimingsDocument,
+  interruptOpenStages,
+  TIMINGS_SCHEMA_VERSION,
+} from "./run-timings.js";
 
-export const RUN_SCHEMA_VERSION = "pr-review-run/v1";
-export const TIMINGS_SCHEMA_VERSION = "pr-review-timings/v1";
+export {
+  applyStageEvent,
+  assertStorageId,
+  createRunManifest,
+  createTimingsDocument,
+  FROZEN_INPUT_FILES,
+  interruptOpenStages,
+  mergeRunManifest,
+  normalizeRunDocument,
+  RUN_SCHEMA_VERSION,
+  RUN_STATUSES,
+  SOURCE_MODES,
+  TIMINGS_SCHEMA_VERSION,
+};
+
 export const DASHBOARD_SCHEMA_VERSION = "pr-review-dashboard/v1";
 
-export const RUN_STATUSES = Object.freeze([
-  "queued",
-  "running",
-  "succeeded",
-  "failed",
-  "interrupted",
-  "canceled",
-]);
-
-export const SOURCE_MODES = Object.freeze(["fresh", "frozen"]);
-
-export const FROZEN_INPUT_FILES = Object.freeze({
-  metadataPath: "metadata.json",
-  diffPath: "diff.patch",
-  diffInventoryPath: "diff-inventory.json",
-  diffSummaryPath: "diff-summary.json",
-});
-
-const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "interrupted", "canceled"]);
-const TERMINAL_STAGE_STATUSES = new Set([
-  "succeeded",
-  "completed",
-  "failed",
-  "interrupted",
-  "canceled",
-  "skipped",
-]);
-const START_EVENT_TYPES = new Set(["start", "begin", "stage-start"]);
-const END_EVENT_TYPES = new Set([
-  "end",
-  "finish",
-  "complete",
-  "stage-end",
-  "stage-finish",
-  "fail",
-  "error",
-]);
 const LEGACY_IMPORT_KEY = "legacy-json-imported";
 const MAX_WRITE_ATTEMPTS = 5;
 const STORE_FILENAME = ".run-store.sqlite";
@@ -609,501 +608,6 @@ export class RunStore {
   }
 }
 
-export async function atomicWriteJson(filePath, value) {
-  const directory = path.dirname(filePath);
-  const temporaryPath = path.join(
-    directory,
-    `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`,
-  );
-  await mkdir(directory, { recursive: true });
-
-  let handle;
-  try {
-    handle = await open(temporaryPath, "wx", 0o600);
-    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, "utf8");
-    await handle.sync();
-    await handle.close();
-    handle = null;
-    await rename(temporaryPath, filePath);
-  } catch (error) {
-    await handle?.close().catch(() => {});
-    await rm(temporaryPath, { force: true }).catch(() => {});
-    throw error;
-  }
-}
-
-export function assertStorageId(value, label = "identifier") {
-  if (!isStorageId(value)) {
-    throw createStoreError(
-      "INVALID_STORAGE_ID",
-      `${label} must contain only letters, numbers, ".", "_" or "-", may not be "." or "..", and must be at most 200 characters.`,
-    );
-  }
-  return value;
-}
-
-export function createRunManifest(input, now = new Date().toISOString()) {
-  if (!isPlainObject(input)) {
-    throw new TypeError("Run input must be an object.");
-  }
-
-  const runId = assertStorageId(input.runId, "runId");
-  const slug = assertStorageId(input.slug, "slug");
-  const status = input.status ?? "queued";
-  const sourceMode = input.sourceMode ?? "fresh";
-  assertEnum(status, RUN_STATUSES, "status");
-  assertEnum(sourceMode, SOURCE_MODES, "sourceMode");
-  if (sourceMode === "frozen") {
-    assertStorageId(input.sourceRunId, "sourceRunId");
-    if (input.sourceRunId === runId) {
-      throw createStoreError("INVALID_SOURCE_RUN", "A frozen run cannot use itself as its source.");
-    }
-  } else if (input.sourceRunId != null) {
-    throw createStoreError(
-      "INVALID_SOURCE_RUN",
-      "sourceRunId is only valid when sourceMode is frozen.",
-    );
-  }
-
-  const createdAt = normalizeTimestamp(input.timestamps?.createdAt ?? now, "createdAt");
-  const manifest = {
-    schemaVersion: RUN_SCHEMA_VERSION,
-    runId,
-    url: requireString(input.url, "url"),
-    owner: requireString(input.owner, "owner"),
-    repo: requireString(input.repo, "repo"),
-    number: requirePositiveInteger(input.number, "number"),
-    slug,
-    title: typeof input.title === "string" ? input.title : "",
-    headSha: nullableString(input.headSha, "headSha"),
-    baseSha: nullableString(input.baseSha, "baseSha"),
-    status,
-    sourceMode,
-    sourceRunId: sourceMode === "frozen" ? input.sourceRunId : null,
-    timestamps: {
-      createdAt,
-      queuedAt: normalizeOptionalTimestamp(input.timestamps?.queuedAt ?? createdAt, "queuedAt"),
-      startedAt: normalizeOptionalTimestamp(input.timestamps?.startedAt, "startedAt"),
-      completedAt: normalizeOptionalTimestamp(input.timestamps?.completedAt, "completedAt"),
-      updatedAt: normalizeTimestamp(input.timestamps?.updatedAt ?? createdAt, "updatedAt"),
-    },
-    phase: nullableString(input.phase, "phase"),
-    error: normalizeError(input.error),
-    reviewUrl: status === "succeeded" ? `/reviews/${slug}/${runId}/` : null,
-    gitCommit: nullableString(input.gitCommit, "gitCommit"),
-    metrics: normalizeRunMetrics(input.metrics),
-  };
-
-  if (status === "running" && !manifest.timestamps.startedAt) {
-    manifest.timestamps.startedAt = createdAt;
-  }
-  if (TERMINAL_RUN_STATUSES.has(status) && !manifest.timestamps.completedAt) {
-    manifest.timestamps.completedAt = createdAt;
-  }
-
-  return manifest;
-}
-
-export function createTimingsDocument(runId, now = new Date().toISOString()) {
-  assertStorageId(runId, "runId");
-  const createdAt = normalizeTimestamp(now, "createdAt");
-  return {
-    schemaVersion: TIMINGS_SCHEMA_VERSION,
-    runId,
-    createdAt,
-    updatedAt: createdAt,
-    totalDurationMs: 0,
-    events: [],
-    stages: [],
-  };
-}
-
-export function applyStageEvent(timings, event, fallbackAt = new Date().toISOString()) {
-  assertTimingsDocument(timings, timings?.runId);
-  const normalized = normalizeStageEvent(event, fallbackAt);
-  const stages = timings.stages.map((stage) => ({ ...stage }));
-  const attempt = normalized.attempt;
-  let stageIndex = stages.findIndex(
-    (stage) => stage.stageId === normalized.stageId && stage.attempt === attempt,
-  );
-  const isStart = START_EVENT_TYPES.has(normalized.type);
-  const isEnd =
-    END_EVENT_TYPES.has(normalized.type) ||
-    (normalized.status != null && TERMINAL_STAGE_STATUSES.has(normalized.status));
-
-  if (stageIndex < 0) {
-    stages.push({
-      stageId: normalized.stageId,
-      label: normalized.label ?? normalized.stageId,
-      parentStageId: normalized.parentStageId ?? null,
-      attempt,
-      startedAt: normalized.at,
-      endedAt: null,
-      durationMs: 0,
-      status: normalized.status ?? "running",
-      error: normalized.error ?? null,
-      metrics: normalized.metrics ?? {},
-    });
-    stageIndex = stages.length - 1;
-  }
-
-  const stage = stages[stageIndex];
-  if (isStart && stage.endedAt) {
-    throw createStoreError(
-      "STAGE_ALREADY_FINISHED",
-      `Stage "${normalized.stageId}" attempt ${attempt} has already finished.`,
-    );
-  }
-
-  const updatedStage = {
-    ...stage,
-    label: normalized.label ?? stage.label,
-    parentStageId: normalized.parentStageId ?? stage.parentStageId,
-    status: normalized.status ?? (isEnd ? inferEndStatus(normalized.type) : stage.status),
-    error: normalized.error ?? stage.error,
-    metrics: normalized.metrics ? { ...stage.metrics, ...normalized.metrics } : stage.metrics,
-  };
-
-  if (isStart && !stage.startedAt) {
-    updatedStage.startedAt = normalized.at;
-  }
-  if (isEnd) {
-    updatedStage.endedAt = normalized.at;
-  }
-  const measuredElapsedMs = normalized.metrics?.elapsedMs;
-  updatedStage.durationMs =
-    isEnd &&
-    typeof measuredElapsedMs === "number" &&
-    Number.isFinite(measuredElapsedMs) &&
-    measuredElapsedMs >= 0
-      ? measuredElapsedMs
-      : durationBetween(updatedStage.startedAt, updatedStage.endedAt ?? normalized.at);
-  stages[stageIndex] = updatedStage;
-  const liveStages = stages.map((candidate) =>
-    candidate.endedAt
-      ? candidate
-      : {
-          ...candidate,
-          durationMs: durationBetween(candidate.startedAt, normalized.at),
-        },
-  );
-
-  return {
-    ...timings,
-    updatedAt: normalized.at,
-    totalDurationMs: calculateTotalDuration(liveStages, normalized.at),
-    events: [...timings.events, normalized],
-    stages: liveStages,
-  };
-}
-
-function interruptOpenStages(timings, interruptedAt, message) {
-  let changed = false;
-  const interruptionEvents = [];
-  const stages = timings.stages.map((stage) => {
-    if (TERMINAL_STAGE_STATUSES.has(stage.status) || stage.endedAt) {
-      return stage;
-    }
-    changed = true;
-    const error = stage.error ?? {
-      code: "RUN_INTERRUPTED",
-      message,
-    };
-    interruptionEvents.push({
-      type: "stage-finish",
-      stageId: stage.stageId,
-      label: stage.label,
-      parentStageId: stage.parentStageId,
-      attempt: stage.attempt,
-      at: interruptedAt,
-      status: "interrupted",
-      error,
-      metrics: null,
-    });
-    return {
-      ...stage,
-      endedAt: interruptedAt,
-      durationMs: durationBetween(stage.startedAt, interruptedAt),
-      status: "interrupted",
-      error,
-    };
-  });
-
-  if (!changed) {
-    return null;
-  }
-  return {
-    ...timings,
-    updatedAt: interruptedAt,
-    events: [...timings.events, ...interruptionEvents],
-    stages,
-    totalDurationMs: calculateTotalDuration(stages),
-  };
-}
-
-function mergeRunManifest(current, patch, now) {
-  if (patch.status != null) {
-    assertEnum(patch.status, RUN_STATUSES, "status");
-  }
-  if (patch.sourceMode != null) {
-    assertEnum(patch.sourceMode, SOURCE_MODES, "sourceMode");
-  }
-
-  const status = patch.status ?? current.status;
-  const sourceMode = patch.sourceMode ?? current.sourceMode;
-  const sourceRunId = patch.sourceRunId === undefined ? current.sourceRunId : patch.sourceRunId;
-  if (sourceMode === "frozen") {
-    assertStorageId(sourceRunId, "sourceRunId");
-    if (sourceRunId === current.runId) {
-      throw createStoreError("INVALID_SOURCE_RUN", "A frozen run cannot use itself as its source.");
-    }
-  } else if (sourceRunId != null) {
-    throw createStoreError(
-      "INVALID_SOURCE_RUN",
-      "sourceRunId is only valid when sourceMode is frozen.",
-    );
-  }
-
-  const timestamps = {
-    ...current.timestamps,
-    ...(patch.timestamps ?? {}),
-    updatedAt: now,
-  };
-  for (const [key, value] of Object.entries(timestamps)) {
-    timestamps[key] = normalizeOptionalTimestamp(value, key);
-  }
-  if (status === "running" && !timestamps.startedAt) {
-    timestamps.startedAt = now;
-  }
-  if (TERMINAL_RUN_STATUSES.has(status) && !timestamps.completedAt) {
-    timestamps.completedAt = now;
-  }
-
-  return createRunManifest(
-    {
-      ...current,
-      ...patch,
-      schemaVersion: RUN_SCHEMA_VERSION,
-      runId: current.runId,
-      slug: current.slug,
-      status,
-      sourceMode,
-      sourceRunId: sourceMode === "frozen" ? sourceRunId : null,
-      timestamps,
-      metrics:
-        patch.metrics == null
-          ? current.metrics
-          : normalizeRunMetrics({ ...current.metrics, ...patch.metrics }),
-      error: patch.error === undefined ? current.error : normalizeError(patch.error),
-    },
-    now,
-  );
-}
-
-function normalizeRunDocument(manifest) {
-  return createRunManifest(manifest, manifest.timestamps?.updatedAt);
-}
-
-function normalizeStageEvent(event, fallbackAt) {
-  if (!isPlainObject(event)) {
-    throw new TypeError("Timing event must be an object.");
-  }
-  const type = requireString(event.type, "event.type");
-  const stageId = requireString(event.stageId, "event.stageId");
-  const at = normalizeTimestamp(event.at ?? fallbackAt, "event.at");
-  const attempt =
-    event.attempt == null ? 1 : requirePositiveInteger(event.attempt, "event.attempt");
-
-  return {
-    type,
-    stageId,
-    label: nullableString(event.label, "event.label"),
-    parentStageId: nullableString(event.parentStageId, "event.parentStageId"),
-    attempt,
-    at,
-    status: nullableString(event.status, "event.status"),
-    error: normalizeError(event.error),
-    metrics: normalizeObject(event.metrics, "event.metrics"),
-  };
-}
-
-function normalizeRunMetrics(metrics) {
-  const value = normalizeObject(metrics, "metrics") ?? {};
-  const normalized = {
-    changedFiles: normalizeOptionalNonNegativeNumber(value.changedFiles, "metrics.changedFiles"),
-    additions: normalizeOptionalNonNegativeNumber(value.additions, "metrics.additions"),
-    deletions: normalizeOptionalNonNegativeNumber(value.deletions, "metrics.deletions"),
-    changedLines: normalizeOptionalNonNegativeNumber(value.changedLines, "metrics.changedLines"),
-  };
-
-  for (const [key, metric] of Object.entries(value)) {
-    if (!(key in normalized)) {
-      normalized[key] = metric;
-    }
-  }
-  return normalized;
-}
-
-function normalizeError(error) {
-  if (error == null) {
-    return null;
-  }
-  if (typeof error === "string") {
-    return { message: error };
-  }
-  if (!isPlainObject(error)) {
-    throw new TypeError("error must be null, a string, or an object.");
-  }
-  return structuredClone(error);
-}
-
-function normalizeObject(value, label) {
-  if (value == null) {
-    return null;
-  }
-  if (!isPlainObject(value)) {
-    throw new TypeError(`${label} must be an object.`);
-  }
-  return structuredClone(value);
-}
-
-function normalizeOptionalNonNegativeNumber(value, label) {
-  if (value == null) {
-    return null;
-  }
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    throw new TypeError(`${label} must be a non-negative finite number.`);
-  }
-  return value;
-}
-
-function assertImmutableRunFields(current, patch) {
-  for (const field of ["schemaVersion", "runId", "slug"]) {
-    if (patch[field] != null && patch[field] !== current[field]) {
-      throw createStoreError("IMMUTABLE_RUN_FIELD", `${field} cannot be changed.`);
-    }
-  }
-}
-
-function assertRunDocument(value, expected) {
-  if (
-    !isPlainObject(value) ||
-    value.schemaVersion !== RUN_SCHEMA_VERSION ||
-    value.slug !== expected.slug ||
-    value.runId !== expected.runId
-  ) {
-    throw createStoreError("INVALID_RUN_DOCUMENT", "run.json is not a valid run manifest.");
-  }
-}
-
-function assertTimingsDocument(value, runId) {
-  if (
-    !isPlainObject(value) ||
-    value.schemaVersion !== TIMINGS_SCHEMA_VERSION ||
-    value.runId !== runId ||
-    !Array.isArray(value.events) ||
-    !Array.isArray(value.stages)
-  ) {
-    throw createStoreError(
-      "INVALID_TIMINGS_DOCUMENT",
-      "timings.json is not a valid timing document.",
-    );
-  }
-}
-
-function inferEndStatus(type) {
-  if (type === "fail" || type === "error") {
-    return "failed";
-  }
-  return type === "stage-finish" || type === "complete" ? "completed" : "succeeded";
-}
-
-function calculateTotalDuration(stages, fallbackEndAt) {
-  if (stages.length === 0) {
-    return 0;
-  }
-  const starts = stages.map((stage) => timestampValue(stage.startedAt));
-  const ends = stages.map((stage) =>
-    timestampValue(stage.endedAt ?? fallbackEndAt ?? stage.startedAt),
-  );
-  return Math.max(0, Math.max(...ends) - Math.min(...starts));
-}
-
-function durationBetween(start, end) {
-  return Math.max(0, timestampValue(end) - timestampValue(start));
-}
-
-function compareRunsNewestFirst(left, right) {
-  const timeDifference =
-    timestampValue(right.timestamps?.createdAt) - timestampValue(left.timestamps?.createdAt);
-  return timeDifference || right.runId.localeCompare(left.runId);
-}
-
-function timestampValue(value) {
-  const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp) ? 0 : timestamp;
-}
-
-function normalizeTimestamp(value, label) {
-  if (typeof value !== "string" && !(value instanceof Date)) {
-    throw new TypeError(`${label} must be a valid timestamp.`);
-  }
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.valueOf())) {
-    throw new TypeError(`${label} must be a valid timestamp.`);
-  }
-  return date.toISOString();
-}
-
-function normalizeOptionalTimestamp(value, label) {
-  return value == null ? null : normalizeTimestamp(value, label);
-}
-
-function requireString(value, label) {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new TypeError(`${label} must be a non-empty string.`);
-  }
-  return value;
-}
-
-function nullableString(value, label) {
-  if (value == null) {
-    return null;
-  }
-  if (typeof value !== "string") {
-    throw new TypeError(`${label} must be a string or null.`);
-  }
-  return value;
-}
-
-function requirePositiveInteger(value, label) {
-  if (!Number.isSafeInteger(value) || value < 1) {
-    throw new TypeError(`${label} must be a positive integer.`);
-  }
-  return value;
-}
-
-function assertEnum(value, allowed, label) {
-  if (!allowed.includes(value)) {
-    throw new TypeError(`${label} must be one of: ${allowed.join(", ")}.`);
-  }
-}
-
-function isStorageId(value) {
-  return (
-    typeof value === "string" &&
-    value.length > 0 &&
-    value.length <= 200 &&
-    value !== "." &&
-    value !== ".." &&
-    /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)
-  );
-}
-
-function isPlainObject(value) {
-  return value != null && typeof value === "object" && !Array.isArray(value);
-}
-
 async function ensureRealDirectory(directory) {
   await mkdir(directory, { recursive: true });
   return realpath(directory);
@@ -1220,10 +724,4 @@ function createUpdateConflictError(documentName, slug, runId) {
     "RUN_UPDATE_CONFLICT",
     `${documentName} for run "${slug}/${runId}" changed during the update.`,
   );
-}
-
-function createStoreError(code, message) {
-  const error = new Error(message);
-  error.code = code;
-  return error;
 }
