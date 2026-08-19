@@ -67,13 +67,23 @@ function historyByUrlFromDashboard(dashboard) {
   return map;
 }
 
+const ANALYSIS_QUEUE_LIMIT = 1_000;
+
 export async function enqueueMissingAnalyses(values, dashboardService, options = {}) {
-  const candidates = values.slice(0, 100).map(normalizeAnalysisCandidate);
+  const candidates = values.slice(0, ANALYSIS_QUEUE_LIMIT).map(normalizeAnalysisCandidate);
   const dashboard = await dashboardService.snapshot();
   const historyByUrl = historyByUrlFromDashboard(dashboard);
   const ordered = sortAnalysisCandidates(candidates, historyByUrl);
   const model =
     typeof options.model === "string" && options.model.trim() ? options.model.trim() : undefined;
+  const provider =
+    typeof options.provider === "string" && options.provider.trim()
+      ? options.provider.trim()
+      : undefined;
+  const reasoningEffort =
+    typeof options.reasoningEffort === "string" && options.reasoningEffort.trim()
+      ? options.reasoningEffort.trim()
+      : undefined;
   const runs = [];
   for (const candidate of ordered) {
     if (alreadyAnalyzed(dashboard, candidate)) continue;
@@ -81,9 +91,11 @@ export async function enqueueMissingAnalyses(values, dashboardService, options =
       await dashboardService.enqueue({
         inboxScore: candidate.inboxScore,
         model,
+        provider,
         prioritize: candidate.prioritize,
         prUrl: candidate.url,
         queueBand: candidate.queueBand,
+        reasoningEffort,
         refresh: true,
         title: candidate.title,
         additions: candidate.additions,
@@ -93,6 +105,14 @@ export async function enqueueMissingAnalyses(values, dashboardService, options =
     );
   }
   return runs;
+}
+
+export function inboxItemsForAnalysisQueue(items) {
+  return items.filter((item) => item && !item.done && !item.authored && item.url);
+}
+
+export async function queueInboxAnalyses(items, dashboardService, options = {}) {
+  return enqueueMissingAnalyses(inboxItemsForAnalysisQueue(items), dashboardService, options);
 }
 
 export async function automaticallyQueueNewAnalyses(items, dashboardService, options = {}) {

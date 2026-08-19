@@ -12,7 +12,7 @@ const reviewSlug = parseGitHubPrUrl(prUrl).slug;
 const sourceRunDir = path.join(reviewsDir, reviewSlug, "source-run");
 const targetRunDir = path.join(reviewsDir, reviewSlug, "target-run");
 const events = [];
-const codexCalls = [];
+const executeCalls = [];
 const runController = new AbortController();
 const reviewStacksFixtureResult = {
   schemaVersion: "pr-review-stacks/v1",
@@ -102,9 +102,9 @@ index 1111111..2222222 100644
   ]);
 
   const result = await createBenchmarkRun({
-    executeCodex: async ({ model, outputPath, reasoningEffort, schemaPath, signal }) => {
+    execute: async ({ model, outputPath, reasoningEffort, schemaPath, signal }) => {
       assert.equal(signal, runController.signal);
-      codexCalls.push({ model, reasoningEffort, schemaPath });
+      executeCalls.push({ model, reasoningEffort, schemaPath });
       const value = schemaPath.includes("02-create-review-stacks")
         ? reviewStacksFixtureResult
         : schemaPath.includes("06-judge-candidate")
@@ -132,9 +132,9 @@ index 1111111..2222222 100644
   assert.equal(result.htmlPath, undefined);
   assert.equal(result.stableHtmlPath, undefined);
   assert.match(await readFile(result.analysisPath, "utf8"), /Replace the fixture value/);
-  assert.equal(codexCalls.length, 2);
+  assert.equal(executeCalls.length, 2);
   assert.deepEqual(
-    codexCalls.map(({ model, reasoningEffort }) => ({
+    executeCalls.map(({ model, reasoningEffort }) => ({
       model,
       reasoningEffort,
     })),
@@ -143,11 +143,11 @@ index 1111111..2222222 100644
       { model: "gpt-fixture", reasoningEffort: "low" },
     ],
   );
-  const claudeCalls = [];
-  const claudeRunDir = path.join(reviewsDir, reviewSlug, "claude-run");
+  const extraCalls = [];
+  const extraRunDir = path.join(reviewsDir, reviewSlug, "extra-run");
   await createBenchmarkRun({
-    executeClaude: async ({ model, outputPath, reasoningEffort, schemaPath }) => {
-      claudeCalls.push({ model, reasoningEffort });
+    execute: async ({ model, outputPath, reasoningEffort, schemaPath }) => {
+      extraCalls.push({ model, reasoningEffort });
       const value = schemaPath.includes("02-create-review-stacks")
         ? reviewStacksFixtureResult
         : schemaPath.includes("06-judge-candidate")
@@ -155,17 +155,16 @@ index 1111111..2222222 100644
           : reviewTreesFixtureResult;
       await writeFile(outputPath, `${JSON.stringify(value)}\n`, "utf8");
     },
-    model: "claude-sonnet-4-6",
+    model: "other-fixture",
     prUrl,
-    provider: "claude",
     reasoningEffort: "max",
     reviewsDir,
-    runDir: claudeRunDir,
+    runDir: extraRunDir,
     sourceRunDir,
   });
-  assert.deepEqual(claudeCalls, [
-    { model: "claude-sonnet-4-6", reasoningEffort: "max" },
-    { model: "claude-sonnet-4-6", reasoningEffort: "max" },
+  assert.deepEqual(extraCalls, [
+    { model: "other-fixture", reasoningEffort: "max" },
+    { model: "other-fixture", reasoningEffort: "max" },
   ]);
 
   const starts = new Set(

@@ -4,80 +4,328 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 const apiOrigin = "https://api.github.com";
 const maximumPages = 20;
+const githubApiVersion = "2026-03-10";
+const graphqlPath = "/graphql";
 
-export function createGitHubNotificationsClient({
-  fetchImpl = fetch,
-  getToken = async () => {
-    const { stdout } = await exec("gh", ["auth", "token"], {
-      encoding: "utf8",
-      timeout: 15_000,
-    });
-    return stdout.trim();
-  },
-} = {}) {
+const authoredPullRequestsQuery = `query AuthoredOpenPullRequests($first: Int!, $after: String) {
+  viewer {
+    pullRequests(
+      first: $first
+      after: $after
+      states: [OPEN]
+      orderBy: { field: UPDATED_AT, direction: DESC }
+    ) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        number
+        title
+        url
+        isDraft
+        state
+        reviewDecision
+        createdAt
+        updatedAt
+        mergedAt
+        additions
+        deletions
+        changedFiles
+        headRefOid
+        author { login }
+        repository { nameWithOwner }
+        comments { totalCount }
+        labels(first: 4) {
+          nodes { name color }
+        }
+      }
+    }
+  }
+}`;
+
+const subjectKinds = Object.freeze({
+  commit: "commit",
+  commits: "commit",
+  discussion: "discussions",
+  discussions: "discussions",
+  issue: "issue",
+  issues: "issue",
+  pull: "pull",
+  pulls: "pull",
+});
+
+function defaultGetToken() {
+  return exec("gh", ["auth", "token"], {
+    encoding: "utf8",
+    timeout: 15_000,
+  }).then(({ stdout }) => stdout.trim());
+}
+
+function githubHeaders(token, extra = {}) {
+  return {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "User-Agent": "pr-review-cockpit",
+    "X-GitHub-Api-Version": githubApiVersion,
+    ...extra,
+  };
+}
+
+function createGitHubAuth({ fetchImpl = fetch, getToken = defaultGetToken } = {}) {
   let tokenPromise;
 
-  return async function getNotifications({ lastModified, since } = {}) {
-    tokenPromise ??= getToken().catch((error) => {
+  return {
+    fetchImpl,
+    resetToken() {
       tokenPromise = undefined;
-      throw error;
-    });
-    const token = await tokenPromise;
-    if (!token) throw new Error("GitHub CLI did not return an authentication token.");
+    },
+    async token() {
+      tokenPromise ??= Promise.resolve()
+        .then(getToken)
+        .catch((error) => {
+          tokenPromise = undefined;
+          throw error;
+        });
+      const token = await tokenPromise;
+      if (!token) throw new Error("GitHub CLI did not return an authentication token.");
+      return token;
+    },
+  };
+}
 
-    const url = new URL("/notifications", apiOrigin);
-    url.searchParams.set("all", "true");
-    url.searchParams.set("per_page", "100");
-    if (since) url.searchParams.set("since", since);
+export function notificationSubjectKey(thread) {
+  const fromSubject = subjectKeyFromUrl(thread?.subject?.url);
+  if (fromSubject) return fromSubject;
+  const fromHtml = subjectKeyFromUrl(thread?.url);
+  if (fromHtml) return fromHtml;
+  const repository =
+    typeof thread?.repository === "string"
+      ? thread.repository
+      : (thread?.repository?.full_name ?? thread?.repository?.nameWithOwner ?? "");
+  const type = thread?.subject?.type ?? "";
+  const title = thread?.subject?.title ?? thread?.title ?? "";
+  if (repository && (type || title)) return `${repository}|${type}|${title}`;
+  return thread?.id ? `thread:${thread.id}` : "";
+}
 
-    const threads = [];
-    let nextUrl = url.href;
-    let responseLastModified = "";
-    let pollIntervalSeconds = 60;
-    for (let page = 0; nextUrl && page < maximumPages; page += 1) {
-      const response = await fetchImpl(nextUrl, {
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${token}`,
-          ...(page === 0 && lastModified ? { "If-Modified-Since": lastModified } : {}),
-          "User-Agent": "pr-review-cockpit",
-          "X-GitHub-Api-Version": "2026-03-10",
-        },
-        signal: AbortSignal.timeout(45_000),
-      });
-      pollIntervalSeconds = positiveInteger(
-        response.headers.get("x-poll-interval"),
-        pollIntervalSeconds,
-      );
-      if (response.status === 304) {
-        return {
-          lastModified,
-          notModified: true,
-          pollIntervalSeconds,
-          threads: [],
-        };
+export function retainInboxNotificationThreads(threads, inboxKeys) {
+  const keys = inboxKeys instanceof Set ? inboxKeys : new Set(inboxKeys);
+  return threads.filter((thread) => {
+    const key = notificationSubjectKey(thread);
+    return Boolean(key) && keys.has(key);
+  });
+}
+
+export function prFromAuthoredPullRequest(node) {
+  const repository = node?.repository?.nameWithOwner || repositoryNameFromUrl(node?.url) || "";
+  return {
+    additions: node?.additions ?? null,
+    author: node?.author ?? null,
+    changedFiles: node?.changedFiles ?? null,
+    commentsCount: node?.comments?.totalCount ?? 0,
+    createdAt: node?.createdAt ?? node?.created_at,
+    deletions: node?.deletions ?? null,
+    headSha: node?.headRefOid ?? "",
+    isDraft: Boolean(node?.isDraft ?? node?.draft),
+    labels: node?.labels?.nodes ?? node?.labels ?? [],
+    mergedAt: node?.mergedAt ?? node?.merged_at ?? null,
+    number: node?.number,
+    repository: { nameWithOwner: repository },
+    reviewDecision: node?.reviewDecision ?? null,
+    state: typeof node?.state === "string" ? node.state.toUpperCase() : "OPEN",
+    title: node?.title ?? "",
+    updatedAt: node?.updatedAt ?? node?.updated_at,
+    url: node?.url ?? node?.html_url ?? "",
+  };
+}
+
+function subjectKeyFromUrl(value) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    const parts = url.pathname
+      .replace(/^\/repos\//, "")
+      .split("/")
+      .filter(Boolean);
+    if (parts.length < 4) return "";
+    const [owner, repo, resource, id] = parts;
+    const kind = subjectKinds[resource];
+    if (!owner || !repo || !kind || !id) return "";
+    return `${owner}/${repo}#${kind}:${id}`;
+  } catch {
+    return "";
+  }
+}
+
+function repositoryNameFromUrl(value) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    const parts = url.pathname
+      .replace(/^\/repos\//, "")
+      .split("/")
+      .filter(Boolean);
+    return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : "";
+  } catch {
+    return "";
+  }
+}
+
+export function createGitHubNotificationsClient(options = {}) {
+  const auth = createGitHubAuth(options);
+  return async function getNotifications() {
+    return fetchRestNotificationThreads(auth);
+  };
+}
+
+export function createGitHubAuthoredPullRequestsClient(options = {}) {
+  const auth = createGitHubAuth(options);
+  const fetchAuthored =
+    options.fetchAuthoredPullRequests === undefined
+      ? () => fetchGraphqlAuthoredPullRequests(auth)
+      : options.fetchAuthoredPullRequests;
+
+  return async function getAuthoredPullRequests() {
+    if (typeof fetchAuthored === "function") {
+      try {
+        return await fetchAuthored();
+      } catch {
+        // Fall through to REST search when GraphQL authored PRs are unavailable.
       }
-      if ([401, 403].includes(response.status)) tokenPromise = undefined;
-      if (!response.ok) throw githubResponseError(response);
-
-      responseLastModified ||= response.headers.get("last-modified") ?? "";
-      const pageThreads = await response.json();
-      if (!Array.isArray(pageThreads)) throw new Error("GitHub notifications were not an array.");
-      threads.push(...pageThreads);
-      nextUrl = nextLink(response.headers.get("link"));
     }
+    return fetchRestAuthoredPullRequests(auth);
+  };
+}
 
-    if (nextUrl) throw new Error(`GitHub notifications exceeded ${maximumPages} pages.`);
-    return {
-      lastModified: responseLastModified,
-      notModified: false,
+async function fetchGraphqlAuthoredPullRequests(auth) {
+  const nodes = await paginateGraphql(auth, authoredPullRequestsQuery, (payload) => {
+    const connection = payload.data?.viewer?.pullRequests;
+    if (!connection) throw new Error("Your pull requests were unavailable.");
+    return connection;
+  });
+  return nodes.filter(Boolean).map(prFromAuthoredPullRequest);
+}
+
+async function paginateGraphql(auth, query, readConnection) {
+  const token = await auth.token();
+  const nodes = [];
+  let after = null;
+  for (let page = 0; page < maximumPages; page += 1) {
+    const payload = await graphqlRequest(auth, token, query, { after, first: 100 });
+    const connection = readConnection(payload);
+    nodes.push(...(connection.nodes ?? []));
+    if (!connection.pageInfo?.hasNextPage) return nodes;
+    after = connection.pageInfo.endCursor;
+    if (!after) throw new Error("GitHub GraphQL pagination cursor was missing.");
+  }
+  throw new Error(`GitHub GraphQL exceeded ${maximumPages} pages.`);
+}
+
+async function graphqlRequest(auth, token, query, variables) {
+  const response = await auth.fetchImpl(`${apiOrigin}${graphqlPath}`, {
+    body: JSON.stringify({ query, variables }),
+    headers: githubHeaders(token, { "Content-Type": "application/json" }),
+    method: "POST",
+    signal: AbortSignal.timeout(45_000),
+  });
+  if ([401, 403].includes(response.status)) auth.resetToken();
+  if (!response.ok) throw githubResponseError(response);
+  const payload = await response.json();
+  if (payload.errors?.length) {
+    throw new Error(payload.errors[0]?.message || "GitHub GraphQL failed.");
+  }
+  return payload;
+}
+
+async function fetchRestNotificationThreads(auth) {
+  const token = await auth.token();
+  const url = new URL("/notifications", apiOrigin);
+  // GitHub's current inbox. `all=true` still returns Done threads with no flag.
+  url.searchParams.set("all", "false");
+  url.searchParams.set("per_page", "100");
+
+  const threads = [];
+  let nextUrl = url.href;
+  let pollIntervalSeconds = 60;
+  for (let page = 0; nextUrl && page < maximumPages; page += 1) {
+    const response = await auth.fetchImpl(nextUrl, {
+      headers: githubHeaders(token),
+      signal: AbortSignal.timeout(45_000),
+    });
+    pollIntervalSeconds = positiveInteger(
+      response.headers.get("x-poll-interval"),
       pollIntervalSeconds,
-      threads,
-    };
+    );
+    if ([401, 403].includes(response.status)) auth.resetToken();
+    if (!response.ok) throw githubResponseError(response);
+
+    const pageThreads = await response.json();
+    if (!Array.isArray(pageThreads)) throw new Error("GitHub notifications were not an array.");
+    threads.push(...pageThreads);
+    nextUrl = nextLink(response.headers.get("link"));
+  }
+
+  if (nextUrl) throw new Error(`GitHub notifications exceeded ${maximumPages} pages.`);
+  return { pollIntervalSeconds, threads };
+}
+
+async function fetchRestAuthoredPullRequests(auth) {
+  const token = await auth.token();
+  const items = [];
+  for (let page = 1; page <= maximumPages; page += 1) {
+    const url = new URL("/search/issues", apiOrigin);
+    url.searchParams.set("q", "is:pr is:open author:@me");
+    url.searchParams.set("per_page", "100");
+    url.searchParams.set("page", String(page));
+    const response = await auth.fetchImpl(url.href, {
+      headers: githubHeaders(token),
+      signal: AbortSignal.timeout(45_000),
+    });
+    if ([401, 403].includes(response.status)) auth.resetToken();
+    if (!response.ok) throw githubResponseError(response);
+    const payload = await response.json();
+    const pageItems = Array.isArray(payload.items) ? payload.items : [];
+    items.push(...pageItems);
+    if (pageItems.length < 100) break;
+  }
+  return items.map((item) =>
+    prFromAuthoredPullRequest({
+      author: item.user,
+      createdAt: item.created_at,
+      draft: Boolean(item.draft),
+      html_url: item.html_url,
+      number: item.number,
+      repository: { nameWithOwner: repositoryNameFromUrl(item.html_url || item.repository_url) },
+      state: item.state,
+      title: item.title,
+      updatedAt: item.updated_at,
+    }),
+  );
+}
+
+export function createMarkGitHubNotificationDone(options) {
+  const auth = createGitHubAuth(options);
+
+  return async function markGitHubNotificationDone(threadId) {
+    const id = typeof threadId === "string" || typeof threadId === "number" ? String(threadId) : "";
+    if (!/^\d+$/.test(id)) throw new Error("GitHub notification thread id is invalid.");
+
+    const token = await auth.token();
+    const response = await auth.fetchImpl(`${apiOrigin}/notifications/threads/${id}`, {
+      headers: githubHeaders(token),
+      method: "DELETE",
+      signal: AbortSignal.timeout(45_000),
+    });
+    if (response.status === 404) return;
+    if ([401, 403].includes(response.status)) auth.resetToken();
+    if (!response.ok) throw githubResponseError(response);
   };
 }
 
 export const getGitHubNotifications = createGitHubNotificationsClient();
+export const getGitHubAuthoredPullRequests = createGitHubAuthoredPullRequestsClient();
+export const markGitHubNotificationThreadDone = createMarkGitHubNotificationDone();
 
 function nextLink(value) {
   if (!value) return "";

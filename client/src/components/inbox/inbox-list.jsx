@@ -48,13 +48,14 @@ const myPrStatuses = {
   opened: { label: "Opened", className: LIFECYCLE_STYLES.new },
   approved: { label: "Approved", className: LIFECYCLE_STYLES.approved },
   merged: { label: "Merged", className: LIFECYCLE_STYLES.merged },
+  closed: { label: "Closed", className: LIFECYCLE_STYLES.closed },
 };
 
-export function LoadingQueue() {
+export function LoadingInbox() {
   return (
     <Card
       className="grid min-h-72 gap-5 rounded-lg bg-card/75 p-6 shadow-lg backdrop-blur-sm"
-      aria-label="Building your current review queue"
+      aria-label="Building your current inbox"
     >
       {["w-3/5", "w-4/5", "w-2/3"].map((width) => (
         <div className="flex items-center gap-4" key={width}>
@@ -65,12 +66,12 @@ export function LoadingQueue() {
           </div>
         </div>
       ))}
-      <span className="sr-only">Building your current review queue…</span>
+      <span className="sr-only">Building your current inbox…</span>
     </Card>
   );
 }
 
-export function EmptyQueue({ canConfigure, onSettings, error, onRetry }) {
+export function EmptyInbox({ canConfigure, error, onRetry }) {
   const Icon = error ? AlertTriangle : Check;
   return (
     <Empty className="min-h-80 overflow-hidden rounded-lg border border-solid bg-card/75 shadow-lg backdrop-blur-sm">
@@ -94,8 +95,8 @@ export function EmptyQueue({ canConfigure, onSettings, error, onRetry }) {
           {error ? (
             <Button onClick={onRetry}>Retry</Button>
           ) : (
-            <Button variant="outline" onClick={onSettings}>
-              Add your team
+            <Button asChild variant="outline">
+              <a href="/settings#team">Add your team</a>
             </Button>
           )}
         </EmptyContent>
@@ -145,9 +146,10 @@ function PullRequestRow({
   onMarkRead,
 }) {
   const Title = nested ? "h4" : "h3";
+  const mine = Boolean(item.authored);
   const labelColor = (color) => (/^[\da-f]{6}$/i.test(color) ? `#${color}` : "#9b948d");
   const teammate = item.signals.find((signal) => signal.kind === "teammate-pr");
-  const myPrStatus = item.authored ? myPrStatuses[myPullRequestStatus(item)] : null;
+  const myPrStatus = mine ? myPrStatuses[myPullRequestStatus(item)] : null;
   const reviewRequest =
     item.signals.find((signal) => signal.kind === "direct-review") ??
     item.signals.find((signal) => signal.kind === "team-review");
@@ -170,21 +172,22 @@ function PullRequestRow({
             ),
         )
         .map((signal) => `${signal.label}${signal.detail ? ` · ${signal.detail}` : ""}`);
-  const initialUpdates = item.read
-    ? []
-    : [
-        `Pull request opened${item.author ? ` by ${item.author}` : ""}`,
-        Number.isInteger(item.additions) && Number.isInteger(item.deletions)
-          ? `+${item.additions} −${item.deletions}${Number.isInteger(item.changedFiles) ? ` across ${item.changedFiles} changed ${item.changedFiles === 1 ? "file" : "files"}` : ""}`
-          : Number.isInteger(item.changedFiles)
-            ? `${item.changedFiles} changed ${item.changedFiles === 1 ? "file" : "files"}`
+  const initialUpdates =
+    item.read || mine
+      ? []
+      : [
+          `Pull request opened${item.author ? ` by ${item.author}` : ""}`,
+          Number.isInteger(item.additions) && Number.isInteger(item.deletions)
+            ? `+${item.additions} −${item.deletions}${Number.isInteger(item.changedFiles) ? ` across ${item.changedFiles} changed ${item.changedFiles === 1 ? "file" : "files"}` : ""}`
+            : Number.isInteger(item.changedFiles)
+              ? `${item.changedFiles} changed ${item.changedFiles === 1 ? "file" : "files"}`
+              : null,
+          item.comments > 0
+            ? `${item.comments} ${item.comments === 1 ? "comment" : "comments"}`
             : null,
-        item.comments > 0
-          ? `${item.comments} ${item.comments === 1 ? "comment" : "comments"}`
-          : null,
-        item.draft ? "Opened as draft" : null,
-        item.state === "MERGED" ? "Merged" : null,
-      ].filter(Boolean);
+          item.draft ? "Opened as draft" : null,
+          item.state === "MERGED" ? "Merged" : null,
+        ].filter(Boolean);
   const fallbackUpdates = reportedUpdates.length
     ? reportedUpdates[0] === "PR activity changed" && signalUpdates.length
       ? []
@@ -247,7 +250,7 @@ function PullRequestRow({
             </Title>
 
             <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-              {item.author && (
+              {!mine && item.author && (
                 <span className="inline-flex items-center gap-1">
                   by
                   {teammate ? (
@@ -265,7 +268,7 @@ function PullRequestRow({
                   )}
                 </span>
               )}
-              {reviewRequest && (
+              {!mine && reviewRequest && (
                 <Badge
                   className={cn(
                     "h-5 gap-1 px-1.5 text-[11px] font-semibold",
@@ -285,29 +288,30 @@ function PullRequestRow({
                 </Badge>
               )}
               <span>updated {relativeTime(item.updatedAt)}</span>
-              {Number.isInteger(item.additions) && Number.isInteger(item.deletions) && (
+              {!mine && Number.isInteger(item.additions) && Number.isInteger(item.deletions) && (
                 <span>{item.additions + item.deletions} changed LoC</span>
               )}
-              {Number.isInteger(item.changedFiles) && (
+              {!mine && Number.isInteger(item.changedFiles) && (
                 <span>
                   {item.changedFiles} {item.changedFiles === 1 ? "file" : "files"}
                 </span>
               )}
-              {item.comments > 0 && (
+              {!mine && item.comments > 0 && (
                 <span className="inline-flex items-center gap-1">
                   <MessageSquare className="size-3" />
                   {item.comments}
                 </span>
               )}
-              {item.labels.map((label) => (
-                <span className="inline-flex items-center gap-1.5" key={label.name}>
-                  <i
-                    className="size-1.5 rounded-full"
-                    style={{ backgroundColor: labelColor(label.color) }}
-                  />
-                  {label.name}
-                </span>
-              ))}
+              {!mine &&
+                item.labels.map((label) => (
+                  <span className="inline-flex items-center gap-1.5" key={label.name}>
+                    <i
+                      className="size-1.5 rounded-full"
+                      style={{ backgroundColor: labelColor(label.color) }}
+                    />
+                    {label.name}
+                  </span>
+                ))}
             </div>
           </ItemContent>
 
@@ -350,18 +354,18 @@ function PullRequestRow({
                   </Button>
                 ) : (
                   <Button
-                    size="sm"
+                    size="icon-sm"
                     variant="outline"
                     disabled={analysisBusy}
                     onClick={() => onAnalyze(item)}
-                    title="Re-run AI analysis"
+                    aria-label="Retry analysis"
+                    title="Retry analysis"
                   >
                     {analysisBusy ? (
                       <LoaderCircle className="size-3.5 animate-spin" />
                     ) : (
                       <RotateCcw className="size-3.5" />
                     )}
-                    Retry
                   </Button>
                 )}
               </>
@@ -401,25 +405,27 @@ function PullRequestRow({
                     : "Analyze"}
               </Button>
             )}
-            <Button
-              size={completed ? "sm" : "icon-sm"}
-              variant="outline"
-              disabled={doneBusy}
-              onClick={() => onToggleDone(item)}
-              aria-label={completed ? undefined : "Mark done"}
-              title={completed ? undefined : "Mark done"}
-            >
-              {doneBusy ? (
-                <LoaderCircle className="size-3.5 animate-spin" />
-              ) : completed ? (
-                <>
-                  <RotateCcw className="size-3.5" />
-                  Restore
-                </>
-              ) : (
-                <Check className="size-3.5 text-emerald-700" />
-              )}
-            </Button>
+            {!mine && (
+              <Button
+                size={completed ? "sm" : "icon-sm"}
+                variant="outline"
+                disabled={doneBusy}
+                onClick={() => onToggleDone(item)}
+                aria-label={completed ? undefined : "Mark done"}
+                title={completed ? undefined : "Mark done"}
+              >
+                {doneBusy ? (
+                  <LoaderCircle className="size-3.5 animate-spin" />
+                ) : completed ? (
+                  <>
+                    <RotateCcw className="size-3.5" />
+                    Restore
+                  </>
+                ) : (
+                  <Check className="size-3.5 text-emerald-700" />
+                )}
+              </Button>
+            )}
           </ItemActions>
         </article>
       </Item>
@@ -511,7 +517,7 @@ function UpdatedDateGroup({
   const Heading = nested ? "h3" : "h2";
   const Row = notifications ? NotificationRow : PullRequestRow;
   const groupDoneBusy = items.some((item) => doneMutation.includes(item.id));
-  const openItems = items.filter((item) => !isDone(item));
+  const openItems = items.filter((item) => !item.authored && !isDone(item));
   return (
     <section
       className="overflow-hidden rounded-lg border bg-card/75 shadow-lg backdrop-blur-sm"
@@ -566,7 +572,7 @@ function UpdatedDateGroup({
   );
 }
 
-export function QueueSection({
+export function InboxSection({
   section,
   isDone,
   onToggleDone,
@@ -581,7 +587,7 @@ export function QueueSection({
 }) {
   const Icon = LIFECYCLE_META[section.id]?.icon ?? Bell;
   return (
-    <section className="grid gap-3" aria-label={`${section.label} queue`}>
+    <section className="grid gap-3" aria-label={`${section.label} inbox`}>
       {showHeader && (
         <header className="flex min-h-[3.25rem] items-center justify-between gap-4 p-1 max-[700px]:px-[0.9rem]">
           <h2 className="m-0 flex items-center gap-[0.55rem] font-display text-[1.15rem] font-[650] tracking-[-0.02em]">

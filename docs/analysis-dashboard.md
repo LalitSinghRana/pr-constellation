@@ -16,8 +16,8 @@ pnpm dev
 - New PRs appear in the inbox; select Analyze to queue an AI analysis.
 - Up to two different PRs run at once; analyses for the same PR remain serial.
 - Model-backed stages share a process-wide limit of three concurrent subprocesses.
-- File Tree and Section Tree generation and repair use the provider's highest configured effort
-  (`xhigh` for Codex and `max` for Claude).
+- File Tree and Section Tree generation and repair use the configured model's
+  reasoning effort.
 - Deterministic validation is the active gate; the semantic judge remains
   available for offline benchmarking but is disabled in the active pipeline.
 - Cancel stops queued or running work without deleting completed history.

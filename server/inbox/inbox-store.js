@@ -1,7 +1,7 @@
 import { chmod, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { lifecycleForQueueItem } from "../../shared/queue-policy.js";
+import { isOpenAuthoredPullRequest, lifecycleForQueueItem } from "../../shared/queue-policy.js";
 import {
   readConversation,
   schema as reviewConversationSchema,
@@ -158,7 +158,17 @@ export class InboxStore {
 
   activeQueueCounts() {
     const rows = this.#database.prepare(activeQueueCountRows).all();
-    const counts = { reviewed: 0, new: 0, approved: 0, merged: 0, mine: 0, other: 0, nonpr: 0 };
+    const counts = {
+      reviewed: 0,
+      new: 0,
+      approved: 0,
+      merged: 0,
+      closed: 0,
+      draft: 0,
+      mine: 0,
+      other: 0,
+      nonpr: 0,
+    };
     for (const row of rows) {
       if (row.kind === "notification") {
         counts.nonpr++;
@@ -172,8 +182,11 @@ export class InboxStore {
         latestReviewState: row.latest_review_state,
         signals: row.has_attention_signal ? [{ kind: "attention" }] : [],
       });
-      if (lifecycle !== "mine" && lifecycle !== "draft") counts[lifecycle]++;
-      if (row.authored) counts.mine++;
+      if (isOpenAuthoredPullRequest(row)) {
+        counts.mine++;
+        continue;
+      }
+      counts[lifecycle]++;
     }
     return counts;
   }

@@ -14,7 +14,7 @@ test("dashboard service resumes queued runs after a restart", async (context) =>
   await seededStore.createRun({
     metrics: {
       model: "gpt-fixture",
-      provider: "codex",
+      provider: "cursor",
       reasoningEffort: "high",
     },
     number: 7,
@@ -65,7 +65,7 @@ test("dashboard service restarts an incomplete batch source before equal-time de
       batchId: "batch-before-restart",
       batchSize: 2,
       model: "gpt-fixture",
-      provider: "codex",
+      provider: "cursor",
     },
     number: 8,
     owner: "example",
@@ -158,7 +158,7 @@ test("dashboard service records unsupported queued configuration instead of chan
   await seededStore.createRun({
     metrics: {
       model: "gpt-removed",
-      provider: "codex",
+      provider: "cursor",
       reasoningEffort: "high",
     },
     number: 9,

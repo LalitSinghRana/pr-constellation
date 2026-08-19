@@ -53,17 +53,17 @@
     @apply border-border outline-ring/50;
   }
 
-  html,
-  body,
+  html:has(.review-shell),
+  body:has(.review-shell),
   #pr-review-root {
     height: 100%;
   }
 
-  html {
+  html:has(.review-shell) {
     overflow: hidden;
   }
 
-  body {
+  body:has(.review-shell) {
     margin: 0;
     overflow: hidden;
     background: var(--background);

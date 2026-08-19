@@ -1,11 +1,4 @@
-import {
-  ArrowUpRight,
-  GitPullRequest,
-  Settings,
-  Settings2,
-  Sparkles,
-  TableProperties,
-} from "lucide-react";
+import { GitPullRequest, Settings, Sparkles } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle.jsx";
 import {
   SidebarContent,
@@ -41,7 +34,7 @@ export function Brand() {
       </span>
       <span>
         <strong className="block text-[0.95rem] tracking-[-0.01em]">Review cockpit</strong>
-        <small className="mt-0.5 block text-[0.7rem] text-sidebar-muted">Local GitHub queue</small>
+        <small className="mt-0.5 block text-[0.7rem] text-sidebar-muted">Local GitHub inbox</small>
       </span>
     </a>
   );
@@ -78,41 +71,24 @@ function NavigationGroup({ label, children }) {
   );
 }
 
-export function QueueSidebar({ activeFilter, counts, onFilter, onSettings }) {
+export function InboxSidebar({ activeFilter, counts, onFilter }) {
   return (
     <AppSidebar
       footer={
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild className={menuButtonClass}>
-              <a href="/analysis" target="_blank" rel="noreferrer">
+              <a href="/analysis">
                 <Sparkles />
                 <span>AI analyzer queue</span>
-                <ArrowUpRight className="ml-auto" />
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton className={menuButtonClass} onClick={onSettings}>
-              <Settings2 />
-              <span>Configure team</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
             <SidebarMenuButton asChild className={menuButtonClass}>
-              <a href="/settings" target="_blank" rel="noreferrer">
+              <a href="/settings">
                 <Settings />
                 <span>Settings</span>
-                <ArrowUpRight className="ml-auto" />
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild className={menuButtonClass}>
-              <a href="/scoring">
-                <TableProperties />
-                <span>Scoring details</span>
-                <ArrowUpRight className="ml-auto" />
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>

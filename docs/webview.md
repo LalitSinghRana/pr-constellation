@@ -6,7 +6,7 @@ website.
 ## Layout
 
 - `client/src/App.jsx` and `client/src/main.jsx`: root cockpit application and browser entry.
-- `client/src/pages/`: review queue, analysis queue, and scoring pages.
+- `client/src/pages/`: inbox, analysis queue, and scoring pages.
 - `client/src/components/`, `client/src/hooks/`, and `client/src/lib/`: shared UI, state, and helpers.
 - `client/src/review/render.js`: builds the standalone review HTML and transforms analysis
   plus diff data for the browser.

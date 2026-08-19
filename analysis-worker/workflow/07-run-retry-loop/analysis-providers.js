@@ -4,7 +4,7 @@ import {
 } from "../../../shared/analysis-models.js";
 import { runClaudeExec } from "./claude-agent.js";
 import { runCodexExec } from "./codex-exec.js";
-import { runCursorAgentExec } from "./cursor-agent.js";
+import { runCursorAgentExec, serializeCursorExecutor } from "./cursor-agent.js";
 
 export function normalizeAnalysisProvider(value) {
   const provider = normalizeProviderName(value);
@@ -18,13 +18,16 @@ export function inferAnalysisProvider(model) {
   return inferProviderFromModel(model);
 }
 
-export function resolveAnalysisExecutor(provider) {
-  const selected = normalizeAnalysisProvider(provider);
+export function resolveAnalysisExecutor({ model, provider } = {}) {
+  const selected = provider ? normalizeAnalysisProvider(provider) : inferAnalysisProvider(model);
   if (selected === "claude") {
     return runClaudeExec;
   }
-  if (selected === "cursor") {
-    return runCursorAgentExec;
+  if (selected === "codex") {
+    return runCodexExec;
   }
-  return runCodexExec;
+  if (selected === "cursor") {
+    return serializeCursorExecutor(runCursorAgentExec);
+  }
+  throw new TypeError(`Unsupported analysis provider "${selected}".`);
 }

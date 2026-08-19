@@ -22,7 +22,7 @@ export function useInbox(view = "active") {
   const refreshSequenceRef = useRef(0);
 
   const refresh = useCallback(
-    async (background = false, synchronize = false) => {
+    async (background = false) => {
       const requestSequence = ++refreshSequenceRef.current;
       if (!background) {
         loadingSequenceRef.current = requestSequence;
@@ -30,14 +30,6 @@ export function useInbox(view = "active") {
         setError("");
       }
       try {
-        if (synchronize) {
-          const syncResponse = await fetch(
-            synchronize === "notifications" ? "/api/inbox/notifications/sync" : "/api/inbox/sync",
-            { method: "POST", headers: { "Content-Type": "application/json" } },
-          );
-          const syncResult = await syncResponse.json();
-          if (!syncResponse.ok) throw new Error(syncResult.error);
-        }
         const response = await fetch(`/api/inbox?view=${encodeURIComponent(view)}`);
         const result = await response.json();
         if (!response.ok) throw new Error(result.error);
@@ -93,7 +85,7 @@ export function useInbox(view = "active") {
       }));
     } catch (caught) {
       if (requestSequence === refreshSequenceRef.current) {
-        setError(caught.message || "More queue items could not be loaded.");
+        setError(caught.message || "More inbox items could not be loaded.");
       }
     } finally {
       loadMoreRef.current = false;

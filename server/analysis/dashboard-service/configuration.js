@@ -2,14 +2,20 @@ import {
   analysisModelReasoningEffort,
   createAnalysisDashboardConfiguration,
   DEFAULT_ANALYSIS_MODEL,
+  DEFAULT_ANALYSIS_REASONING_EFFORT,
   inferAnalysisProvider,
+  isAnalysisModelId,
   normalizeAnalysisProvider,
 } from "../../../shared/analysis-models.js";
 
-export { analysisModelReasoningEffort };
+export {
+  analysisModelReasoningEffort,
+  DEFAULT_ANALYSIS_REASONING_EFFORT,
+  isAnalysisModelId,
+  normalizeAnalysisProvider,
+};
 
-export const DEFAULT_REASONING_EFFORTS = Object.freeze(["low", "medium", "high", "xhigh"]);
-export const DEFAULT_CLAUDE_REASONING_EFFORTS = Object.freeze(["low", "medium", "high", "max"]);
+export const DEFAULT_REASONING_EFFORTS = Object.freeze(["low", "medium", "high"]);
 const reasoningEffortOrder = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
 
 export async function loadDashboardConfiguration() {
@@ -56,15 +62,9 @@ export function normalizeDashboardConfiguration(configuration) {
         ? configuredByModel[model]
         : registryEffort
           ? [registryEffort]
-          : modelProviders[model] === "claude"
-            ? DEFAULT_CLAUDE_REASONING_EFFORTS
-            : reasoningEfforts;
-      const supported = orderedReasoningEfforts(configured);
-      const fallback = registryEffort
-        ? [registryEffort]
-        : modelProviders[model] === "claude"
-          ? DEFAULT_CLAUDE_REASONING_EFFORTS
           : reasoningEfforts;
+      const supported = orderedReasoningEfforts(configured);
+      const fallback = registryEffort ? [registryEffort] : reasoningEfforts;
       return [model, supported.length > 0 ? supported : [...fallback]];
     }),
   );

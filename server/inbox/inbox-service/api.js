@@ -1,9 +1,12 @@
+import { settingsAnalysisRunOptions } from "../../../shared/analysis-models.js";
 import { probeAnalysisAgent } from "../../analysis/analysis-agent-probe.js";
+import { loadAnalysisCatalog } from "../../analysis/analysis-model-catalog.js";
 import { host } from "../../runtime-config.js";
 import {
   automaticallyQueueNewAnalyses,
   enqueueMissingAnalyses,
   normalizeAnalysisCandidate,
+  queueInboxAnalyses,
 } from "./analysis-queue.js";
 import { secureHeaders, sendJson } from "./http-guards.js";
 
@@ -14,6 +17,56 @@ async function readRequestJson(request) {
     if (Buffer.byteLength(body) > 64 * 1024) throw new Error("Request too large");
   }
   return JSON.parse(body || "{}");
+}
+
+export function githubNotificationThreadIds(state, ids, validNotificationThreadId) {
+  const threadIds = [];
+  const missing = [];
+  for (const id of ids) {
+    const fromId = /^notification:(\d+)$/.exec(id)?.[1];
+    const fromRecord = validNotificationThreadId(state.items[id]?.item?.notificationThreadId);
+    const threadId = fromId ?? fromRecord ?? null;
+    if (threadId) threadIds.push(threadId);
+    else missing.push(id);
+  }
+  return { missing, threadIds: [...new Set(threadIds)] };
+}
+
+async function markMatchingGitHubNotificationsDone({
+  getNotifications,
+  ids,
+  markGitHubNotificationDone,
+  prKey,
+  state,
+  validNotificationThreadId,
+}) {
+  const collected = githubNotificationThreadIds(state, ids, validNotificationThreadId);
+  const threadIds = [...collected.threadIds];
+  let missing = collected.missing;
+  if (missing.length) {
+    try {
+      const live = await getNotifications();
+      const byPr = new Map(
+        (live.pullRequests ?? []).map(({ pr }) => [prKey(pr), pr.notificationThreadId]),
+      );
+      const byNotification = new Map(
+        (live.other ?? []).map((item) => [item.id, item.notificationThreadId]),
+      );
+      missing = missing.filter((id) => {
+        const threadId = validNotificationThreadId(byPr.get(id) ?? byNotification.get(id));
+        if (!threadId) return true;
+        threadIds.push(threadId);
+        return false;
+      });
+    } catch {
+      // Keep missing ids and still mark any threads already known.
+    }
+  }
+
+  const outcomes = await Promise.allSettled(
+    [...new Set(threadIds)].map(markGitHubNotificationDone),
+  );
+  return outcomes.some((outcome) => outcome.status === "rejected") || missing.length > 0;
 }
 
 export function createInboxApi({
@@ -57,7 +110,7 @@ export function createInboxApi({
           changedFiles: candidate.changedFiles,
           deletions: candidate.deletions,
           inboxScore: candidate.inboxScore,
-          model: settings.defaultAnalysisModel,
+          ...settingsAnalysisRunOptions(settings),
           prioritize: candidate.prioritize,
           prUrl: candidate.url,
           refresh: true,
@@ -75,11 +128,17 @@ export function createInboxApi({
       try {
         const body = await readRequestJson(request);
         const settings = await readSettings();
-        const runs = await enqueueMissingAnalyses(
-          Array.isArray(body.pullRequests) ? body.pullRequests : [],
-          dashboardService,
-          { model: settings.defaultAnalysisModel },
-        );
+        const runs = Array.isArray(body.pullRequests)
+          ? await enqueueMissingAnalyses(
+              body.pullRequests.filter((item) => !item?.authored),
+              dashboardService,
+              settingsAnalysisRunOptions(settings),
+            )
+          : await queueInboxAnalyses(
+              inboxFromQueue(await readQueueState()).items,
+              dashboardService,
+              settingsAnalysisRunOptions(settings),
+            );
         eventHub.publish("analysis", { queued: runs.length });
         sendJson(response, 202, { runs });
       } catch (error) {
@@ -93,11 +152,20 @@ export function createInboxApi({
       return true;
     }
 
+    if (url.pathname === "/api/analysis-models" && request.method === "GET") {
+      try {
+        sendJson(response, 200, await loadAnalysisCatalog());
+      } catch (error) {
+        sendJson(response, 502, { error: error.message || "Analysis models could not be listed." });
+      }
+      return true;
+    }
+
     if (url.pathname === "/api/analysis-agent/probe" && request.method === "POST") {
       try {
         await readRequestJson(request);
         const settings = await readSettings();
-        const agent = await probeAnalysisAgent({ model: settings.defaultAnalysisModel });
+        const agent = await probeAnalysisAgent(settingsAnalysisRunOptions(settings));
         sendJson(response, 200, {
           agent,
           checkedAt: new Date().toISOString(),
@@ -118,7 +186,7 @@ export function createInboxApi({
           const automaticAnalysis = await automaticallyQueueNewAnalyses(
             inboxFromQueue(queueState).items,
             dashboardService,
-            { model: settings.defaultAnalysisModel },
+            settingsAnalysisRunOptions(settings),
           );
           if (automaticAnalysis.runs.length) {
             eventHub.publish("analysis", { queued: automaticAnalysis.runs.length });
@@ -152,46 +220,35 @@ export function createInboxApi({
             body.id.length > 200 ||
             mutations.length !== 1)
         ) {
-          throw new Error("One tracked queue item update is required.");
+          throw new Error("One tracked inbox item update is required.");
         }
         const targetIds = ids ?? [body.id];
+        let queueState = null;
         const result = await mutateQueueState(
-          (state) =>
-            bulkDone
+          (state) => {
+            const update = bulkDone
               ? setQueueItemsDone(state, ids)
               : mutations[0] === "done"
                 ? setQueueItemDone(state, body.id, body.done)
-                : setQueueItemRead(state, body.id, body.read),
+                : setQueueItemRead(state, body.id, body.read);
+            if (update && body.done) queueState = state;
+            return update;
+          },
           { ids: targetIds },
         );
-        if (!result) throw new Error("That queue item is not tracked.");
-        if (body.done) {
-          const state = await readQueueState();
-          const threadIds = new Set(
-            targetIds.flatMap((id) => {
-              const stored = state.items[id]?.item?.notificationThreadId;
-              const threadId =
-                /^notification:(\d+)$/.exec(id)?.[1] ?? validNotificationThreadId(stored);
-              return threadId ? [threadId] : [];
-            }),
-          );
-          try {
-            if (threadIds.size < targetIds.length) {
-              for (const { pr } of (await getNotifications()).pullRequests) {
-                if (targetIds.includes(prKey(pr)) && pr.notificationThreadId) {
-                  threadIds.add(pr.notificationThreadId);
-                }
-              }
-            }
-            const outcomes = await Promise.allSettled(
-              [...threadIds].map(markGitHubNotificationDone),
-            );
-            if (outcomes.some(({ status }) => status === "rejected")) {
-              throw new Error("GitHub notification update failed");
-            }
-          } catch {
-            result.warning = "Saved locally, but GitHub could not mark the notification done.";
-          }
+        if (!result) throw new Error("That inbox item is not tracked.");
+        if (
+          body.done &&
+          (await markMatchingGitHubNotificationsDone({
+            getNotifications,
+            ids: targetIds,
+            markGitHubNotificationDone,
+            prKey,
+            state: queueState ?? { items: {} },
+            validNotificationThreadId,
+          }))
+        ) {
+          result.warning = "Saved locally, but GitHub could not mark the notification done.";
         }
         eventHub.publish("inbox", { ids: targetIds });
         sendJson(response, 200, result);
@@ -203,27 +260,13 @@ export function createInboxApi({
 
     if (url.pathname === "/api/inbox/sync" && request.method === "POST") {
       try {
-        sendJson(response, 200, await scheduler.runFullSync());
+        sendJson(response, 200, await scheduler.runSync());
       } catch (error) {
         sendJson(response, 502, {
           error:
             error?.code === "ENOENT"
               ? "GitHub CLI is not installed."
               : "GitHub could not be reached. Run `gh auth status` and try again.",
-        });
-      }
-      return true;
-    }
-
-    if (url.pathname === "/api/inbox/notifications/sync" && request.method === "POST") {
-      try {
-        sendJson(response, 200, await scheduler.runNotificationSync());
-      } catch (error) {
-        sendJson(response, 502, {
-          error:
-            error?.code === "ENOENT"
-              ? "GitHub CLI is not installed."
-              : "GitHub notifications could not be refreshed.",
         });
       }
       return true;
@@ -256,7 +299,7 @@ export function createInboxApi({
           }),
         );
       } catch {
-        sendJson(response, 500, { error: "The local queue could not be loaded." });
+        sendJson(response, 500, { error: "The local inbox could not be loaded." });
       }
       return true;
     }

@@ -1,5 +1,12 @@
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
+import {
+  AnalysisAgentSettings,
+  useAnalysisCatalog,
+} from "@/components/settings/analysis-agent-settings.jsx";
+import { ScoringCard } from "@/components/settings/scoring-card.jsx";
+import { SettingsExpandableRow } from "@/components/settings/settings-expandable-row.jsx";
+import { TeamSettingsForm } from "@/components/settings/team-settings-form.jsx";
 import { ThemeToggle } from "@/components/theme-toggle.jsx";
 import {
   Item,
@@ -11,46 +18,66 @@ import {
   ItemTitle,
 } from "@/components/ui/item.jsx";
 import { Label } from "@/components/ui/label.jsx";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select.jsx";
 import { Switch } from "@/components/ui/switch.jsx";
 import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { useMutation } from "@/hooks/use-mutation.js";
 import { putSettings, useSettingsQuery } from "@/hooks/use-settings.js";
 import { EMPTY_SETTINGS } from "@/lib/queue.js";
-import {
-  DEFAULT_ANALYSIS_MODEL,
-  SETTINGS_ANALYSIS_AGENTS,
-} from "../../../shared/analysis-models.js";
+
+function sectionFromLocation() {
+  if (window.location.pathname.startsWith("/scoring")) return "scoring";
+  const hash = window.location.hash.replace(/^#/, "");
+  return hash === "team" || hash === "scoring" ? hash : "";
+}
 
 export function SettingsPage() {
   useDocumentTitle({ title: "Settings · PR Review Cockpit" });
   const settingsQuery = useSettingsQuery();
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
+  const [teamOpen, setTeamOpen] = useState(() => sectionFromLocation() === "team");
+  const [scoringOpen, setScoringOpen] = useState(() => sectionFromLocation() === "scoring");
   const saveSettings = useMutation({
-    mutationFn: ({ body }) => putSettings(body),
+    mutationFn: putSettings,
   });
 
   useEffect(() => {
     if (settingsQuery.data) setSettings(settingsQuery.data);
   }, [settingsQuery.data]);
 
-  async function patchSetting(field, value) {
-    if (settingsQuery.isLoading || saveSettings.isPending) return;
+  useEffect(() => {
+    if (!window.location.pathname.startsWith("/scoring")) return;
+    window.history.replaceState(null, "", "/settings#scoring");
+  }, []);
+
+  async function patchSettings(patch) {
+    if (settingsQuery.isLoading || saveSettings.isPending) return false;
     const previous = settings;
-    const body = { ...settings, [field]: value };
+    const body = { ...settings, ...patch };
     setSettings(body);
     try {
-      const result = await saveSettings.mutateAsync({ field, body });
+      const result = await saveSettings.mutateAsync(body);
       setSettings(result);
+      return true;
     } catch {
       setSettings(previous);
+      return false;
     }
+  }
+
+  function setSectionOpen(section, nextOpen) {
+    if (section === "team") setTeamOpen(nextOpen);
+    else setScoringOpen(nextOpen);
+    const otherOpen = section === "team" ? scoringOpen : teamOpen;
+    if (nextOpen) {
+      window.history.replaceState(null, "", `/settings#${section}`);
+      return;
+    }
+    if (window.location.hash !== `#${section}`) return;
+    window.history.replaceState(
+      null,
+      "",
+      otherOpen ? `/settings#${section === "team" ? "scoring" : "team"}` : "/settings",
+    );
   }
 
   const error =
@@ -58,18 +85,18 @@ export function SettingsPage() {
     settingsQuery.error?.message ||
     "";
   const busy = settingsQuery.isLoading || saveSettings.isPending;
-  const defaultAnalysisModel = settings.defaultAnalysisModel || DEFAULT_ANALYSIS_MODEL;
+  const analysisCatalog = useAnalysisCatalog();
 
   return (
     <main className="min-h-screen">
-      <div className="mx-auto w-[min(100%-2.5rem,42rem)] pt-12 pb-20 max-[700px]:w-[min(100%-1.5rem,42rem)] max-[700px]:pt-6">
+      <div className="mx-auto w-full max-w-[1240px] px-5 pt-12 pb-20 sm:px-8 max-[700px]:px-4 max-[700px]:pt-6">
         <div className="flex items-center justify-between">
           <a
             className="inline-flex items-center gap-[0.45rem] text-[0.78rem] font-bold text-muted-foreground no-underline hover:text-foreground"
             href="/"
           >
             <ArrowLeft className="size-4" />
-            Back to the queue
+            Back to the inbox
           </a>
           <ThemeToggle />
         </div>
@@ -82,9 +109,9 @@ export function SettingsPage() {
           <h1 className="font-display text-4xl font-semibold tracking-[-0.045em] sm:text-5xl">
             Settings
           </h1>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-            Turn cockpit features on or off. Preferences are saved in the local SQLite settings
-            store.
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Turn cockpit features on or off, configure the team used to score the inbox, and inspect
+            the priority model. Preferences are saved in the local SQLite settings store.
           </p>
         </header>
 
@@ -102,36 +129,23 @@ export function SettingsPage() {
             Feature toggles
           </h2>
           <ItemGroup className="gap-0 overflow-hidden rounded-lg border bg-card/82 shadow-lg backdrop-blur">
-            <Item size="sm" className="rounded-none border-0 px-5 py-4">
+            <Item size="sm" className="items-start rounded-none border-0 px-5 py-4 max-sm:flex-col">
               <ItemContent>
                 <ItemTitle>
-                  <Label htmlFor="default-agent">Default agent</Label>
+                  <Label>Default analysis</Label>
                 </ItemTitle>
                 <ItemDescription className="line-clamp-none">
-                  Used for Analyze, Retry, and auto-queue.
+                  Provider, model, and effort used for Analyze, Retry, and auto-queue. Cursor Agent
+                  runs Composer and Grok; GPT models use Codex; Claude models use Claude.
                 </ItemDescription>
               </ItemContent>
-              <ItemActions>
-                <Select
-                  value={defaultAnalysisModel}
-                  disabled={busy}
-                  onValueChange={(value) => patchSetting("defaultAnalysisModel", value)}
-                >
-                  <SelectTrigger
-                    id="default-agent"
-                    className="w-[11.5rem]"
-                    aria-label="Default agent"
-                  >
-                    <SelectValue placeholder="Select agent" />
-                  </SelectTrigger>
-                  <SelectContent align="end" position="popper">
-                    {SETTINGS_ANALYSIS_AGENTS.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
-                        {agent.label} {agent.providerLabel}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <ItemActions className="max-sm:w-full max-sm:justify-stretch">
+                <AnalysisAgentSettings
+                  busy={busy}
+                  catalog={analysisCatalog}
+                  onSave={(patch) => patchSettings(patch)}
+                  settings={settings}
+                />
               </ItemActions>
             </Item>
             <ItemSeparator />
@@ -150,7 +164,7 @@ export function SettingsPage() {
                   id="auto-queue"
                   checked={settings.autoQueue === true}
                   disabled={busy}
-                  onCheckedChange={(enabled) => patchSetting("autoQueue", enabled)}
+                  onCheckedChange={(enabled) => patchSettings({ autoQueue: enabled })}
                 />
               </ItemActions>
             </Item>
@@ -169,10 +183,34 @@ export function SettingsPage() {
                   id="show-minimap"
                   checked={settings.showMinimap === true}
                   disabled={busy}
-                  onCheckedChange={(enabled) => patchSetting("showMinimap", enabled)}
+                  onCheckedChange={(enabled) => patchSettings({ showMinimap: enabled })}
                 />
               </ItemActions>
             </Item>
+            <ItemSeparator />
+            <SettingsExpandableRow
+              description="GitHub username, teammates, and teams used to score the inbox."
+              id="team"
+              onOpenChange={(nextOpen) => setSectionOpen("team", nextOpen)}
+              open={teamOpen}
+              title="Team"
+            >
+              <TeamSettingsForm
+                busy={busy}
+                onSave={(patch) => patchSettings(patch)}
+                settings={settings}
+              />
+            </SettingsExpandableRow>
+            <ItemSeparator />
+            <SettingsExpandableRow
+              description="Lifecycle bases and activity signals that make a pull request's priority score."
+              id="scoring"
+              onOpenChange={(nextOpen) => setSectionOpen("scoring", nextOpen)}
+              open={scoringOpen}
+              title="Scoring model"
+            >
+              <ScoringCard />
+            </SettingsExpandableRow>
           </ItemGroup>
         </section>
       </div>

@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, LoaderCircle, Sparkles, X } from "lucide-react";
 import { parseAsStringEnum, useQueryState } from "nuqs";
 import { useCallback, useMemo, useState } from "react";
 import { AnalysisSection } from "@/components/analysis/analysis-section.jsx";
@@ -9,7 +9,6 @@ import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { useMutation } from "@/hooks/use-mutation.js";
 import { readJson, useQuery } from "@/hooks/use-query.js";
 import { analysisState } from "@/lib/analysis.js";
-import { cn } from "@/lib/utils.js";
 
 const terminalStatuses = new Set(["succeeded", "failed", "canceled", "interrupted"]);
 const analysisTabs = ["ongoing", "not-started", "successful", "failed", "canceled"];
@@ -46,6 +45,20 @@ export function AnalysisPage() {
     onSuccess: () => refreshDashboard(),
     onError: (caught) => {
       setActionError(caught.message || "Could not prioritize analysis.");
+    },
+  });
+  const queueAllMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/analyses/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      return readJson(response);
+    },
+    onSuccess: () => refreshDashboard(),
+    onError: (caught) => {
+      setActionError(caught.message || "Inbox pull requests could not be queued.");
     },
   });
   const prioritizingRunId = prioritizeRunMutation.isPending
@@ -149,6 +162,16 @@ export function AnalysisPage() {
     .sort(
       (left, right) => new Date(right.queueItem.updatedAt) - new Date(left.queueItem.updatedAt),
     );
+  const canQueueAll = queueItems.some((item) => {
+    if (item.authored || item.done) return false;
+    const entry = entries.find((candidate) => candidate.pr.url === item.url);
+    if (!entry || entry.state === "not-started") return true;
+    if (entry.runningRun || entry.queuedRuns.length) return false;
+    return (
+      entry.latestRun?.status !== "succeeded" ||
+      (item.headSha && entry.latestRun.headSha && entry.latestRun.headSha !== item.headSha)
+    );
+  });
 
   const cancelRuns = useCallback(
     async (targets) => {
@@ -203,7 +226,7 @@ export function AnalysisPage() {
           <Button asChild variant="ghost">
             <a href="/">
               <ArrowLeft className="size-4" />
-              Review queue
+              Inbox
             </a>
           </Button>
           <div className="flex flex-wrap gap-2">
@@ -216,9 +239,20 @@ export function AnalysisPage() {
               <X className="size-4" />
               Cancel all
             </Button>
-            <Button variant="outline" disabled={loading} onClick={refreshDashboard}>
-              <RefreshCw className={cn("size-4", loading && "animate-spin")} />
-              Refresh
+            <Button
+              disabled={loading || queueAllMutation.isPending || !canQueueAll}
+              onClick={() => {
+                setActionError("");
+                queueAllMutation.mutate();
+              }}
+              title={canQueueAll ? "Queue every inbox PR except your own" : "Nothing left to queue"}
+            >
+              {queueAllMutation.isPending ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <Sparkles className="size-4" />
+              )}
+              {queueAllMutation.isPending ? "Queueing" : "Queue all"}
             </Button>
           </div>
         </div>

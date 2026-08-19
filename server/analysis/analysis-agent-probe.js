@@ -13,25 +13,29 @@ const PROBE_PROMPT = 'Reply with {"ok":true} only.';
 /**
  * Probe the configured default analysis agent the same way a real run does.
  */
-export async function probeAnalysisAgent({ model = DEFAULT_ANALYSIS_MODEL } = {}) {
+export async function probeAnalysisAgent({
+  model = DEFAULT_ANALYSIS_MODEL,
+  provider,
+  reasoningEffort,
+} = {}) {
   const selected =
     typeof model === "string" && model.trim() ? model.trim() : DEFAULT_ANALYSIS_MODEL;
-  const provider = inferAnalysisProvider(selected);
-  if (provider !== "cursor") {
+  const selectedProvider = inferAnalysisProvider(selected, provider);
+  if (selectedProvider !== "cursor") {
     return {
       accessible: false,
       available: false,
-      message: `No accessibility probe for provider "${provider}" yet.`,
+      message: `No accessibility probe for provider "${selectedProvider}" yet.`,
       model: selected,
-      provider,
+      provider: selectedProvider,
     };
   }
-  return probeCursorAgent(selected);
+  return probeCursorAgent(selected, reasoningEffort);
 }
 
-function probeCursorAgent(model) {
-  const reasoningEffort = analysisModelReasoningEffort(model);
-  const args = [...buildCursorAgentArgs({ model, reasoningEffort }), PROBE_PROMPT];
+function probeCursorAgent(model, reasoningEffort) {
+  const selectedEffort = reasoningEffort || analysisModelReasoningEffort(model, "cursor");
+  const args = [...buildCursorAgentArgs({ model, reasoningEffort: selectedEffort }), PROBE_PROMPT];
 
   return new Promise((resolve) => {
     let child;

@@ -245,7 +245,7 @@ export async function runClaudeExec({
         parsed = parseClaudeStreamJson(stdout);
         assertSuccessfulResult(parsed.resultEvent);
         if (!isJsonObject(parsed.structuredOutput)) {
-          throw new Error("Claude did not return a structured JSON object.");
+          throw new Error("Analysis executor did not return a structured JSON object.");
         }
         throwIfAborted(signal);
         await writeFile(
@@ -309,7 +309,7 @@ function parseStreamEvents(stdout) {
         events.push(event);
       }
     } catch {
-      // Claude writes one JSON event per line. Ignore unrelated diagnostics so
+      // The CLI writes one JSON event per line. Ignore unrelated diagnostics so
       // a valid terminal result remains usable.
     }
   }
@@ -342,7 +342,7 @@ function parsePossibleJson(value) {
 
 function assertSuccessfulResult(resultEvent) {
   if (!resultEvent) {
-    throw new Error("Claude stream ended without a result event.");
+    throw new Error("Analysis executor stream ended without a result event.");
   }
   if (
     resultEvent.is_error === true ||
@@ -350,7 +350,9 @@ function assertSuccessfulResult(resultEvent) {
     resultEvent.subtype === "error_during_execution"
   ) {
     const detail = readClaudeErrorMessage(resultEvent);
-    throw new Error(`Claude returned an unsuccessful result${detail ? `: ${detail}` : "."}`);
+    throw new Error(
+      `Analysis executor returned an unsuccessful result${detail ? `: ${detail}` : "."}`,
+    );
   }
 }
 

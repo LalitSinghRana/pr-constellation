@@ -1,10 +1,96 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { lifecycleForQueueItem } from "../../shared/queue-policy.js";
-import { refreshNotificationItems } from "../inbox/inbox-service.js";
+import { isOpenAuthoredPullRequest, lifecycleForQueueItem } from "../../shared/queue-policy.js";
+import {
+  applyInboxActivity,
+  refreshNotificationItems,
+  reviewRequestSignals,
+} from "../inbox/inbox-service.js";
+
+test("draft and closed pull requests have their own lifecycles", () => {
+  assert.equal(
+    lifecycleForQueueItem({ state: "OPEN", draft: true, authored: true, signals: [] }),
+    "draft",
+  );
+  assert.equal(
+    lifecycleForQueueItem({ state: "CLOSED", draft: false, authored: true, signals: [] }),
+    "closed",
+  );
+  assert.equal(
+    lifecycleForQueueItem({ state: "MERGED", draft: true, authored: true, signals: [] }),
+    "merged",
+  );
+  assert.equal(
+    lifecycleForQueueItem({ state: "OPEN", draft: false, authored: true, signals: [] }),
+    "mine",
+  );
+  assert.equal(
+    lifecycleForQueueItem({ state: "UNKNOWN", draft: false, authored: true, signals: [] }),
+    "mine",
+  );
+  assert.equal(
+    lifecycleForQueueItem({ state: "UNKNOWN", draft: false, authored: false, signals: [] }),
+    "new",
+  );
+});
+
+test("open authored pull requests exclude merged and closed states", () => {
+  assert.equal(isOpenAuthoredPullRequest({ authored: true, state: "OPEN" }), true);
+  assert.equal(isOpenAuthoredPullRequest({ authored: true, state: "UNKNOWN" }), true);
+  assert.equal(isOpenAuthoredPullRequest({ authored: true, state: "MERGED" }), false);
+  assert.equal(isOpenAuthoredPullRequest({ authored: true, state: "CLOSED" }), false);
+});
+
+test("GraphQL review requests become direct and team signals", () => {
+  const activity = {
+    author: { login: "alice" },
+    isDraft: false,
+    labels: { nodes: [] },
+    reviewRequests: {
+      nodes: [
+        { requestedReviewer: { login: "me" } },
+        { requestedReviewer: { combinedSlug: "example/platform" } },
+        { requestedReviewer: { login: "other" } },
+      ],
+    },
+    reviews: { nodes: [] },
+    state: "OPEN",
+    title: "Feature",
+    updatedAt: "2026-08-10T00:00:00Z",
+    url: "https://github.com/owner/repo/pull/1",
+  };
+
+  assert.deepEqual(reviewRequestSignals(activity, "me", ["example/platform"]), [
+    { kind: "direct-review", detail: "" },
+    { kind: "team-review", detail: "example/platform" },
+  ]);
+
+  const item = {
+    id: "owner/repo#1",
+    number: 1,
+    repository: "owner/repo",
+    signals: [{ kind: "direct-mention", label: "Mentioned you", detail: "", weight: 6, href: "" }],
+    updatedAt: "2026-08-10T00:00:00Z",
+    url: "https://github.com/owner/repo/pull/1",
+  };
+  const items = new Map([[item.id, item]]);
+  applyInboxActivity(items, item, activity, {
+    teammates: ["alice"],
+    teams: ["example/platform"],
+    username: "me",
+  });
+  const enriched = items.get(item.id);
+  assert.equal(enriched.authored, false);
+  assert.deepEqual(enriched.signals.map((signal) => signal.kind).sort(), [
+    "direct-mention",
+    "direct-review",
+    "team-review",
+    "teammate-pr",
+  ]);
+});
 
 test("a notification refresh keeps commented pull requests reviewed", async () => {
-  const id = "PicnicSupermarket/picnic-store-config#5011";
+  const id = "owner/repo#5011";
   const items = new Map([
     [
       id,
@@ -13,7 +99,7 @@ test("a notification refresh keeps commented pull requests reviewed", async () =
         latestReviewState: null,
         notificationUpdatedAt: "2026-08-10T08:40:00Z",
         number: 5011,
-        repository: "PicnicSupermarket/picnic-store-config",
+        repository: "owner/repo",
         reviewed: false,
         state: "OPEN",
         updatedAt: "2026-08-10T08:40:00Z",
@@ -22,7 +108,7 @@ test("a notification refresh keeps commented pull requests reviewed", async () =
   ]);
   const touched = new Set();
   const activity = {
-    author: { login: "FlorBosch" },
+    author: { login: "alice" },
     createdAt: "2026-08-07T11:28:43Z",
     headRefOid: "head-sha",
     isDraft: false,
@@ -32,7 +118,7 @@ test("a notification refresh keeps commented pull requests reviewed", async () =
     reviews: {
       nodes: [
         {
-          author: { login: "LalitSinghRana" },
+          author: { login: "me" },
           state: "COMMENTED",
           submittedAt: "2026-08-10T08:45:04Z",
         },
@@ -41,7 +127,7 @@ test("a notification refresh keeps commented pull requests reviewed", async () =
     state: "OPEN",
     title: "Basket layout",
     updatedAt: "2026-08-10T08:46:30Z",
-    url: "https://github.com/PicnicSupermarket/picnic-store-config/pull/5011",
+    url: "https://github.com/owner/repo/pull/5011",
   };
 
   await refreshNotificationItems(
@@ -50,13 +136,13 @@ test("a notification refresh keeps commented pull requests reviewed", async () =
       {
         pr: {
           number: 5011,
-          repository: { nameWithOwner: "PicnicSupermarket/picnic-store-config" },
+          repository: { nameWithOwner: "owner/repo" },
         },
         thread: { updated_at: "2026-08-10T08:46:31Z" },
       },
     ],
     touched,
-    { getActivity: async () => activity, username: "LalitSinghRana" },
+    { getActivity: async () => activity, username: "me" },
   );
 
   const item = items.get(id);
@@ -65,29 +151,180 @@ test("a notification refresh keeps commented pull requests reviewed", async () =
   assert.equal(lifecycleForQueueItem(item), "reviewed");
   assert.equal(touched.has(id), true);
 
-  const authoredId = "LalitSinghRana/pr-review-cockpit#16";
+  const authoredId = "owner/repo#16";
   items.set(authoredId, {
     ...items.get(id),
     authored: false,
     id: authoredId,
     notificationUpdatedAt: "2026-08-10T08:40:00Z",
     number: 16,
-    repository: "LalitSinghRana/pr-review-cockpit",
+    repository: "owner/repo",
   });
   await refreshNotificationItems(
     items,
     [
       {
-        pr: { number: 16, repository: { nameWithOwner: "LalitSinghRana/pr-review-cockpit" } },
+        pr: { number: 16, repository: { nameWithOwner: "owner/repo" } },
         thread: { updated_at: "2026-08-10T08:46:31Z" },
       },
     ],
     touched,
     {
-      getActivity: async () => ({ ...activity, author: { login: "LalitSinghRana" } }),
-      username: "LalitSinghRana",
+      getActivity: async () => ({ ...activity, author: { login: "me" } }),
+      username: "me",
     },
   );
 
   assert.equal(lifecycleForQueueItem(items.get(authoredId)), "mine");
+});
+
+test("activity without an author keeps a notification-authored pull request", () => {
+  const id = "owner/repo#16";
+  const item = {
+    authored: true,
+    id,
+    number: 16,
+    repository: "owner/repo",
+    signals: [],
+    state: "UNKNOWN",
+    updatedAt: "2026-08-10T08:40:00Z",
+    url: "https://github.com/owner/repo/pull/16",
+  };
+  const items = new Map([[id, item]]);
+  applyInboxActivity(
+    items,
+    item,
+    {
+      author: null,
+      isDraft: false,
+      labels: { nodes: [] },
+      reviews: { nodes: [] },
+      state: "OPEN",
+      title: "Mine",
+      updatedAt: "2026-08-10T09:00:00Z",
+      url: item.url,
+    },
+    { username: "me" },
+  );
+  assert.equal(items.get(id).authored, true);
+  assert.equal(lifecycleForQueueItem(items.get(id)), "mine");
+});
+
+test("a merged authored pull request still in the inbox leaves My PRs", async () => {
+  const id = "owner/repo#9";
+  const items = new Map([
+    [
+      id,
+      {
+        id,
+        authored: true,
+        draft: false,
+        notificationUpdatedAt: "2026-08-10T08:46:31Z",
+        number: 9,
+        repository: "owner/repo",
+        signals: [],
+        state: "OPEN",
+        updatedAt: "2026-08-10T08:40:00Z",
+      },
+    ],
+  ]);
+  const touched = new Set();
+  await refreshNotificationItems(
+    items,
+    [
+      {
+        pr: {
+          number: 9,
+          repository: { nameWithOwner: "owner/repo" },
+          title: "Done",
+          updatedAt: "2026-08-10T08:46:31Z",
+          url: "https://github.com/owner/repo/pull/9",
+        },
+        thread: { reason: "author", updated_at: "2026-08-10T08:46:31Z" },
+      },
+    ],
+    touched,
+    {
+      authoredOpenIds: new Set(),
+      getActivity: async () => ({
+        author: { login: "me" },
+        isDraft: false,
+        labels: { nodes: [] },
+        reviews: { nodes: [] },
+        state: "MERGED",
+        title: "Done",
+        updatedAt: "2026-08-10T09:00:00Z",
+        url: "https://github.com/owner/repo/pull/9",
+      }),
+      username: "me",
+    },
+  );
+  assert.equal(items.get(id).state, "MERGED");
+  assert.equal(isOpenAuthoredPullRequest(items.get(id)), false);
+  assert.equal(touched.has(id), true);
+});
+
+test("a notification refresh inspects notified pull requests not the rest of the queue", async () => {
+  const inspected = [];
+  const items = new Map([
+    [
+      "owner/repo#1",
+      {
+        id: "owner/repo#1",
+        draft: false,
+        number: 1,
+        repository: "owner/repo",
+        signals: [],
+        state: "OPEN",
+        updatedAt: "2026-08-10T08:40:00Z",
+      },
+    ],
+    [
+      "owner/repo#2",
+      {
+        id: "owner/repo#2",
+        draft: false,
+        number: 2,
+        repository: "owner/repo",
+        signals: [],
+        state: "OPEN",
+        updatedAt: "2026-08-10T08:40:00Z",
+      },
+    ],
+  ]);
+  const touched = new Set();
+  await refreshNotificationItems(
+    items,
+    [
+      {
+        pr: {
+          number: 1,
+          repository: { nameWithOwner: "owner/repo" },
+          title: "Keep",
+          updatedAt: "2026-08-10T08:46:31Z",
+          url: "https://github.com/owner/repo/pull/1",
+        },
+        thread: { reason: "review_requested", updated_at: "2026-08-10T08:46:31Z" },
+      },
+    ],
+    touched,
+    {
+      getActivity: async (item) => {
+        inspected.push(item.id);
+        return {
+          author: { login: "alice" },
+          isDraft: false,
+          labels: { nodes: [] },
+          reviews: { nodes: [] },
+          state: "OPEN",
+          title: "Keep",
+          updatedAt: "2026-08-10T09:00:00Z",
+          url: "https://github.com/owner/repo/pull/1",
+        };
+      },
+      username: "me",
+    },
+  );
+  assert.deepEqual(inspected, ["owner/repo#1"]);
+  assert.equal(touched.has("owner/repo#2"), false);
 });

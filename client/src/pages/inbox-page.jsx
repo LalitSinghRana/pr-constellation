@@ -1,10 +1,9 @@
 import { AlertTriangle } from "lucide-react";
 import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { LIFECYCLE_META, LIFECYCLE_ORDER } from "@/components/review-queue/config.jsx";
-import { EmptyQueue, LoadingQueue, QueueSection } from "@/components/review-queue/queue-list.jsx";
-import { SettingsDialog } from "@/components/review-queue/settings-dialog.jsx";
-import { QueueSidebar } from "@/components/review-queue/sidebar.jsx";
+import { LIFECYCLE_META, LIFECYCLE_ORDER } from "@/components/inbox/config.jsx";
+import { EmptyInbox, InboxSection, LoadingInbox } from "@/components/inbox/inbox-list.jsx";
+import { InboxSidebar } from "@/components/inbox/sidebar.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar.jsx";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.jsx";
@@ -13,11 +12,17 @@ import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { useInbox } from "@/hooks/use-inbox.js";
 import { useMutation } from "@/hooks/use-mutation.js";
 import { readJson } from "@/hooks/use-query.js";
-import { putSettings, useSettingsQuery } from "@/hooks/use-settings.js";
-import { EMPTY_SETTINGS, groupByUpdatedDate, matchesPrFilter } from "@/lib/queue.js";
+import { useSettingsQuery } from "@/hooks/use-settings.js";
+import {
+  EMPTY_SETTINGS,
+  groupByUpdatedDate,
+  inboxProjectTabs,
+  isOpenAuthoredPullRequest,
+  matchesPrFilter,
+} from "@/lib/queue.js";
 
-export function QueuePage() {
-  useDocumentTitle({ title: "Review Queue · PR Review Cockpit" });
+export function InboxPage() {
+  useDocumentTitle({ title: "Inbox · PR Review Cockpit" });
   const [activeFilter, setActiveFilter] = useQueryState("filter", parseAsString.withDefault("new"));
   const [activeProject, setActiveProject] = useQueryState("project", parseAsString.withDefault(""));
   const { data, error, loadMore, loading, loadingMore, refresh, setData, setError } = useInbox(
@@ -29,15 +34,11 @@ export function QueuePage() {
     refresh: refreshAnalyses,
   } = useAnalysisDashboard();
   const settingsQuery = useSettingsQuery();
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState(EMPTY_SETTINGS);
-  const [queueActionError, setQueueActionError] = useState("");
+  const [inboxActionError, setInboxActionError] = useState("");
   const [analysisActionError, setAnalysisActionError] = useState("");
   const analysisError = analysisActionError || analysisServiceError;
 
-  const saveSettingsMutation = useMutation({
-    mutationFn: putSettings,
-  });
   const analyzeMutation = useMutation({
     mutationFn: async ({ item, options }) => {
       const response = await fetch("/api/analyses", {
@@ -89,7 +90,7 @@ export function QueuePage() {
       }));
     },
     onError: (caught) => {
-      setQueueActionError(caught.message || "Read state could not be saved.");
+      setInboxActionError(caught.message || "Read state could not be saved.");
     },
   });
   const toggleDoneMutation = useMutation({
@@ -104,7 +105,7 @@ export function QueuePage() {
       return readJson(response);
     },
     onSuccess: (result) => {
-      if (result.warning) setQueueActionError(result.warning);
+      if (result.warning) setInboxActionError(result.warning);
       const updated = new Set(result.ids ?? [result.id]);
       const patch = result.ids ? { done: result.done, hasUpdates: result.hasUpdates } : result;
       const update = (entry) => (updated.has(entry.id) ? { ...entry, ...patch } : entry);
@@ -115,7 +116,7 @@ export function QueuePage() {
       }));
     },
     onError: (caught) => {
-      setQueueActionError(caught.message || "Done state could not be saved.");
+      setInboxActionError(caught.message || "Done state could not be saved.");
     },
   });
 
@@ -154,36 +155,31 @@ export function QueuePage() {
   );
   const counts = useMemo(() => {
     const derived = {
-      reviewed: openPrs.filter((item) => item.lifecycle === "reviewed").length,
-      new: openPrs.filter((item) => item.lifecycle === "new").length,
-      approved: openPrs.filter((item) => item.lifecycle === "approved").length,
+      reviewed: openPrs.filter((item) => !item.authored && item.lifecycle === "reviewed").length,
+      new: openPrs.filter((item) => !item.authored && item.lifecycle === "new").length,
+      approved: openPrs.filter((item) => !item.authored && item.lifecycle === "approved").length,
       merged: openPrs.filter((item) => item.lifecycle === "merged").length,
-      mine: openPrs.filter((item) => item.authored).length,
+      closed: openPrs.filter((item) => item.lifecycle === "closed").length,
+      draft: openPrs.filter((item) => !item.authored && item.lifecycle === "draft").length,
+      mine: openPrs.filter((item) => isOpenAuthoredPullRequest(item)).length,
       other: openPrs.filter((item) => item.lifecycle === "other" && !item.authored).length,
       nonpr: openNotifications.length,
     };
     return { ...derived, ...data.counts };
   }, [data.counts, openNotifications.length, openPrs]);
 
-  const availableProjects = useMemo(() => {
-    const completed = activeFilter === "done";
-    const entries = data.items.filter(
-      (item) => isDone(item) === completed && matchesPrFilter(item, activeFilter),
-    );
-    const countsByProject = new Map();
-    for (const item of entries) {
-      countsByProject.set(item.repository, (countsByProject.get(item.repository) ?? 0) + 1);
-    }
-    return data.repositories.map((repository) => ({
-      repository,
-      count: countsByProject.get(repository) ?? 0,
-    }));
-  }, [activeFilter, data.items, data.repositories, isDone]);
+  const availableProjects = useMemo(
+    () => inboxProjectTabs(data.items, activeFilter, isDone),
+    [activeFilter, data.items, isDone],
+  );
 
-  const selectedProject =
-    activeFilter !== "nonpr" && data.repositories.includes(activeProject)
-      ? activeProject
-      : (data.repositories[0] ?? "");
+  const selectedProject = useMemo(() => {
+    if (activeFilter === "nonpr") return "";
+    if (availableProjects.some((project) => project.repository === activeProject)) {
+      return activeProject;
+    }
+    return availableProjects[0]?.repository ?? "";
+  }, [activeFilter, activeProject, availableProjects]);
 
   const { visiblePrs, visibleNotifications } = useMemo(() => {
     const completed = activeFilter === "done";
@@ -200,7 +196,7 @@ export function QueuePage() {
     return { visiblePrs: prs, visibleNotifications: notifications };
   }, [activeFilter, data.items, data.notifications, isDone, selectedProject]);
 
-  const queueSections = useMemo(() => {
+  const inboxSections = useMemo(() => {
     if (activeFilter === "done") {
       const sections = LIFECYCLE_ORDER.map((id) => {
         const items = visiblePrs.filter((item) => item.lifecycle === id);
@@ -228,26 +224,13 @@ export function QueuePage() {
     return [
       {
         id: activeFilter,
-        label: LIFECYCLE_META[activeFilter]?.label ?? "Queue",
+        label: LIFECYCLE_META[activeFilter]?.label ?? "Inbox",
         score: activeFilter === "mine" ? null : (LIFECYCLE_META[activeFilter]?.score ?? null),
         count: items.length,
         groups: groupByUpdatedDate(items),
       },
     ];
   }, [activeFilter, visibleNotifications, visiblePrs]);
-
-  async function saveSettings(nextSettings) {
-    setError("");
-    try {
-      const result = await saveSettingsMutation.mutateAsync(nextSettings);
-      setSettings(result);
-      await refresh();
-      return true;
-    } catch (caught) {
-      setError(caught.message || "Local settings could not be saved.");
-      return false;
-    }
-  }
 
   function analyze(item, options = {}) {
     setAnalysisActionError("");
@@ -269,7 +252,7 @@ export function QueuePage() {
     const items = Array.isArray(value) ? value.filter((item) => !item.done) : [value];
     const ids = items.map((item) => item.id);
     if (!ids.length) return;
-    setQueueActionError("");
+    setInboxActionError("");
     toggleDoneMutation.mutate({ value, ids });
   }
 
@@ -277,22 +260,17 @@ export function QueuePage() {
 
   return (
     <SidebarProvider>
-      <QueueSidebar
-        activeFilter={activeFilter}
-        counts={counts}
-        onFilter={setActiveFilter}
-        onSettings={() => setSettingsOpen(true)}
-      />
+      <InboxSidebar activeFilter={activeFilter} counts={counts} onFilter={setActiveFilter} />
 
       <SidebarInset className="min-h-screen">
         <div className="mx-auto w-full max-w-[1240px] px-5 pb-20 pt-8 sm:px-8 lg:px-12 lg:pt-12">
           <SidebarTrigger className="mb-5 md:hidden" />
-          <h1 className="sr-only">{LIFECYCLE_META[activeFilter]?.label ?? "Review queue"}</h1>
+          <h1 className="sr-only">{LIFECYCLE_META[activeFilter]?.label ?? "Inbox"}</h1>
 
-          <section aria-label="Repository queue">
-            {activeFilter !== "nonpr" && data.repositories.length > 0 && (
+          <section aria-label="Repository inbox">
+            {activeFilter !== "nonpr" && availableProjects.length > 0 && (
               <Tabs className="gap-0" value={selectedProject} onValueChange={setActiveProject}>
-                <TabsList aria-label="Repositories" variant="cockpit" style={{ height: "3rem" }}>
+                <TabsList aria-label="Repositories" variant="cockpit">
                   {availableProjects.map((project) => (
                     <TabsTrigger
                       className="group"
@@ -329,13 +307,13 @@ export function QueuePage() {
               </div>
             )}
 
-            {queueActionError && (
+            {inboxActionError && (
               <p
                 className="mx-3 mt-3 flex items-center gap-2 rounded-lg border border-coral/25 bg-coral/10 px-3 py-2 text-xs text-coral-strong"
                 aria-live="polite"
               >
                 <AlertTriangle className="size-3.5" />
-                {queueActionError}
+                {inboxActionError}
               </p>
             )}
 
@@ -351,12 +329,12 @@ export function QueuePage() {
 
             <div className="mt-4 grid gap-6" aria-live="polite">
               {loading ? (
-                <LoadingQueue />
+                <LoadingInbox />
               ) : error ? (
-                <EmptyQueue error={error} onRetry={() => refresh()} />
+                <EmptyInbox error={error} onRetry={() => refresh()} />
               ) : visibleCount ? (
-                queueSections.map((section) => (
-                  <QueueSection
+                inboxSections.map((section) => (
+                  <InboxSection
                     key={section.id}
                     section={section}
                     isDone={isDone}
@@ -372,10 +350,7 @@ export function QueuePage() {
                   />
                 ))
               ) : (
-                <EmptyQueue
-                  canConfigure={!settings.people.length && !settings.teams.length}
-                  onSettings={() => setSettingsOpen(true)}
-                />
+                <EmptyInbox canConfigure={!settings.people.length && !settings.teams.length} />
               )}
             </div>
             {data.page?.hasMore && (
@@ -388,13 +363,6 @@ export function QueuePage() {
           </section>
         </div>
       </SidebarInset>
-
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        settings={settings}
-        onSave={saveSettings}
-      />
     </SidebarProvider>
   );
 }

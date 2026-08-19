@@ -3,19 +3,19 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import {
+  analysisModelReasoningEffort,
+  DEFAULT_ANALYSIS_MODEL,
+  DEFAULT_ANALYSIS_REASONING_EFFORT,
+} from "../../../shared/analysis-models.js";
+import {
   isAcceptableFileTreeRoot,
   validateReviewAnalysis,
   validateReviewStacks,
 } from "../05-validate-candidate/validate-analysis.js";
 import { isAbortError, throwIfAborted } from "../abort.js";
-import { createRunAnalysisAttempt } from "./codex-agent/candidate-generation.js";
-import { createTaskLimiter } from "./codex-agent/task-limiter.js";
-import {
-  buildCodexExecArgs,
-  parseCodexJsonUsage,
-  resolveCodexExecutionConfig,
-  runCodexExec,
-} from "./codex-exec.js";
+import { resolveAnalysisExecutor } from "./analysis-providers.js";
+import { createRunAnalysisAttempt } from "./review-analysis/candidate-generation.js";
+import { createTaskLimiter } from "./review-analysis/task-limiter.js";
 import { addUsage, copyUsage, emptyUsage, normalizeUsage, subtractUsage } from "./usage.js";
 
 const WORKFLOW_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -49,7 +49,6 @@ const REVIEW_STACKS_SCHEMA_PATH = path.join(
 const JUDGE_PROMPT_PATH = path.join(WORKFLOW_DIR, "06-judge-candidate", "prompt.md");
 const JUDGE_SCHEMA_PATH = path.join(WORKFLOW_DIR, "06-judge-candidate", "schema.json");
 const MAX_ANALYSIS_ATTEMPTS = 3;
-const DEFAULT_ANALYSIS_REASONING_EFFORT = "xhigh";
 const JUDGE_REASONING_EFFORT = "high";
 const MODEL_EXECUTION_CONCURRENCY = 3;
 const REVIEW_TREES_SHARD_CONCURRENCY = 3;
@@ -62,21 +61,17 @@ const SEMANTIC_JUDGE_ENABLED = false;
 const limitModelExecution = createTaskLimiter(MODEL_EXECUTION_CONCURRENCY);
 
 export {
-  buildCodexExecArgs,
   computeFileTreeMetrics,
   createTaskLimiter,
   materializeLineOwnership,
-  parseCodexJsonUsage,
-  resolveCodexExecutionConfig,
-  runCodexExec,
   validateReviewAnalysis,
 };
 
-export async function runCodexReviewAnalysis({
-  executeCodex = runCodexExec,
+export async function runReviewAnalysis({
+  execute,
   model,
   onEvent,
-  reasoningEffort = DEFAULT_ANALYSIS_REASONING_EFFORT,
+  reasoningEffort,
   runDir,
   signal,
 }) {
@@ -84,20 +79,18 @@ export async function runCodexReviewAnalysis({
 
   const resolvedRunDir = path.resolve(runDir);
   const emitEvent = createEventEmitter(onEvent);
-  const executionConfig = resolveCodexExecutionConfig({
-    model,
-    reasoningEffort,
-  });
-  const judgeExecutionConfig = resolveCodexExecutionConfig({
-    model,
+  const executionConfig = resolveExecutionConfig({ model, reasoningEffort });
+  const judgeExecutionConfig = resolveExecutionConfig({
+    model: executionConfig.model,
     reasoningEffort: JUDGE_REASONING_EFFORT,
   });
+  const selectedExecute = execute || resolveAnalysisExecutor({ model: executionConfig.model });
   const usage = emptyUsage();
   const limitModelTask = createTaskLimiter(REVIEW_TREES_SHARD_CONCURRENCY);
   // Assigned inside the "Analysis" stage's run() below; metricsForResult reads it once
   // run() has resolved, so it's always populated by the time that happens.
   let inventory;
-  const executeCodexWithUsage = async (options) => {
+  const executeWithUsage = async (options) => {
     const executionSignal =
       signal && options.signal
         ? AbortSignal.any([signal, options.signal])
@@ -106,7 +99,7 @@ export async function runCodexReviewAnalysis({
     try {
       throwIfAborted(executionSignal);
       const result = await limitModelExecution(
-        () => executeCodex({ ...options, signal: executionSignal }),
+        () => selectedExecute({ ...options, signal: executionSignal }),
         executionSignal,
       );
       addUsage(usage, normalizeUsage(result?.usage));
@@ -158,7 +151,7 @@ export async function runCodexReviewAnalysis({
             const document = await runJsonStage({
               cwd: resolvedRunDir,
               executionConfig,
-              executeCodex: executeCodexWithUsage,
+              execute: executeWithUsage,
               outputPath: reviewStacksRawPath,
               prompt: buildReviewStacksPrompt({
                 inventory,
@@ -214,7 +207,7 @@ export async function runCodexReviewAnalysis({
                 candidatePath,
                 emitEvent,
                 executionConfig,
-                executeCodex: executeCodexWithUsage,
+                execute: executeWithUsage,
                 inventory,
                 judgeExecutionConfig,
                 judgePrompt,
@@ -302,7 +295,7 @@ export async function runCandidateEvaluation({
   candidate,
   candidateText,
   emitEvent,
-  executeCodex,
+  execute,
   inventory,
   judgeExecutionConfig,
   judgePrompt,
@@ -376,7 +369,7 @@ export async function runCandidateEvaluation({
                 candidateText,
                 cwd: resolvedRunDir,
                 executionConfig: judgeExecutionConfig,
-                executeCodex,
+                execute,
                 judgePrompt,
                 metadataText,
                 outputPath,
@@ -542,7 +535,7 @@ function formatEventError(error) {
 export async function runJsonStage({
   cwd,
   executionConfig,
-  executeCodex,
+  execute,
   outputPath,
   prompt,
   promptPath,
@@ -550,7 +543,7 @@ export async function runJsonStage({
   signal,
 }) {
   await writeFile(promptPath, prompt, "utf8");
-  await executeCodex({
+  await execute({
     cwd,
     ...executionConfig,
     outputPath,
@@ -567,7 +560,7 @@ export async function runTargetedRepair({
   cwd,
   evaluation,
   executionConfig,
-  executeCodex,
+  execute,
   inventory,
   outputPath,
   promptPath,
@@ -577,7 +570,7 @@ export async function runTargetedRepair({
     await runJsonStage({
       cwd,
       executionConfig,
-      executeCodex,
+      execute,
       outputPath,
       prompt: buildTargetedRepairPrompt({
         candidate,
@@ -943,11 +936,11 @@ function isSchemaUsableCandidate(candidate) {
 
 // The full structured diff (buildStructuredDiff) carries a per-line id/old/new
 // line-number object for every line, which the review-stack schema never
-// references (its output is just file ids grouped into stacks). For a large,
-// multi-PR fixture that per-line bookkeeping alone pushed a single prompt past
-// codex's 1,048,576-character input cap. This lean variant keeps every file's
-// full code content but drops the ids/line-numbers the review-stack decision
-// doesn't need, cutting a real fixture's prompt from ~1.42M to ~0.5M chars.
+// references (its output is just file ids grouped into stacks). For a large
+// fixture that per-line bookkeeping alone overflowed a single prompt. This lean
+// variant keeps every file's full code content but drops the ids/line-numbers
+// the review-stack decision doesn't need, cutting a real fixture's prompt from
+// ~1.42M to ~0.5M chars.
 function buildReviewStackStructuredDiff(inventory) {
   return {
     schemaVersion: "pr-review-stack-diff/v1",
@@ -1269,14 +1262,14 @@ async function runJudge({
   candidateText,
   cwd,
   executionConfig,
-  executeCodex,
+  execute,
   judgePrompt,
   metadataText,
   outputPath,
   structuredDiffText,
   validationReport,
 }) {
-  await executeCodex({
+  await execute({
     cwd,
     ...executionConfig,
     outputPath,
@@ -1310,7 +1303,7 @@ function parseJsonObject(text) {
       return JSON.parse(trimmed.slice(start, end + 1));
     }
 
-    throw new Error("Codex did not return a JSON object.");
+    throw new Error("Analysis executor did not return a JSON object.");
   }
 }
 
@@ -1381,10 +1374,23 @@ export function formatStageFailure(stage, error) {
   return `Step ${stage} failed: ${message}`;
 }
 
+function resolveExecutionConfig({ model, reasoningEffort } = {}) {
+  const selectedModel =
+    typeof model === "string" && model.trim() ? model.trim() : DEFAULT_ANALYSIS_MODEL;
+  const selectedEffort =
+    typeof reasoningEffort === "string" && reasoningEffort.trim()
+      ? reasoningEffort.trim()
+      : analysisModelReasoningEffort(selectedModel) || DEFAULT_ANALYSIS_REASONING_EFFORT;
+  return {
+    model: selectedModel,
+    reasoningEffort: selectedEffort,
+  };
+}
+
 function reportedExecutionConfig(executionConfig) {
   return {
-    model: executionConfig.model || "Codex CLI default",
-    reasoningEffort: executionConfig.reasoningEffort || "Codex CLI default",
+    model: executionConfig.model,
+    reasoningEffort: executionConfig.reasoningEffort,
   };
 }
 

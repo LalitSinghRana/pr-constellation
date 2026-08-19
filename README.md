@@ -45,7 +45,7 @@ Open it automatically:
 pnpm prc -- https://github.com/OWNER/REPO/pull/123 --open
 ```
 
-Generate a Codex-backed logical review tree:
+Generate a logical review tree:
 
 ```sh
 pnpm prc -- analyze https://github.com/OWNER/REPO/pull/123
@@ -79,10 +79,11 @@ http://127.0.0.1:4397/
 http://127.0.0.1:4397/analysis
 ```
 
-The inbox persists tracked PRs independently from GitHub's read state. The
+The inbox mirrors GitHub's current inbox, including read threads, and archives
+items locally once they leave it. GitHub's read/unread state is separate. The
 analysis page shows not-started, queued, running, completed, and failed work;
-File Tree and Section Tree generation and repair use the provider's highest configured effort
-(`xhigh` for Codex, `max` for Claude).
+File Tree and Section Tree generation and repair use the configured model's
+reasoning effort.
 
 The latest generated run for each PR is available at a stable URL:
 
@@ -104,8 +105,9 @@ SQLite and survive stopping or restarting the local server. See
 layout and benchmark semantics.
 
 Install or update the continuously running macOS user service with `pnpm install:service`. It hosts
-the UI, conditionally polls GitHub notifications, performs an hourly full reconciliation, and runs
-the durable analysis queue. Run `pnpm sync` for a one-off manual reconciliation. Inbox state is
+the UI, polls GitHub on the interval GitHub advertises (about once a minute), and runs
+the durable analysis queue. Each poll uses the same inbox reconciliation as `pnpm sync`. Run
+`pnpm sync` for a one-off pass without starting the HTTP daemon. Inbox state is
 stored in `~/.config/pr-review-cockpit/cockpit.sqlite3`; analysis metadata is stored in
 `.reviews/.run-store.sqlite`; generated artifacts remain under the gitignored `.reviews/` directory.
 
@@ -113,7 +115,7 @@ See [`docs/backend-architecture.md`](docs/backend-architecture.md) for runtime b
 concurrency limits, notification delivery, persistence, and the reasons for keeping one lightweight
 Node.js daemon.
 
-The `analyze` command is headless. It invokes `codex exec` in read-only mode and
+The `analyze` command is headless. It runs the review-tree workflow and
 writes one Section Tree per changed file to `analysis.json`; it does not
 render the review page. The page nests each file's Review Sections beneath its
 Review Stack's File Tree and renders those sections as code diffs. Ordered

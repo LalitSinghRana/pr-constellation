@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { parseGitHubPrUrl } from "../../analysis-worker/workflow/02-fetch-pr/github.js";
 import { createDashboardApiMiddleware } from "../analysis/dashboard-api.js";
 import {
   createInputFingerprint,
@@ -49,24 +48,23 @@ assert.notEqual(
 );
 
 try {
-  assert.deepEqual(await loadDashboardConfiguration(), {
-    defaultModel: "grok-4.5",
-    models: ["grok-4.5", "gpt-5.6-sol"],
-    modelProviders: {
-      "grok-4.5": "cursor",
-      "gpt-5.6-sol": "codex",
-    },
-    reasoningEfforts: ["medium", "high"],
-    modelReasoningEfforts: {
-      "grok-4.5": ["high"],
-      "gpt-5.6-sol": ["medium"],
-    },
-  });
+  const configuration = await loadDashboardConfiguration();
+  assert.equal(configuration.defaultModel, "cursor-grok-4.6");
+  assert.ok(configuration.models.includes("cursor-grok-4.6"));
+  assert.ok(configuration.models.includes("gpt-5.6-sol"));
+  assert.ok(configuration.models.includes("sonnet"));
+  assert.equal(configuration.modelProviders["cursor-grok-4.6"], "cursor");
+  assert.equal(configuration.modelProviders["gpt-5.6-sol"], "codex");
+  assert.equal(configuration.modelProviders.sonnet, "claude");
+  assert.ok(configuration.modelReasoningEfforts["cursor-grok-4.6"].includes("xhigh"));
 
   const service = new DashboardService({
     configuration: {
       defaultModel: "gpt-fixture",
-      models: ["gpt-fixture", "gpt-other", "claude-sonnet-4-6"],
+      models: ["gpt-fixture", "gpt-other", "other-fixture"],
+      modelReasoningEfforts: {
+        "other-fixture": ["low", "medium", "high", "max"],
+      },
       reasoningEfforts: ["low", "medium", "high", "xhigh"],
     },
     getCodeVersion: async () => {
@@ -195,7 +193,7 @@ try {
   assert.equal(executions[0].sourceRunDir, null);
   assert.equal(executions[1].sourceRunDir, null);
   assert.equal(executions[0].model, "gpt-fixture");
-  assert.equal(executions[0].provider, "codex");
+  assert.equal(executions[0].provider, "cursor");
   assert.equal(executions[0].reasoningEffort, "xhigh");
   const storedFirst = await service.store.readRun(first.slug, first.runId);
   const storedSecond = await service.store.readRun(second.slug, second.runId);
@@ -307,47 +305,47 @@ try {
   const snapshotAfterBatch = await service.snapshot();
   assert.deepEqual(snapshotAfterBatch.configuration, {
     defaultModel: "gpt-fixture",
-    models: ["gpt-fixture", "gpt-other", "claude-sonnet-4-6"],
+    models: ["gpt-fixture", "gpt-other", "other-fixture"],
     modelProviders: {
-      "gpt-fixture": "codex",
-      "gpt-other": "codex",
-      "claude-sonnet-4-6": "claude",
+      "gpt-fixture": "cursor",
+      "gpt-other": "cursor",
+      "other-fixture": "cursor",
     },
     reasoningEfforts: ["low", "medium", "high", "xhigh"],
     modelReasoningEfforts: {
       "gpt-fixture": ["low", "medium", "high", "xhigh"],
       "gpt-other": ["low", "medium", "high", "xhigh"],
-      "claude-sonnet-4-6": ["low", "medium", "high", "max"],
+      "other-fixture": ["low", "medium", "high", "max"],
     },
   });
 
-  const claudeBatch = await service.enqueueBatch({
-    model: "claude-sonnet-4-6",
-    prUrl: "https://github.com/example/claude/pull/4",
+  const customEffortBatch = await service.enqueueBatch({
+    model: "other-fixture",
+    prUrl: "https://github.com/example/delta/pull/4",
     refresh: true,
   });
-  assert.equal(claudeBatch.provider, "claude");
-  assert.deepEqual(claudeBatch.reasoningEfforts, ["low", "medium", "high", "max"]);
+  assert.equal(customEffortBatch.provider, "cursor");
+  assert.deepEqual(customEffortBatch.reasoningEfforts, ["low", "medium", "high", "max"]);
   assert.deepEqual(
-    claudeBatch.runs.map((run) => run.metrics.provider),
-    Array(4).fill("claude"),
+    customEffortBatch.runs.map((run) => run.metrics.provider),
+    Array(4).fill("cursor"),
   );
   await service.waitForIdle();
-  const claudeExecutions = executions.slice(-4);
+  const customEffortExecutions = executions.slice(-4);
   assert.deepEqual(
-    claudeExecutions.map((execution) => execution.provider),
-    Array(4).fill("claude"),
+    customEffortExecutions.map((execution) => execution.provider),
+    Array(4).fill("cursor"),
   );
   assert.deepEqual(
-    claudeExecutions.map((execution) => execution.reasoningEffort),
+    customEffortExecutions.map((execution) => execution.reasoningEffort),
     ["low", "medium", "high", "max"],
   );
-  const storedClaudeRuns = await Promise.all(
-    claudeBatch.runs.map((run) => service.store.readRun(run.slug, run.runId)),
+  const storedCustomEffortRuns = await Promise.all(
+    customEffortBatch.runs.map((run) => service.store.readRun(run.slug, run.runId)),
   );
   assert.deepEqual(
-    storedClaudeRuns.map((run) => run.metrics.provider),
-    Array(4).fill("claude"),
+    storedCustomEffortRuns.map((run) => run.metrics.provider),
+    Array(4).fill("cursor"),
   );
 
   await assert.rejects(
@@ -370,8 +368,8 @@ try {
   await assert.rejects(
     () =>
       service.enqueue({
-        model: "claude-sonnet-4-6",
-        prUrl: "https://github.com/example/claude/pull/4",
+        model: "other-fixture",
+        prUrl: "https://github.com/example/delta/pull/4",
         reasoningEffort: "xhigh",
       }),
     { code: "INVALID_REASONING_EFFORT" },
@@ -417,14 +415,14 @@ try {
   await assert.rejects(() => service.store.readRun(frozen.slug, frozen.runId), { code: "ENOENT" });
 
   const deletedBatch = await service.deleteBatchHistory({
-    batchId: claudeBatch.batchId,
+    batchId: customEffortBatch.batchId,
   });
   assert.equal(deletedBatch.deletedRunCount, 4);
   assert.deepEqual(
     deletedBatch.deletedRunIds.sort(),
-    claudeBatch.runs.map((run) => run.runId).sort(),
+    customEffortBatch.runs.map((run) => run.runId).sort(),
   );
-  await assert.rejects(() => service.deleteBatchHistory({ batchId: claudeBatch.batchId }), {
+  await assert.rejects(() => service.deleteBatchHistory({ batchId: customEffortBatch.batchId }), {
     code: "HISTORY_TARGET_NOT_FOUND",
   });
   assert.ok(maximumActiveExecutions <= 2);
