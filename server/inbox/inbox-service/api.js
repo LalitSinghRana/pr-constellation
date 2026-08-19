@@ -6,6 +6,7 @@ import {
   automaticallyQueueNewAnalyses,
   enqueueMissingAnalyses,
   normalizeAnalysisCandidate,
+  queueInboxAnalyses,
 } from "./analysis-queue.js";
 import { secureHeaders, sendJson } from "./http-guards.js";
 
@@ -127,11 +128,17 @@ export function createInboxApi({
       try {
         const body = await readRequestJson(request);
         const settings = await readSettings();
-        const runs = await enqueueMissingAnalyses(
-          Array.isArray(body.pullRequests) ? body.pullRequests : [],
-          dashboardService,
-          settingsAnalysisRunOptions(settings),
-        );
+        const runs = Array.isArray(body.pullRequests)
+          ? await enqueueMissingAnalyses(
+              body.pullRequests.filter((item) => !item?.authored),
+              dashboardService,
+              settingsAnalysisRunOptions(settings),
+            )
+          : await queueInboxAnalyses(
+              inboxFromQueue(await readQueueState()).items,
+              dashboardService,
+              settingsAnalysisRunOptions(settings),
+            );
         eventHub.publish("analysis", { queued: runs.length });
         sendJson(response, 202, { runs });
       } catch (error) {

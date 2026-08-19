@@ -7,7 +7,7 @@ Next improvements
 - [x] ~~Setting and Analyze queue to open in same tab by default now.~~
 - [ ] Move 0.1x / 1x / 10x toggle from header to inside the scope of review-trees
 - [ ] Merge rows b/w home-page and /analysis-queue. The expand feature in /analysis-queue row is behind a flag in this component. First check and find all the difference, so there's no regression.
-  - [x]~~In My PR, we should remove mark as done PR. Also sub-section containing details like author, tags, etc. These are not needed on my own PR.~~
+  - [x] ~~In My PR, we should remove mark as done PR. Also sub-section containing details like author, tags, etc. These are not needed on my own PR.~~
   - [x] ~~Keep my PRs with no new updates in marked as read status UI.~~
 - [x] ~~We need closed PR tab also on left. Anything else we are missing?~~
 - [x] ~~clean up AI agentic workflow to not mention claude/codex/grok/or any other LLM name or do anything specific for them. The whole pipeline should be agnostic to LLM provider.~~

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { automaticallyQueueNewAnalyses } from "../inbox/inbox-service/analysis-queue.js";
+import {
+  automaticallyQueueNewAnalyses,
+  queueInboxAnalyses,
+} from "../inbox/inbox-service/analysis-queue.js";
 import {
   activityCandidates,
   addReviewRequests,
@@ -68,6 +71,42 @@ test("automatic queue includes only active new pull requests", async () => {
 
   assert.deepEqual(queued, ["https://github.com/example/repo/pull/1"]);
   assert.equal(result.runs.length, 1);
+});
+
+test("queue all analyses skip authored and done pull requests", async () => {
+  const queued = [];
+  const runs = await queueInboxAnalyses(
+    [
+      {
+        authored: false,
+        done: false,
+        title: "Review me",
+        url: "https://github.com/example/repo/pull/1",
+      },
+      {
+        authored: true,
+        done: false,
+        title: "My PR",
+        url: "https://github.com/example/repo/pull/2",
+      },
+      {
+        authored: false,
+        done: true,
+        title: "Already done",
+        url: "https://github.com/example/repo/pull/3",
+      },
+    ],
+    {
+      enqueue: async ({ prUrl }) => {
+        queued.push(prUrl);
+        return { prUrl };
+      },
+      snapshot: async () => ({ prs: [] }),
+    },
+  );
+
+  assert.deepEqual(queued, ["https://github.com/example/repo/pull/1"]);
+  assert.equal(runs.length, 1);
 });
 
 test("the cockpit uses its dedicated local port", () => {

@@ -67,8 +67,10 @@ function historyByUrlFromDashboard(dashboard) {
   return map;
 }
 
+const ANALYSIS_QUEUE_LIMIT = 1_000;
+
 export async function enqueueMissingAnalyses(values, dashboardService, options = {}) {
-  const candidates = values.slice(0, 100).map(normalizeAnalysisCandidate);
+  const candidates = values.slice(0, ANALYSIS_QUEUE_LIMIT).map(normalizeAnalysisCandidate);
   const dashboard = await dashboardService.snapshot();
   const historyByUrl = historyByUrlFromDashboard(dashboard);
   const ordered = sortAnalysisCandidates(candidates, historyByUrl);
@@ -103,6 +105,14 @@ export async function enqueueMissingAnalyses(values, dashboardService, options =
     );
   }
   return runs;
+}
+
+export function inboxItemsForAnalysisQueue(items) {
+  return items.filter((item) => item && !item.done && !item.authored && item.url);
+}
+
+export async function queueInboxAnalyses(items, dashboardService, options = {}) {
+  return enqueueMissingAnalyses(inboxItemsForAnalysisQueue(items), dashboardService, options);
 }
 
 export async function automaticallyQueueNewAnalyses(items, dashboardService, options = {}) {
