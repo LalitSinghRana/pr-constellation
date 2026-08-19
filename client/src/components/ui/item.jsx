@@ -1,13 +1,33 @@
 import { cva } from "class-variance-authority";
+import { ChevronDown } from "lucide-react";
 import { Slot } from "radix-ui";
+import { CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+
+const itemGroupCardClassName =
+  "gap-0 overflow-hidden rounded-lg border bg-card/75 shadow-lg backdrop-blur-sm";
+const itemListRowClassName =
+  "rounded-none border-0 border-b border-border p-5 last:border-b-0 hover:bg-accent/50";
 
 function ItemGroup({ className, ...props }) {
   return (
     <div
       data-slot="item-group"
       className={cn("group/item-group flex flex-col", className)}
+      {...props}
+    />
+  );
+}
+
+function ItemGroupHeader({ className, ...props }) {
+  return (
+    <header
+      data-slot="item-group-header"
+      className={cn(
+        "flex min-h-[2.8rem] items-center justify-between gap-4 border-b bg-accent/78 px-[1.2rem] py-[0.65rem] max-[700px]:px-[0.9rem]",
+        className,
+      )}
       {...props}
     />
   );
@@ -45,10 +65,18 @@ const itemVariants = cva(
   },
 );
 
-function Item({ className, variant = "default", size = "default", asChild = false, ...props }) {
+function Item({
+  className,
+  variant = "default",
+  size = "default",
+  asChild = false,
+  ref,
+  ...props
+}) {
   const Comp = asChild ? Slot.Root : "div";
   return (
     <Comp
+      ref={ref}
       data-slot="item"
       data-variant={variant}
       data-size={size}
@@ -145,6 +173,38 @@ function ItemFooter({ className, ...props }) {
   );
 }
 
+function ItemTrigger({ className, ...props }) {
+  return (
+    <CollapsibleTrigger
+      aria-label="Show details"
+      className={cn(
+        "inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [&[data-state=open]>svg]:rotate-180",
+        className,
+      )}
+      {...props}
+    >
+      <ChevronDown aria-hidden="true" className="size-4 transition-transform" />
+    </CollapsibleTrigger>
+  );
+}
+
+function ItemPanel({ className, ...props }) {
+  return (
+    <CollapsibleContent
+      data-slot="item-panel"
+      className={cn("basis-full overflow-hidden", className)}
+      {...props}
+    />
+  );
+}
+
+ItemGroup.Header = ItemGroupHeader;
+Item.Media = ItemMedia;
+Item.Content = ItemContent;
+Item.Actions = ItemActions;
+Item.Trigger = ItemTrigger;
+Item.Panel = ItemPanel;
+
 export {
   Item,
   ItemActions,
@@ -152,8 +212,13 @@ export {
   ItemDescription,
   ItemFooter,
   ItemGroup,
+  ItemGroupHeader,
   ItemHeader,
   ItemMedia,
+  ItemPanel,
   ItemSeparator,
   ItemTitle,
+  ItemTrigger,
+  itemGroupCardClassName,
+  itemListRowClassName,
 };

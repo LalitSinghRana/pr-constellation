@@ -24,7 +24,12 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty.jsx";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card.jsx";
-import { Item, ItemActions, ItemContent, ItemMedia } from "@/components/ui/item.jsx";
+import {
+  Item,
+  ItemGroup,
+  itemGroupCardClassName,
+  itemListRowClassName,
+} from "@/components/ui/item.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import {
   ACTIVITY_SIGNAL_KINDS,
@@ -50,6 +55,8 @@ const myPrStatuses = {
   merged: { label: "Merged", className: LIFECYCLE_STYLES.merged },
   closed: { label: "Closed", className: LIFECYCLE_STYLES.closed },
 };
+
+const titleClassName = "text-[17px] font-semibold leading-snug tracking-[-0.015em]";
 
 export function LoadingInbox() {
   return (
@@ -132,24 +139,7 @@ function ActivityHoverCard({ children, updates, since = "last open" }) {
   );
 }
 
-function PullRequestRow({
-  item,
-  completed,
-  onToggleDone,
-  doneBusy,
-  nested,
-  analysis,
-  analysisBusy,
-  onAnalyze,
-  onPrioritize,
-  prioritizeBusy,
-  onMarkRead,
-}) {
-  const Title = nested ? "h4" : "h3";
-  const mine = Boolean(item.authored);
-  const labelColor = (color) => (/^[\da-f]{6}$/i.test(color) ? `#${color}` : "#9b948d");
-  const teammate = item.signals.find((signal) => signal.kind === "teammate-pr");
-  const myPrStatus = mine ? myPrStatuses[myPullRequestStatus(item)] : null;
+function activityUpdates(item) {
   const reviewRequest =
     item.signals.find((signal) => signal.kind === "direct-review") ??
     item.signals.find((signal) => signal.kind === "team-review");
@@ -173,7 +163,7 @@ function PullRequestRow({
         )
         .map((signal) => `${signal.label}${signal.detail ? ` · ${signal.detail}` : ""}`);
   const initialUpdates =
-    item.read || mine
+    item.read || item.authored
       ? []
       : [
           `Pull request opened${item.author ? ` by ${item.author}` : ""}`,
@@ -193,51 +183,176 @@ function PullRequestRow({
       ? []
       : reportedUpdates
     : initialUpdates;
-  const updatesSinceRead = [...new Set([...signalUpdates, ...fallbackUpdates])];
+  return [...new Set([...signalUpdates, ...fallbackUpdates])];
+}
+
+function InboxAnalysisActions({
+  analysis,
+  analysisBusy,
+  item,
+  onAnalyze,
+  onMarkRead,
+  onPrioritize,
+  prioritizeBusy,
+}) {
+  if (analysis.href) {
+    return (
+      <>
+        <a
+          className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9"
+          href={analysis.href}
+          target="_blank"
+          rel="noreferrer"
+          onClick={() => onMarkRead(item)}
+        >
+          <Sparkles className="size-3.5" />
+          Open review
+        </a>
+        {analysis.active?.status === "queued" ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={prioritizeBusy || analysis.bumped}
+            onClick={() => onPrioritize(analysis)}
+            title={analysis.bumped ? "Already at the front of the queue" : "Move to front of queue"}
+          >
+            {prioritizeBusy ? (
+              <LoaderCircle className="size-3.5 animate-spin" />
+            ) : (
+              <ArrowUp className="size-3.5" />
+            )}
+            {analysis.bumped ? "Prioritized" : "Prioritize"}
+          </Button>
+        ) : analysis.active?.status === "running" ? (
+          <Button size="sm" variant="outline" disabled>
+            <LoaderCircle className="size-3.5 animate-spin" />
+            Analyzing
+          </Button>
+        ) : (
+          <Button
+            size="icon-sm"
+            variant="outline"
+            disabled={analysisBusy}
+            onClick={() => onAnalyze(item)}
+            aria-label="Retry analysis"
+            title="Retry analysis"
+          >
+            {analysisBusy ? (
+              <LoaderCircle className="size-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="size-3.5" />
+            )}
+          </Button>
+        )}
+      </>
+    );
+  }
+  if (analysis.active?.status === "queued") {
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={prioritizeBusy || analysis.bumped}
+        onClick={() => onPrioritize(analysis)}
+        title={analysis.bumped ? "Already at the front of the queue" : "Move to front of queue"}
+      >
+        {prioritizeBusy ? (
+          <LoaderCircle className="size-3.5 animate-spin" />
+        ) : (
+          <ArrowUp className="size-3.5" />
+        )}
+        {analysis.bumped ? "Prioritized" : "Prioritize"}
+      </Button>
+    );
+  }
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={analysisBusy || analysis.active?.status === "running"}
+      onClick={() => onAnalyze(item)}
+    >
+      {analysisBusy || analysis.active?.status === "running" ? (
+        <LoaderCircle className="size-3.5 animate-spin" />
+      ) : (
+        <Sparkles className="size-3.5" />
+      )}
+      {analysisBusy ? "Queueing" : analysis.active?.status === "running" ? "Analyzing" : "Analyze"}
+    </Button>
+  );
+}
+
+function MarkDoneOrRestore({ completed, doneBusy, item, onToggleDone }) {
+  return (
+    <Button
+      size={completed ? "sm" : "icon-sm"}
+      variant="outline"
+      disabled={doneBusy}
+      onClick={() => onToggleDone(item)}
+      aria-label={completed ? undefined : "Mark done"}
+      title={completed ? undefined : "Mark done"}
+    >
+      {doneBusy ? (
+        <LoaderCircle className="size-3.5 animate-spin" />
+      ) : completed ? (
+        <>
+          <RotateCcw className="size-3.5" />
+          Restore
+        </>
+      ) : (
+        <Check className="size-3.5 text-emerald-700" />
+      )}
+    </Button>
+  );
+}
+
+function ReviewPullRequestItem({
+  analysis,
+  analysisBusy,
+  completed,
+  doneBusy,
+  Heading,
+  item,
+  onAnalyze,
+  onMarkRead,
+  onPrioritize,
+  onToggleDone,
+  prioritizeBusy,
+}) {
+  const labelColor = (color) => (/^[\da-f]{6}$/i.test(color) ? `#${color}` : "#9b948d");
+  const teammate = item.signals.find((signal) => signal.kind === "teammate-pr");
+  const reviewRequest =
+    item.signals.find((signal) => signal.kind === "direct-review") ??
+    item.signals.find((signal) => signal.kind === "team-review");
 
   return (
-    <ActivityHoverCard updates={updatesSinceRead} since={item.changesSince}>
+    <ActivityHoverCard updates={activityUpdates(item)} since={item.changesSince}>
       <Item
         asChild
         className={cn(
-          "rounded-none border-0 border-b border-border p-5 last:border-b-0 hover:bg-accent/50",
+          itemListRowClassName,
           item.read && !item.hasUnreadUpdates && "opacity-60 hover:opacity-80",
           completed && "opacity-60",
         )}
       >
         <article>
-          <ItemMedia className={myPrStatus ? "w-20" : "w-16"}>
-            {myPrStatus ? (
-              <Badge
-                aria-label={`Pull request status ${myPrStatus.label}`}
-                className={cn(
-                  "h-8 min-w-16 justify-center rounded-full px-2 text-xs font-semibold",
-                  myPrStatus.className,
-                )}
-                variant="outline"
-              >
-                {myPrStatus.label}
-              </Badge>
-            ) : (
-              <Badge
-                aria-label={`Priority score ${item.score}`}
-                className={cn(
-                  "h-8 min-w-12 justify-center rounded-full px-3 font-serif text-lg font-semibold tabular-nums",
-                  LIFECYCLE_STYLES[item.lifecycle],
-                )}
-                variant="outline"
-              >
-                {item.score}
-              </Badge>
-            )}
-          </ItemMedia>
-
-          <ItemContent className="min-w-0 gap-0">
+          <Item.Media className="w-16">
+            <Badge
+              aria-label={`Priority score ${item.score}`}
+              className={cn(
+                "h-8 min-w-12 justify-center rounded-full px-3 font-serif text-lg font-semibold tabular-nums",
+                LIFECYCLE_STYLES[item.lifecycle],
+              )}
+              variant="outline"
+            >
+              {item.score}
+            </Badge>
+          </Item.Media>
+          <Item.Content className="min-w-0 gap-0">
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span className="font-semibold text-foreground/65">#{item.number}</span>
             </div>
-
-            <Title className="mt-1.5 text-[17px] font-semibold leading-snug tracking-[-0.015em]">
+            <Heading className={cn("mt-1.5", titleClassName)}>
               <a
                 className="decoration-primary/35 underline-offset-4 hover:underline"
                 href={safeGitHubUrl(item.actionUrl)}
@@ -247,10 +362,9 @@ function PullRequestRow({
               >
                 {item.title}
               </a>
-            </Title>
-
+            </Heading>
             <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-              {!mine && item.author && (
+              {item.author && (
                 <span className="inline-flex items-center gap-1">
                   by
                   {teammate ? (
@@ -268,7 +382,7 @@ function PullRequestRow({
                   )}
                 </span>
               )}
-              {!mine && reviewRequest && (
+              {reviewRequest && (
                 <Badge
                   className={cn(
                     "h-5 gap-1 px-1.5 text-[11px] font-semibold",
@@ -288,168 +402,135 @@ function PullRequestRow({
                 </Badge>
               )}
               <span>updated {relativeTime(item.updatedAt)}</span>
-              {!mine && Number.isInteger(item.additions) && Number.isInteger(item.deletions) && (
+              {Number.isInteger(item.additions) && Number.isInteger(item.deletions) && (
                 <span>{item.additions + item.deletions} changed LoC</span>
               )}
-              {!mine && Number.isInteger(item.changedFiles) && (
+              {Number.isInteger(item.changedFiles) && (
                 <span>
                   {item.changedFiles} {item.changedFiles === 1 ? "file" : "files"}
                 </span>
               )}
-              {!mine && item.comments > 0 && (
+              {item.comments > 0 && (
                 <span className="inline-flex items-center gap-1">
                   <MessageSquare className="size-3" />
                   {item.comments}
                 </span>
               )}
-              {!mine &&
-                item.labels.map((label) => (
-                  <span className="inline-flex items-center gap-1.5" key={label.name}>
-                    <i
-                      className="size-1.5 rounded-full"
-                      style={{ backgroundColor: labelColor(label.color) }}
-                    />
-                    {label.name}
-                  </span>
-                ))}
+              {item.labels.map((label) => (
+                <span className="inline-flex items-center gap-1.5" key={label.name}>
+                  <i
+                    className="size-1.5 rounded-full"
+                    style={{ backgroundColor: labelColor(label.color) }}
+                  />
+                  {label.name}
+                </span>
+              ))}
             </div>
-          </ItemContent>
-
-          <ItemActions className="ml-20 basis-full md:ml-auto md:basis-auto">
-            {analysis.href ? (
-              <>
-                <a
-                  className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9"
-                  href={analysis.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => onMarkRead(item)}
-                >
-                  <Sparkles className="size-3.5" />
-                  Open review
-                </a>
-                {analysis.active?.status === "queued" ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={prioritizeBusy || analysis.bumped}
-                    onClick={() => onPrioritize(analysis)}
-                    title={
-                      analysis.bumped
-                        ? "Already at the front of the queue"
-                        : "Move to front of queue"
-                    }
-                  >
-                    {prioritizeBusy ? (
-                      <LoaderCircle className="size-3.5 animate-spin" />
-                    ) : (
-                      <ArrowUp className="size-3.5" />
-                    )}
-                    {analysis.bumped ? "Prioritized" : "Prioritize"}
-                  </Button>
-                ) : analysis.active?.status === "running" ? (
-                  <Button size="sm" variant="outline" disabled>
-                    <LoaderCircle className="size-3.5 animate-spin" />
-                    Analyzing
-                  </Button>
-                ) : (
-                  <Button
-                    size="icon-sm"
-                    variant="outline"
-                    disabled={analysisBusy}
-                    onClick={() => onAnalyze(item)}
-                    aria-label="Retry analysis"
-                    title="Retry analysis"
-                  >
-                    {analysisBusy ? (
-                      <LoaderCircle className="size-3.5 animate-spin" />
-                    ) : (
-                      <RotateCcw className="size-3.5" />
-                    )}
-                  </Button>
-                )}
-              </>
-            ) : analysis.active?.status === "queued" ? (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={prioritizeBusy || analysis.bumped}
-                onClick={() => onPrioritize(analysis)}
-                title={
-                  analysis.bumped ? "Already at the front of the queue" : "Move to front of queue"
-                }
-              >
-                {prioritizeBusy ? (
-                  <LoaderCircle className="size-3.5 animate-spin" />
-                ) : (
-                  <ArrowUp className="size-3.5" />
-                )}
-                {analysis.bumped ? "Prioritized" : "Prioritize"}
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={analysisBusy || analysis.active?.status === "running"}
-                onClick={() => onAnalyze(item)}
-              >
-                {analysisBusy || analysis.active?.status === "running" ? (
-                  <LoaderCircle className="size-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="size-3.5" />
-                )}
-                {analysisBusy
-                  ? "Queueing"
-                  : analysis.active?.status === "running"
-                    ? "Analyzing"
-                    : "Analyze"}
-              </Button>
-            )}
-            {!mine && (
-              <Button
-                size={completed ? "sm" : "icon-sm"}
-                variant="outline"
-                disabled={doneBusy}
-                onClick={() => onToggleDone(item)}
-                aria-label={completed ? undefined : "Mark done"}
-                title={completed ? undefined : "Mark done"}
-              >
-                {doneBusy ? (
-                  <LoaderCircle className="size-3.5 animate-spin" />
-                ) : completed ? (
-                  <>
-                    <RotateCcw className="size-3.5" />
-                    Restore
-                  </>
-                ) : (
-                  <Check className="size-3.5 text-emerald-700" />
-                )}
-              </Button>
-            )}
-          </ItemActions>
+          </Item.Content>
+          <Item.Actions className="ml-20 basis-full md:ml-auto md:basis-auto">
+            <InboxAnalysisActions
+              analysis={analysis}
+              analysisBusy={analysisBusy}
+              item={item}
+              onAnalyze={onAnalyze}
+              onMarkRead={onMarkRead}
+              onPrioritize={onPrioritize}
+              prioritizeBusy={prioritizeBusy}
+            />
+            <MarkDoneOrRestore
+              completed={completed}
+              doneBusy={doneBusy}
+              item={item}
+              onToggleDone={onToggleDone}
+            />
+          </Item.Actions>
         </article>
       </Item>
     </ActivityHoverCard>
   );
 }
 
-function NotificationRow({ item, completed, onToggleDone, doneBusy, nested }) {
-  const Title = nested ? "h4" : "h3";
+function MyPullRequestItem({
+  analysis,
+  analysisBusy,
+  completed,
+  Heading,
+  item,
+  onAnalyze,
+  onMarkRead,
+  onPrioritize,
+  prioritizeBusy,
+}) {
+  const myPrStatus = myPrStatuses[myPullRequestStatus(item)];
   return (
-    <Item
-      asChild
-      className={cn(
-        "rounded-none border-0 border-b border-border p-5 last:border-b-0 hover:bg-accent/50",
-        completed && "opacity-60",
-      )}
-    >
+    <ActivityHoverCard updates={activityUpdates(item)} since={item.changesSince}>
+      <Item
+        asChild
+        className={cn(
+          itemListRowClassName,
+          item.read && !item.hasUnreadUpdates && "opacity-60 hover:opacity-80",
+          completed && "opacity-60",
+        )}
+      >
+        <article>
+          <Item.Media className="w-20">
+            <Badge
+              aria-label={`Pull request status ${myPrStatus.label}`}
+              className={cn(
+                "h-8 min-w-16 justify-center rounded-full px-2 text-xs font-semibold",
+                myPrStatus.className,
+              )}
+              variant="outline"
+            >
+              {myPrStatus.label}
+            </Badge>
+          </Item.Media>
+          <Item.Content className="min-w-0 gap-0">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="font-semibold text-foreground/65">#{item.number}</span>
+            </div>
+            <Heading className={cn("mt-1.5", titleClassName)}>
+              <a
+                className="decoration-primary/35 underline-offset-4 hover:underline"
+                href={safeGitHubUrl(item.actionUrl)}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => onMarkRead(item)}
+              >
+                {item.title}
+              </a>
+            </Heading>
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+              <span>updated {relativeTime(item.updatedAt)}</span>
+            </div>
+          </Item.Content>
+          <Item.Actions className="ml-20 basis-full md:ml-auto md:basis-auto">
+            <InboxAnalysisActions
+              analysis={analysis}
+              analysisBusy={analysisBusy}
+              item={item}
+              onAnalyze={onAnalyze}
+              onMarkRead={onMarkRead}
+              onPrioritize={onPrioritize}
+              prioritizeBusy={prioritizeBusy}
+            />
+          </Item.Actions>
+        </article>
+      </Item>
+    </ActivityHoverCard>
+  );
+}
+
+function NotificationRow({ completed, doneBusy, Heading, item, onToggleDone }) {
+  return (
+    <Item asChild className={cn(itemListRowClassName, completed && "opacity-60")}>
       <article>
-        <ItemMedia className="flex w-28 items-center justify-start gap-[0.45rem] text-[0.68rem] font-[750] uppercase tracking-[0.06em] text-muted-foreground">
+        <Item.Media className="flex w-28 items-center justify-start gap-[0.45rem] text-[0.68rem] font-[750] uppercase tracking-[0.06em] text-muted-foreground">
           <Bell className="size-4 text-primary" />
           <span>{item.subjectType}</span>
-        </ItemMedia>
-        <ItemContent className="min-w-0 gap-0">
-          <Title className="text-[17px] font-semibold leading-snug tracking-[-0.015em]">
+        </Item.Media>
+        <Item.Content className="min-w-0 gap-0">
+          <Heading className={titleClassName}>
             <a
               className="decoration-primary/35 underline-offset-4 hover:underline"
               href={safeGitHubUrl(item.url)}
@@ -458,13 +539,13 @@ function NotificationRow({ item, completed, onToggleDone, doneBusy, nested }) {
             >
               {item.title}
             </a>
-          </Title>
+          </Heading>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline">{NOTIFICATION_LABELS[item.reason] || item.reason}</Badge>
             <span>updated {relativeTime(item.updatedAt)}</span>
           </div>
-        </ItemContent>
-        <ItemActions className="ml-32 basis-full md:ml-auto md:basis-auto">
+        </Item.Content>
+        <Item.Actions className="ml-32 basis-full md:ml-auto md:basis-auto">
           <a
             className="inline-flex h-8 items-center justify-center gap-1 rounded-[0.5rem] px-[0.55rem] text-[0.75rem] font-bold text-primary no-underline hover:bg-primary/9"
             href={safeGitHubUrl(item.url)}
@@ -474,33 +555,21 @@ function NotificationRow({ item, completed, onToggleDone, doneBusy, nested }) {
             Open
             <ArrowUpRight className="size-3.5" />
           </a>
-          <Button
-            size={completed ? "sm" : "icon-sm"}
-            variant="outline"
-            disabled={doneBusy}
-            onClick={() => onToggleDone(item)}
-            aria-label={completed ? undefined : "Mark done"}
-            title={completed ? undefined : "Mark done"}
-          >
-            {doneBusy ? (
-              <LoaderCircle className="size-3.5 animate-spin" />
-            ) : completed ? (
-              <>
-                <RotateCcw className="size-3.5" />
-                Restore
-              </>
-            ) : (
-              <Check className="size-3.5 text-emerald-700" />
-            )}
-          </Button>
-        </ItemActions>
+          <MarkDoneOrRestore
+            completed={completed}
+            doneBusy={doneBusy}
+            item={item}
+            onToggleDone={onToggleDone}
+          />
+        </Item.Actions>
       </article>
     </Item>
   );
 }
 
 function UpdatedDateGroup({
-  label,
+  GroupHeading,
+  RowHeading,
   items,
   isDone,
   onToggleDone,
@@ -511,23 +580,18 @@ function UpdatedDateGroup({
   onPrioritize,
   prioritizeMutation,
   onMarkRead,
+  label,
   notifications = false,
-  nested = false,
 }) {
-  const Heading = nested ? "h3" : "h2";
-  const Row = notifications ? NotificationRow : PullRequestRow;
   const groupDoneBusy = items.some((item) => doneMutation.includes(item.id));
   const openItems = items.filter((item) => !item.authored && !isDone(item));
   return (
-    <section
-      className="overflow-hidden rounded-lg border bg-card/75 shadow-lg backdrop-blur-sm"
-      aria-label={`${label} items`}
-    >
-      <header className="flex min-h-[2.8rem] items-center justify-between gap-4 border-b bg-accent/78 px-[1.2rem] py-[0.65rem] max-[700px]:px-[0.9rem]">
-        <Heading className="m-0 flex min-w-0 items-center gap-[0.55rem] text-[0.75rem] font-[750] tracking-[0.01em] text-foreground [overflow-wrap:anywhere]">
+    <ItemGroup className={itemGroupCardClassName} aria-label={`${label} items`}>
+      <ItemGroup.Header>
+        <GroupHeading className="m-0 flex min-w-0 items-center gap-[0.55rem] text-[0.75rem] font-[750] tracking-[0.01em] text-foreground [overflow-wrap:anywhere]">
           <FileClock className="size-4 flex-none text-primary" aria-hidden="true" />
           {label}
-        </Heading>
+        </GroupHeading>
         <span className="flex items-center gap-2">
           <Badge variant="outline">
             {items.length} {items.length === 1 ? "item" : "items"}
@@ -549,26 +613,42 @@ function UpdatedDateGroup({
             </Button>
           )}
         </span>
-      </header>
-      {items.map((item) => (
-        <Row
-          key={item.id}
-          item={item}
-          completed={isDone(item)}
-          onToggleDone={onToggleDone}
-          doneBusy={doneMutation.includes(item.id)}
-          nested={nested}
-          {...(!notifications && {
-            analysis: analysisFor(item, analyses.get(item.url)),
-            analysisBusy: analysisMutation === item.id,
-            onAnalyze,
-            onPrioritize,
-            prioritizeBusy: prioritizeMutation === item.url,
-            onMarkRead,
+      </ItemGroup.Header>
+      {notifications
+        ? items.map((item) => (
+            <NotificationRow
+              key={item.id}
+              item={item}
+              completed={isDone(item)}
+              onToggleDone={onToggleDone}
+              doneBusy={doneMutation.includes(item.id)}
+              Heading={RowHeading}
+            />
+          ))
+        : items.map((item) => {
+            const shared = {
+              analysis: analysisFor(item, analyses.get(item.url)),
+              analysisBusy: analysisMutation === item.id,
+              completed: isDone(item),
+              Heading: RowHeading,
+              item,
+              onAnalyze,
+              onMarkRead,
+              onPrioritize,
+              prioritizeBusy: prioritizeMutation === item.url,
+            };
+            return item.authored ? (
+              <MyPullRequestItem key={item.id} {...shared} />
+            ) : (
+              <ReviewPullRequestItem
+                key={item.id}
+                {...shared}
+                doneBusy={doneMutation.includes(item.id)}
+                onToggleDone={onToggleDone}
+              />
+            );
           })}
-        />
-      ))}
-    </section>
+    </ItemGroup>
   );
 }
 
@@ -586,6 +666,8 @@ export function InboxSection({
   showHeader,
 }) {
   const Icon = LIFECYCLE_META[section.id]?.icon ?? Bell;
+  const GroupHeading = showHeader ? "h3" : "h2";
+  const RowHeading = showHeader ? "h4" : "h3";
   return (
     <section className="grid gap-3" aria-label={`${section.label} inbox`}>
       {showHeader && (
@@ -603,6 +685,8 @@ export function InboxSection({
         {section.groups.map((group) => (
           <UpdatedDateGroup
             key={group.label}
+            GroupHeading={GroupHeading}
+            RowHeading={RowHeading}
             label={group.label}
             items={group.items}
             isDone={isDone}
@@ -615,7 +699,6 @@ export function InboxSection({
             prioritizeMutation={prioritizeMutation}
             onMarkRead={onMarkRead}
             notifications={section.id === "nonpr"}
-            nested={showHeader}
           />
         ))}
       </div>

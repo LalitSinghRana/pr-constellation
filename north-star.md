@@ -7,7 +7,7 @@ Next improvements
 - [x] ~~Setting and Analyze queue to open in same tab by default now.~~
 - [ ] Move 0.1x / 1x / 10x toggle from header to inside the scope of review-trees
 - [ ] Manually add a PR to the inbox. Cases where people ask for review in slack without adding me directly. Requesting self-review doesn't add it to GH inbox.
-- [ ] Merge rows b/w home-page and /analysis-queue. The expand feature in /analysis-queue row is behind a flag in this component. First check and find all the difference, so there's no regression.
+- [x] ~~Merge rows b/w home-page and /analysis-queue. The expand feature in /analysis-queue row is behind a flag in this component. First check and find all the difference, so there's no regression.~~
   - [x] ~~In My PR, we should remove mark as done PR. Also sub-section containing details like author, tags, etc. These are not needed on my own PR.~~
   - [x] ~~Keep my PRs with no new updates in marked as read status UI.~~
 - [x] ~~We need closed PR tab also on left. Anything else we are missing?~~
