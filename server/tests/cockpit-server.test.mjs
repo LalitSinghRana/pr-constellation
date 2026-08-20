@@ -73,6 +73,55 @@ test("automatic queue includes only active new pull requests", async () => {
   assert.equal(result.runs.length, 1);
 });
 
+test("automatic queue skips pull requests that already have runs", async () => {
+  const queued = [];
+  const result = await automaticallyQueueNewAnalyses(
+    [
+      {
+        done: false,
+        lifecycle: "new",
+        title: "First time",
+        url: "https://github.com/example/repo/pull/1",
+      },
+      {
+        done: false,
+        headSha: "new-sha",
+        lifecycle: "new",
+        title: "Failed before",
+        url: "https://github.com/example/repo/pull/2",
+      },
+      {
+        done: false,
+        headSha: "new-sha",
+        lifecycle: "new",
+        title: "Succeeded on a previous SHA",
+        url: "https://github.com/example/repo/pull/3",
+      },
+    ],
+    {
+      enqueue: async ({ prUrl }) => {
+        queued.push(prUrl);
+        return { prUrl };
+      },
+      snapshot: async () => ({
+        prs: [
+          {
+            url: "https://github.com/example/repo/pull/2",
+            runs: [{ headSha: "old-sha", status: "failed" }],
+          },
+          {
+            url: "https://github.com/example/repo/pull/3",
+            runs: [{ headSha: "old-sha", status: "succeeded" }],
+          },
+        ],
+      }),
+    },
+  );
+
+  assert.deepEqual(queued, ["https://github.com/example/repo/pull/1"]);
+  assert.equal(result.runs.length, 1);
+});
+
 test("queue all analyses skip authored and done pull requests", async () => {
   const queued = [];
   const runs = await queueInboxAnalyses(
@@ -894,6 +943,8 @@ test("settings lists are validated before writing", () => {
       teams: ["example/platform"],
       autoQueue: true,
       showMinimap: true,
+      reviewTreeDensity: "1x",
+      defaultReviewTab: "conversation",
       defaultAnalysisProvider: "cursor",
       defaultAnalysisModel: "cursor-grok-4.5",
       defaultAnalysisReasoningEffort: "xhigh",
@@ -901,6 +952,14 @@ test("settings lists are validated before writing", () => {
   );
   assert.equal(normalizeSettings({}).autoQueue, false);
   assert.equal(normalizeSettings({}).showMinimap, false);
+  assert.equal(normalizeSettings({}).reviewTreeDensity, "1x");
+  assert.equal(normalizeSettings({}).defaultReviewTab, "conversation");
+  assert.equal(normalizeSettings({ reviewTreeDensity: "10x" }).reviewTreeDensity, "10x");
+  assert.equal(normalizeSettings({ reviewTreeDensity: "full" }).reviewTreeDensity, "1x");
+  assert.equal(normalizeSettings({ defaultReviewTab: "trees" }).defaultReviewTab, "trees");
+  assert.equal(normalizeSettings({ defaultReviewTab: "files" }).defaultReviewTab, "conversation");
+  assert.equal(normalizeSettings({ reviewTreeDensity: null }).reviewTreeDensity, "1x");
+  assert.equal(normalizeSettings({ defaultReviewTab: undefined }).defaultReviewTab, "conversation");
   assert.equal(normalizeSettings({}).defaultAnalysisModel, "cursor-grok-4.6");
   assert.equal(normalizeSettings({}).defaultAnalysisProvider, "cursor");
   assert.equal(normalizeSettings({}).defaultAnalysisReasoningEffort, "xhigh");
@@ -924,6 +983,8 @@ test("settings lists are validated before writing", () => {
       teams: [],
       autoQueue: false,
       showMinimap: false,
+      reviewTreeDensity: "1x",
+      defaultReviewTab: "conversation",
       defaultAnalysisProvider: "codex",
       defaultAnalysisModel: "gpt-5.6-sol",
       defaultAnalysisReasoningEffort: "xhigh",

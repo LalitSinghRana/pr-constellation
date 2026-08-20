@@ -88,6 +88,14 @@ const expandedAllVisibleGroups = foldSectionTree(file, {
 assert.ok(expandedAllVisibleGroups.sections.some((item) => item.id === "props"));
 assert.ok(expandedAllVisibleGroups.sections.some((item) => item.id === "visual-imports"));
 
+const unfolded = foldSectionTree(file, { foldGroups: false });
+assert.deepEqual(
+  unfolded.sections.map((item) => item.id),
+  ["root", "press", "loading", "loading-styles", "visual", "visual-imports", "props"],
+);
+assert.equal(unfolded.groupIds.length, 0);
+assert.ok(!unfolded.sections.some((item) => item.reviewGroup));
+
 const orderedFile = {
   id: "ordered-file",
   sectionTree: {

@@ -11,9 +11,16 @@ export function normalizeSectionTree(file) {
 
 export function foldSectionTree(
   file,
-  { expandedGroupIds = [], showSecondaryRuntime = false } = {},
+  { expandedGroupIds = [], foldGroups = true, showSecondaryRuntime = false } = {},
 ) {
   const sectionTree = normalizeSectionTree(file);
+  if (!foldGroups) {
+    return {
+      branches: sectionTree.branches,
+      groupIds: [],
+      sections: sectionTree.sections,
+    };
+  }
   const expandedIds =
     expandedGroupIds instanceof Set ? expandedGroupIds : new Set(expandedGroupIds);
   const sectionById = new Map(sectionTree.sections.map((section) => [section.id, section]));

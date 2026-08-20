@@ -1,8 +1,9 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { useCallback, useMemo, useState } from "react";
+import { useSettingsQuery } from "../hooks/use-settings.js";
+import { EMPTY_SETTINGS } from "../lib/queue.js";
 import { PullRequestConversation } from "./pull-request-conversation.jsx";
 import { ReviewDraftProvider } from "./review-draft-panel.jsx";
-import { ReviewDraftSheet } from "./review-draft-sheet.jsx";
 import { ReviewHeader } from "./review-header.jsx";
 import { buildReviewTree, sectionTreeSections } from "./review-tree/layout.js";
 import { readReviewSlug, usePersistentStringSet } from "./review-tree/state.js";
@@ -23,8 +24,12 @@ function App({ review, reviewSlug, treeData }) {
     usePersistentStringSet(sourceOrderViewStorageKey);
   const stacks = treeData?.reviewStacks || [];
   const [activeStackId, setActiveStackId] = useState(() => stacks[0]?.id ?? null);
-  const [activeTab, setActiveTab] = useState("conversation");
-  const [reviewerMode, setReviewerMode] = useState("quick");
+  const settingsQuery = useSettingsQuery();
+  const settings = settingsQuery.data ?? EMPTY_SETTINGS;
+  const [activeTabOverride, setActiveTabOverride] = useState(null);
+  const [reviewerModeOverride, setReviewerModeOverride] = useState(null);
+  const activeTab = activeTabOverride ?? settings.defaultReviewTab;
+  const reviewerMode = reviewerModeOverride ?? settings.reviewTreeDensity;
   // First-pass layout uses the estimated reviewSectionHeight() formula; once
   // ReviewTreeCanvas measures real rendered heights that drift from the estimate,
   // this re-runs layout with real numbers. Rendered node ids and content are
@@ -51,8 +56,9 @@ function App({ review, reviewSlug, treeData }) {
       activeStackId,
       expandedGroupIds,
       sourceOrderViewIds,
+      foldGroups: reviewerMode !== "10x",
       measuredHeights,
-      showSecondaryRuntime: reviewerMode === "full",
+      showSecondaryRuntime: reviewerMode === "1x",
     });
   }, [
     activeStackId,
@@ -94,13 +100,7 @@ function App({ review, reviewSlug, treeData }) {
   return (
     <ReviewDraftProvider reviewSlug={reviewSlug}>
       <div className="review-shell fixed inset-0 grid h-dvh w-screen min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden bg-background">
-        <ReviewHeader
-          activeTab={activeTab}
-          onReviewerModeChange={setReviewerMode}
-          onTabChange={setActiveTab}
-          review={review}
-          reviewerMode={reviewerMode}
-        />
+        <ReviewHeader activeTab={activeTab} onTabChange={setActiveTabOverride} review={review} />
         <main className="review-main grid min-h-0 overflow-hidden">
           {activeTab === "conversation" ? (
             <PullRequestConversation review={review} reviewSlug={reviewSlug} />
@@ -112,12 +112,14 @@ function App({ review, reviewSlug, treeData }) {
               <ReactFlowProvider>
                 <ReviewTreeCanvas
                   activeStackId={activeStackId}
-                  tree={tree}
                   onActiveStackChange={setActiveStackId}
                   onFileViewModeChange={setFileViewMode}
                   onMeasuredHeightsChange={handleMeasuredHeightsChange}
+                  onReviewerModeChange={setReviewerModeOverride}
                   onToggleReviewGroup={toggleReviewGroup}
+                  reviewerMode={reviewerMode}
                   stacks={stacks}
+                  tree={tree}
                 />
               </ReactFlowProvider>
             </section>
@@ -128,7 +130,6 @@ function App({ review, reviewSlug, treeData }) {
           )}
         </main>
       </div>
-      {activeTab === "trees" ? <ReviewDraftSheet /> : null}
     </ReviewDraftProvider>
   );
 }

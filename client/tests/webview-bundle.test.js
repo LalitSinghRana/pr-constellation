@@ -110,11 +110,18 @@ assert.ok(
     .some((token) => token.style?.includes("--shiki-light")),
   "the browser highlighter should provide styled syntax tokens",
 );
+assert.ok(
+  treeData.files[0].sourceCodeChunks[0].lines
+    .flatMap((line) => line.syntaxTokens)
+    .some((token) => token.style?.includes("--shiki-dark")),
+  "the browser highlighter should provide dark-theme syntax tokens",
+);
 assert.ok(!("relations" in treeData.files[0].sectionTree));
 
 const reviewUiFiles = [
   "review-tree-app.jsx",
   "review-header.jsx",
+  "review-draft-sheet.jsx",
   "pull-request-conversation.jsx",
   "review-tree-canvas.jsx",
   "review-tree-nodes.jsx",
@@ -137,15 +144,18 @@ assert.match(reviewTreeSource, /reviewBranch: React\.memo\(ReviewBranch\)/);
 assert.match(reviewTreeSource, /filter\(\(\{ type \}\) => type === "reviewSection"\)/);
 assert.match(
   reviewTreeSource,
-  /foldSectionTree\(file, \{ expandedGroupIds, showSecondaryRuntime \}\)/,
+  /foldSectionTree\(file, \{ expandedGroupIds, foldGroups, showSecondaryRuntime \}\)/,
 );
+assert.match(treeAppSource, /aria-label="Review tree density"/);
+assert.match(treeAppSource, /REVIEW_TREE_DENSITY_MODES/);
+assert.match(treeAppSource, /absolute top-4 right-\[18px\]/);
 assert.match(reviewTreeSource, /value="source"/);
 assert.match(reviewTreeSource, /ariaLabel="Review tree map"/);
 assert.match(reviewTreeSource, /pointerEvents: "auto"/);
 assert.match(treeAppSource, /text-base leading-relaxed/);
-assert.match(treeAppSource, /const \[activeTab, setActiveTab\] = useState\("conversation"\)/);
+assert.match(treeAppSource, /<ReviewDraftSheet \/>/);
+assert.match(treeAppSource, /review-draft-trigger gap-2/);
 assert.match(treeAppSource, /value="conversation"/);
-assert.match(treeAppSource, /activeTab === "trees" \? <ReviewDraftSheet \/> : null/);
 assert.match(treeAppSource, /function conversationIcon/);
 assert.match(treeAppSource, /item\.state === "APPROVED"\) return Check/);
 assert.match(treeAppSource, /item\.state === "COMMENTED"\) return MessageSquare/);

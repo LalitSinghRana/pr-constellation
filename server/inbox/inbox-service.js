@@ -2,6 +2,7 @@ import {
   normalizeSettingsAnalysisChoice,
   settingsAnalysisRunOptions,
 } from "../../shared/analysis-models.js";
+import { normalizeReviewUiSettings } from "../../shared/review-ui-settings.js";
 import { databasePath, queuePath, settingsPath } from "../runtime-config.js";
 import {
   getGitHubAuthoredPullRequests,
@@ -131,6 +132,7 @@ export function normalizeSettings(value = {}) {
     teams: parseList(value.teams, teamPattern, 10),
     autoQueue: value.autoQueue === true,
     showMinimap: value.showMinimap === true,
+    ...normalizeReviewUiSettings(value),
     ...normalizeSettingsAnalysisChoice(value),
   };
 }

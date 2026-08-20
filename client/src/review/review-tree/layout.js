@@ -52,6 +52,7 @@ export function buildReviewTree(
     expandedGroupIds = new Set(),
     sourceOrderViewIds = new Set(),
     measuredHeights = null,
+    foldGroups = true,
     showSecondaryRuntime = false,
   } = {},
 ) {
@@ -66,6 +67,7 @@ export function buildReviewTree(
     activeStackId,
     expandedGroupIds,
     sourceOrderViewIds,
+    foldGroups,
     measuredHeights,
     showSecondaryRuntime,
   });
@@ -217,6 +219,7 @@ function buildFileNodeSpecs(
     expandedGroupIds = new Set(),
     sourceOrderViewIds = new Set(),
     measuredHeights = null,
+    foldGroups = true,
     showSecondaryRuntime = false,
   } = {},
 ) {
@@ -234,6 +237,7 @@ function buildFileNodeSpecs(
           ? (node) =>
               measuredHeights.get(reviewSectionId(file, node.id)) ?? reviewSectionHeight(node)
           : reviewSectionHeight,
+        foldGroups,
         showSecondaryRuntime,
         viewMode: sourceOrderViewIds.has(file.id) ? "source" : "tree",
       }),
@@ -264,6 +268,7 @@ function buildFileLayout(
   file,
   {
     expandedGroupIds = new Set(),
+    foldGroups = true,
     getReviewSectionHeight = reviewSectionHeight,
     showSecondaryRuntime = false,
     viewMode = "tree",
@@ -272,7 +277,7 @@ function buildFileLayout(
   const sectionTree =
     viewMode === "source"
       ? buildSourceOrderSectionTree(file)
-      : foldSectionTree(file, { expandedGroupIds, showSecondaryRuntime });
+      : foldSectionTree(file, { expandedGroupIds, foldGroups, showSecondaryRuntime });
   const reviewSections = sectionTree.sections;
   const layout = layoutReviewSections(reviewSections, sectionTree.branches, getReviewSectionHeight);
 

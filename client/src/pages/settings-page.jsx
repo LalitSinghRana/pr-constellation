@@ -19,16 +19,30 @@ import {
 } from "@/components/ui/item.jsx";
 import { Label } from "@/components/ui/label.jsx";
 import { Switch } from "@/components/ui/switch.jsx";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.jsx";
 import { useDocumentTitle } from "@/hooks/use-document-title.js";
 import { useMutation } from "@/hooks/use-mutation.js";
 import { putSettings, useSettingsQuery } from "@/hooks/use-settings.js";
+import { useTheme } from "@/hooks/use-theme.js";
 import { EMPTY_SETTINGS } from "@/lib/queue.js";
+import { THEME_MODES } from "@/lib/theme.js";
+import {
+  applyReviewUiSettings,
+  REVIEW_TREE_DENSITY_MODES,
+} from "../../../shared/review-ui-settings.js";
 
 function sectionFromLocation() {
   if (window.location.pathname.startsWith("/scoring")) return "scoring";
   const hash = window.location.hash.replace(/^#/, "");
   return hash === "team" || hash === "scoring" ? hash : "";
 }
+
+const TREE_NAVIGATION_SHORTCUTS = [
+  { action: "Previous review node", keys: ["←"] },
+  { action: "Next review node", keys: ["→"] },
+  { action: "Previous file", keys: ["Shift", "←"] },
+  { action: "Next file", keys: ["Shift", "→"] },
+];
 
 export function SettingsPage() {
   useDocumentTitle({ title: "Settings · PR Review Cockpit" });
@@ -41,7 +55,7 @@ export function SettingsPage() {
   });
 
   useEffect(() => {
-    if (settingsQuery.data) setSettings(settingsQuery.data);
+    if (settingsQuery.data) setSettings(applyReviewUiSettings(settingsQuery.data));
   }, [settingsQuery.data]);
 
   useEffect(() => {
@@ -86,6 +100,7 @@ export function SettingsPage() {
     "";
   const busy = settingsQuery.isLoading || saveSettings.isPending;
   const analysisCatalog = useAnalysisCatalog();
+  const { mode: themeMode, setTheme } = useTheme();
 
   return (
     <main className="min-h-screen">
@@ -155,8 +170,8 @@ export function SettingsPage() {
                   <Label htmlFor="auto-queue">Auto queue</Label>
                 </ItemTitle>
                 <ItemDescription className="line-clamp-none">
-                  When enabled, unreviewed pull requests are queued for AI analysis immediately and
-                  kept topped up on each sync.
+                  When enabled, first-time unreviewed pull requests are queued for AI analysis on
+                  each sync. Re-runs must be started manually.
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
@@ -185,6 +200,109 @@ export function SettingsPage() {
                   disabled={busy}
                   onCheckedChange={(enabled) => patchSettings({ showMinimap: enabled })}
                 />
+              </ItemActions>
+            </Item>
+            <ItemSeparator />
+            <Item size="sm" className="items-start rounded-none border-0 px-5 py-4 max-sm:flex-col">
+              <ItemContent>
+                <ItemTitle>
+                  <Label>Review tree density</Label>
+                </ItemTitle>
+                <ItemDescription className="line-clamp-none">
+                  Default folding on Review trees. 0.1x keeps primary runtime, 1x adds secondary
+                  runtime, and 10x shows every section.
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Tabs
+                  onValueChange={(reviewTreeDensity) => patchSettings({ reviewTreeDensity })}
+                  value={settings.reviewTreeDensity}
+                >
+                  <TabsList aria-label="Default review tree density">
+                    {REVIEW_TREE_DENSITY_MODES.map((mode) => (
+                      <TabsTrigger disabled={busy} key={mode} value={mode}>
+                        {mode}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              </ItemActions>
+            </Item>
+            <ItemSeparator />
+            <Item size="sm" className="items-start rounded-none border-0 px-5 py-4 max-sm:flex-col">
+              <ItemContent>
+                <ItemTitle>
+                  <Label>Default review tab</Label>
+                </ItemTitle>
+                <ItemDescription className="line-clamp-none">
+                  Which pane opens first on a generated review page.
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Tabs
+                  onValueChange={(defaultReviewTab) => patchSettings({ defaultReviewTab })}
+                  value={settings.defaultReviewTab}
+                >
+                  <TabsList aria-label="Default review tab">
+                    <TabsTrigger disabled={busy} value="conversation">
+                      Conversation
+                    </TabsTrigger>
+                    <TabsTrigger disabled={busy} value="trees">
+                      Review trees
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </ItemActions>
+            </Item>
+            <ItemSeparator />
+            <Item size="sm" className="items-start rounded-none border-0 px-5 py-4 max-sm:flex-col">
+              <ItemContent>
+                <ItemTitle>
+                  <Label>Appearance</Label>
+                </ItemTitle>
+                <ItemDescription className="line-clamp-none">
+                  Light, dark, or follow the operating system. The sidebar sun and moon control
+                  still switches between light and dark.
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Tabs onValueChange={setTheme} value={themeMode}>
+                  <TabsList aria-label="Color theme">
+                    {THEME_MODES.map((mode) => (
+                      <TabsTrigger className="capitalize" key={mode} value={mode}>
+                        {mode}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              </ItemActions>
+            </Item>
+            <ItemSeparator />
+            <Item size="sm" className="items-start rounded-none border-0 px-5 py-4 max-sm:flex-col">
+              <ItemContent>
+                <ItemTitle>Tree navigation</ItemTitle>
+                <ItemDescription className="line-clamp-none">
+                  Keyboard shortcuts on Review trees. These shortcuts cannot be changed.
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions className="max-sm:w-full">
+                <ul className="pointer-events-none grid gap-2 text-sm text-muted-foreground">
+                  {TREE_NAVIGATION_SHORTCUTS.map((shortcut) => (
+                    <li className="flex items-center justify-end gap-3" key={shortcut.action}>
+                      <span>{shortcut.action}</span>
+                      <span className="flex items-center gap-1">
+                        {shortcut.keys.map((key) => (
+                          <kbd
+                            className="rounded-md border border-border bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
+                            key={key}
+                          >
+                            {key}
+                          </kbd>
+                        ))}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </ItemActions>
             </Item>
             <ItemSeparator />

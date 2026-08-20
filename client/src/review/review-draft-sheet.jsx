@@ -9,7 +9,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "../components/ui/sheet.jsx";
-import { cn } from "../lib/utils.js";
 import { useReviewDraft } from "./review-draft-panel.jsx";
 
 const reviewEvents = [
@@ -30,17 +29,12 @@ export function ReviewDraftSheet() {
     submitReview,
     submitting,
     summaryBody,
-    threads,
   } = useReviewDraft();
 
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button
-          className="review-draft-trigger fixed top-[4.75rem] right-4 z-30 gap-2 shadow-md"
-          type="button"
-          variant="outline"
-        >
+        <Button className="review-draft-trigger gap-2" type="button" variant="outline">
           <MessageSquarePlus aria-hidden="true" size={16} />
           Review
           {draftComments.length > 0 ? (
@@ -104,39 +98,6 @@ export function ReviewDraftSheet() {
                       </Button>
                     </div>
                     <p className="whitespace-pre-wrap text-foreground">{comment.body}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="grid gap-2">
-            <h2 className="text-sm font-semibold text-foreground">Existing GitHub threads</h2>
-            {threads.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No review threads on GitHub yet.</p>
-            ) : (
-              <ul className="grid gap-2">
-                {threads.map((thread) => (
-                  <li
-                    className={cn(
-                      "rounded-md border bg-card p-3 text-sm",
-                      thread.isResolved ? "border-border/70 opacity-80" : "border-primary/30",
-                    )}
-                    key={`${thread.path}:${thread.line}:${thread.comments[0]?.createdAt}`}
-                  >
-                    <code className="text-xs text-muted-foreground">
-                      {thread.path}:{thread.line}
-                      {thread.isOutdated ? " · outdated" : ""}
-                      {thread.isResolved ? " · resolved" : ""}
-                    </code>
-                    {thread.comments.map((comment) => (
-                      <div className="mt-2 grid gap-1" key={comment.url || comment.createdAt}>
-                        <p className="text-xs font-medium text-muted-foreground">
-                          {comment.authorLogin || "unknown"}
-                        </p>
-                        <p className="whitespace-pre-wrap text-foreground">{comment.body}</p>
-                      </div>
-                    ))}
                   </li>
                 ))}
               </ul>

@@ -4,8 +4,8 @@ import { createPortal } from "react-dom";
 import { buildChunkDiffData } from "./diff-view-model.js";
 import { InlineCommentComposer } from "./inline-comment-composer.jsx";
 import { lineKey, lineTargetFromGutter } from "./review-comment-model.js";
+import { useColorMode } from "./use-color-mode.js";
 
-const INITIAL_COLOR_MODE = document.documentElement.classList.contains("dark") ? "dark" : "light";
 const REVIEW_DIFF_GUTTER_CLASS =
   "cursor-pointer relative select-none hover:bg-primary/12 hover:text-primary";
 const REVIEW_DIFF_GUTTER_HAS_COMMENT_CLASS = "text-primary font-bold";
@@ -41,6 +41,7 @@ function unchangedLineGap(prevChunk, nextChunk) {
 }
 
 export function DiffChunkView({ chunk, commentIndex, draftComment, headStale, onLineComment }) {
+  const colorMode = useColorMode();
   const { data, realNewLineNumbers, realOldLineNumbers, registerHighlighter } = useMemo(
     () => buildChunkDiffData(chunk),
     [chunk],
@@ -228,7 +229,7 @@ export function DiffChunkView({ chunk, commentIndex, draftComment, headStale, on
         diffViewFontSize={11}
         diffViewHighlight
         diffViewMode={DiffModeEnum.Unified}
-        diffViewTheme={INITIAL_COLOR_MODE}
+        diffViewTheme={colorMode}
         diffViewWrap={false}
         registerHighlighter={registerHighlighter}
       />

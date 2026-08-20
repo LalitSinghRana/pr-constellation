@@ -9,6 +9,7 @@ import {
 } from "@xyflow/react";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Layers3 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { REVIEW_TREE_DENSITY_MODES } from "../../../shared/review-ui-settings.js";
 import { Badge } from "../components/ui/badge.jsx";
 import { Button } from "../components/ui/button.jsx";
 import {
@@ -18,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select.jsx";
+import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.jsx";
 import { useSettingsQuery } from "../hooks/use-settings.js";
 import { useReviewDraft } from "./review-draft-panel.jsx";
 import {
@@ -27,8 +29,8 @@ import {
   VIEWPORT_PADDING_Y,
 } from "./review-tree/layout.js";
 import { edgeTypes, nodeTypes } from "./review-tree-nodes.jsx";
+import { useColorMode } from "./use-color-mode.js";
 
-const INITIAL_COLOR_MODE = document.documentElement.classList.contains("dark") ? "dark" : "light";
 const REVIEW_CAMERA_DURATION = 220;
 const REVIEW_CAMERA_PADDING_X = 80;
 const REVIEW_STEP_MAX_ZOOM = 1.25;
@@ -55,12 +57,14 @@ const REVIEW_NAVIGATION_CONTROL_SELECTOR = [
 
 export function ReviewTreeCanvas({
   activeStackId,
-  tree,
   onActiveStackChange,
   onFileViewModeChange,
   onMeasuredHeightsChange,
+  onReviewerModeChange,
   onToggleReviewGroup,
+  reviewerMode,
   stacks,
+  tree,
 }) {
   const draft = useReviewDraft();
   const commentIndex = draft.commentIndex;
@@ -113,6 +117,7 @@ export function ReviewTreeCanvas({
   const [currentStepId, setCurrentStepId] = useState(() => reviewSteps[0]?.id ?? null);
   const settingsQuery = useSettingsQuery();
   const showMinimap = settingsQuery.data?.showMinimap === true;
+  const colorMode = useColorMode();
   const navigation = useMemo(() => {
     const currentIndex = reviewSteps.findIndex(({ id }) => id === currentStepId);
     const current = reviewSteps[currentIndex] ?? null;
@@ -344,7 +349,7 @@ export function ReviewTreeCanvas({
         ref={canvasRef}
       >
         <ReactFlow
-          colorMode={INITIAL_COLOR_MODE}
+          colorMode={colorMode}
           defaultViewport={defaultViewport}
           edges={tree.edges}
           edgeTypes={edgeTypes}
@@ -389,16 +394,24 @@ export function ReviewTreeCanvas({
               }}
               pannable
               position="top-right"
-              style={{ right: 18, top: 16 }}
+              style={{ right: 18, top: 56 }}
               zoomable={false}
             />
           ) : null}
         </ReactFlow>
-        <StackSelect
-          activeStackId={activeStackId}
-          onActiveStackChange={onActiveStackChange}
-          stacks={stacks}
-        />
+        <div className="absolute top-4 left-[18px] z-[11]">
+          <StackSelect
+            activeStackId={activeStackId}
+            onActiveStackChange={onActiveStackChange}
+            stacks={stacks}
+          />
+        </div>
+        <div className="absolute top-4 right-[18px] z-[11]">
+          <ReviewDensityTabs
+            onReviewerModeChange={onReviewerModeChange}
+            reviewerMode={reviewerMode}
+          />
+        </div>
         <Button
           aria-label={
             navigation.previousFile
@@ -606,6 +619,23 @@ function ReviewTreeMapNode({
   );
 }
 
+function ReviewDensityTabs({ onReviewerModeChange, reviewerMode }) {
+  return (
+    <Tabs onValueChange={onReviewerModeChange} value={reviewerMode}>
+      <TabsList
+        aria-label="Review tree density"
+        className="border-[color-mix(in_oklab,var(--primary)_36%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_9%,var(--card))] shadow-xs"
+      >
+        {REVIEW_TREE_DENSITY_MODES.map((mode) => (
+          <TabsTrigger key={mode} value={mode}>
+            {mode}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
+  );
+}
+
 function StackSelect({ activeStackId, onActiveStackChange, stacks }) {
   if (stacks.length < 2) {
     return null;
@@ -615,7 +645,7 @@ function StackSelect({ activeStackId, onActiveStackChange, stacks }) {
     <Select onValueChange={onActiveStackChange} value={activeStackId ?? undefined}>
       <SelectTrigger
         aria-label="Review stack"
-        className="stack-select-trigger absolute top-4 left-[18px] z-[11] w-[280px] max-w-[min(320px,calc(50%_-_70px))] border-[color-mix(in_oklab,var(--primary)_36%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_9%,var(--card))] text-foreground shadow-xs hover:bg-[color-mix(in_oklab,var(--primary)_15%,var(--card))] [&_[data-slot=select-value]]:capitalize"
+        className="stack-select-trigger w-[280px] max-w-[min(320px,calc(50vw_-_70px))] border-[color-mix(in_oklab,var(--primary)_36%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_9%,var(--card))] text-foreground shadow-xs hover:bg-[color-mix(in_oklab,var(--primary)_15%,var(--card))] [&_[data-slot=select-value]]:capitalize"
       >
         <span className="stack-select-icon grid size-[26px] shrink-0 place-items-center rounded-sm border border-[color-mix(in_oklab,var(--primary)_34%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_8%,var(--card))] text-primary [&_svg]:size-[15px]">
           <Layers3 aria-hidden="true" className="text-primary" />

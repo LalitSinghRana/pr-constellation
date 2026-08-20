@@ -7,6 +7,10 @@ import {
   ACTIVITY_SIGNAL_KINDS as ACTIVITY_SIGNAL_KIND_VALUES,
   isOpenAuthoredPullRequest,
 } from "../../../shared/queue-policy.js";
+import {
+  DEFAULT_REVIEW_CONTENT_TAB,
+  DEFAULT_REVIEW_TREE_DENSITY,
+} from "../../../shared/review-ui-settings.js";
 
 export const EMPTY_SETTINGS = {
   username: "",
@@ -14,6 +18,8 @@ export const EMPTY_SETTINGS = {
   teams: [],
   autoQueue: false,
   showMinimap: false,
+  reviewTreeDensity: DEFAULT_REVIEW_TREE_DENSITY,
+  defaultReviewTab: DEFAULT_REVIEW_CONTENT_TAB,
   defaultAnalysisProvider: DEFAULT_ANALYSIS_PROVIDER,
   defaultAnalysisModel: DEFAULT_ANALYSIS_MODEL,
   defaultAnalysisReasoningEffort: DEFAULT_ANALYSIS_REASONING_EFFORT,

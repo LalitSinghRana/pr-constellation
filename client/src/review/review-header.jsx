@@ -1,14 +1,9 @@
 import { GitPullRequest } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.jsx";
 import { cn } from "../lib/utils.js";
+import { ReviewDraftSheet } from "./review-draft-sheet.jsx";
 
-export function ReviewHeader({
-  activeTab,
-  onReviewerModeChange,
-  onTabChange,
-  review,
-  reviewerMode,
-}) {
+export function ReviewHeader({ activeTab, onTabChange, review }) {
   return (
     <header className="review-header sticky top-0 z-20 border-b border-border bg-[color-mix(in_oklab,var(--card)_92%,var(--background))] px-5 py-3 shadow-xs backdrop-blur-[20px] max-[980px]:px-3 max-[980px]:py-2.5">
       <div className="review-header-main grid grid-cols-[minmax(0,1fr)_auto] items-center justify-between gap-3.5 max-[980px]:grid-cols-1 max-[980px]:gap-2">
@@ -41,12 +36,7 @@ export function ReviewHeader({
               <TabsTrigger value="trees">Review trees</TabsTrigger>
             </TabsList>
           </Tabs>
-          <Tabs onValueChange={onReviewerModeChange} value={reviewerMode}>
-            <TabsList aria-label="Reviewer depth">
-              <TabsTrigger value="quick">0.1× reviewer</TabsTrigger>
-              <TabsTrigger value="full">1× reviewer</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <ReviewDraftSheet />
         </div>
       </div>
     </header>

@@ -117,9 +117,17 @@ export async function queueInboxAnalyses(items, dashboardService, options = {}) 
 
 export async function automaticallyQueueNewAnalyses(items, dashboardService, options = {}) {
   try {
+    const dashboard = await dashboardService.snapshot();
+    const analyzedUrls = new Set(
+      (dashboard.prs ?? dashboard.pullRequests ?? [])
+        .filter((item) => (item.runs ?? []).length > 0)
+        .map((item) => item.url),
+    );
     return {
       runs: await enqueueMissingAnalyses(
-        items.filter((item) => item.lifecycle === "new" && !item.done),
+        items.filter(
+          (item) => item.lifecycle === "new" && !item.done && !analyzedUrls.has(item.url),
+        ),
         dashboardService,
         options,
       ),
