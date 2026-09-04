@@ -29,10 +29,16 @@ function buildReviewStackStructuredDiff(inventory) {
   };
 }
 
-export function buildReviewStacksPrompt({ inventory, metadataText, reviewStacksPrompt }) {
+export function buildReviewStacksPrompt({
+  inventory,
+  metadataText,
+  previousFailure,
+  reviewStacksPrompt,
+}) {
   const reviewStackDiffText = `${JSON.stringify(buildReviewStackStructuredDiff(inventory))}\n`;
 
   return `${reviewStacksPrompt.trim()}
+${buildReviewStacksRetryGuidance(previousFailure)}
 
 ## Inline Input
 
@@ -75,6 +81,20 @@ ${buildSourceInput({
 
 Generate the complete File Tree and every changed file's Section Tree as your final answer.
 `;
+}
+
+function buildReviewStacksRetryGuidance(previousFailure) {
+  return previousFailure
+    ? `
+## Review Stacks Retry Feedback
+
+The previous review-stacks answer failed deterministic validation:
+
+${previousFailure}
+
+Regenerate the complete review-stacks JSON from scratch and fix every reported issue while following the shared briefing contract above.
+`
+    : "";
 }
 
 function buildRetryGuidance(previousFailure) {

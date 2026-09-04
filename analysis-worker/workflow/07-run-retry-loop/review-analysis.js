@@ -59,6 +59,7 @@ const REVIEW_STACKS_SCHEMA_PATH = path.join(
 );
 const JUDGE_PROMPT_PATH = path.join(WORKFLOW_DIR, "06-judge-candidate", "prompt.md");
 const MAX_ANALYSIS_ATTEMPTS = 3;
+const MAX_REVIEW_STACKS_ATTEMPTS = 3;
 const JUDGE_REASONING_EFFORT = "high";
 const MODEL_EXECUTION_CONCURRENCY = 3;
 const REVIEW_TREES_SHARD_CONCURRENCY = 3;
@@ -158,20 +159,58 @@ export async function runReviewAnalysis({
           run: async () => {
             const reviewStacksPromptPath = path.join(resolvedRunDir, "review-stacks-prompt.md");
             const reviewStacksRawPath = path.join(resolvedRunDir, "review-stacks.raw.json");
-            const document = await runJsonStage({
-              cwd: resolvedRunDir,
-              executionConfig,
-              execute: executeWithUsage,
-              outputPath: reviewStacksRawPath,
-              prompt: buildReviewStacksPrompt({
-                inventory,
-                metadataText,
-                reviewStacksPrompt,
-              }),
-              promptPath: reviewStacksPromptPath,
-              schemaPath: REVIEW_STACKS_SCHEMA_PATH,
-            });
-            validateReviewStacks(document, { inventory });
+            const reviewStacksFailures = [];
+            let document;
+
+            for (let attempt = 1; attempt <= MAX_REVIEW_STACKS_ATTEMPTS; attempt += 1) {
+              throwIfAborted(signal);
+              const attemptRawPath =
+                attempt === 1
+                  ? reviewStacksRawPath
+                  : reviewStacksRawPath.replace(/\.json$/, `.attempt-${attempt}.json`);
+              const attemptPromptPath =
+                attempt === 1
+                  ? reviewStacksPromptPath
+                  : reviewStacksPromptPath.replace(/\.md$/, `.attempt-${attempt}.md`);
+
+              try {
+                document = await runJsonStage({
+                  cwd: resolvedRunDir,
+                  executionConfig,
+                  execute: executeWithUsage,
+                  outputPath: attemptRawPath,
+                  prompt: buildReviewStacksPrompt({
+                    inventory,
+                    metadataText,
+                    previousFailure: reviewStacksFailures.at(-1),
+                    reviewStacksPrompt,
+                  }),
+                  promptPath: attemptPromptPath,
+                  schemaPath: REVIEW_STACKS_SCHEMA_PATH,
+                });
+                validateReviewStacks(document, { inventory });
+                if (attempt > 1) {
+                  await writeFile(
+                    reviewStacksRawPath,
+                    `${JSON.stringify(document, null, 2)}\n`,
+                    "utf8",
+                  );
+                }
+                break;
+              } catch (error) {
+                if (isAbortError(error)) {
+                  throw error;
+                }
+                const failure = formatStageFailure("04.2 create review stacks", error);
+                reviewStacksFailures.push(failure);
+                if (attempt === MAX_REVIEW_STACKS_ATTEMPTS) {
+                  throw new Error(
+                    `Review stack generation failed after ${MAX_REVIEW_STACKS_ATTEMPTS} attempts:\n\n${reviewStacksFailures.join("\n\n")}`,
+                  );
+                }
+              }
+            }
+
             await writeFile(
               path.join(resolvedRunDir, "review-stacks.json"),
               `${JSON.stringify(document, null, 2)}\n`,
