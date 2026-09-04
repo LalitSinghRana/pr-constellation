@@ -1,0 +1,156 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./theme.css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@source "./**/*.{js,jsx}";
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    letter-spacing: var(--tracking-normal);
+  }
+}
+
+html {
+  background: var(--background);
+}
+
+html:has(.review-shell),
+body:has(.review-shell) {
+  height: 100%;
+  overflow: hidden;
+}
+
+#pr-review-root {
+  height: 100%;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+a,
+input {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
+}
+
+.toaster[data-sonner-toaster][dir="ltr"],
+.toaster[data-sonner-toaster][dir="rtl"] {
+  --toast-close-button-start: unset;
+  --toast-close-button-end: 0;
+  --toast-close-button-transform: translate(35%, -35%);
+}
+
+.toaster[data-sonner-toaster][data-sonner-theme="light"],
+.toaster[data-sonner-toaster][data-sonner-theme="dark"] {
+  --success-bg: color-mix(in srgb, var(--success) 12%, var(--background));
+  --success-border: color-mix(in srgb, var(--success) 28%, var(--border));
+  --success-text: var(--success-strong);
+  --warning-bg: color-mix(in srgb, var(--warning) 14%, var(--background));
+  --warning-border: color-mix(in srgb, var(--warning) 32%, var(--border));
+  --warning-text: var(--warning-strong);
+  --error-bg: color-mix(in srgb, var(--error) 14%, var(--background));
+  --error-border: color-mix(in srgb, var(--error) 32%, var(--border));
+  --error-text: var(--error-strong);
+}
+
+.shiki-token {
+  font: inherit;
+}
+
+.dark .shiki-token {
+  --shiki-color: var(--shiki-dark, var(--shiki-light));
+}
+
+.review-section-node *:not(.diff-line-num):not(.diff-line-content-operator) {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.github-markdown .markdown-alert {
+  margin: 0.75rem 0;
+  border-left: 4px solid var(--border);
+  padding: 0.5rem 1rem;
+}
+
+.github-markdown .markdown-alert-note {
+  border-left-color: var(--primary);
+}
+
+.github-markdown .markdown-alert-tip {
+  border-left-color: var(--pr-open);
+}
+
+.github-markdown .markdown-alert-important {
+  border-left-color: var(--pr-merged);
+}
+
+.github-markdown .markdown-alert-warning {
+  border-left-color: var(--warning-strong);
+}
+
+.github-markdown .markdown-alert-caution {
+  border-left-color: var(--error);
+}
+
+.github-markdown .markdown-alert-title {
+  margin: 0 0 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.github-markdown .markdown-alert-title .octicon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  fill: currentcolor;
+}
+
+.github-markdown details {
+  margin: 0.75rem 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  padding: 0.5rem 0.75rem;
+}
+
+.github-markdown summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.github-markdown details[open] > summary {
+  margin-bottom: 0.75rem;
+}

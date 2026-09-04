@@ -1,0 +1,14 @@
+node_modules/
+.reviews/
+database/
+dist/
+.cursor/
+.codex/
+.context/
+.conductor/settings.local.toml
+.env
+.env.*
+*.sqlite
+*.sqlite3
+*.log
+.DS_Store

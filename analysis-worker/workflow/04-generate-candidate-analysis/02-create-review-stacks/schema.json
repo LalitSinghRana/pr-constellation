@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PR Review Stacks",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "reviewStacks"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "pr-review-stacks/v1"
+    },
+    "reviewStacks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/reviewStack"
+      }
+    }
+  },
+  "$defs": {
+    "reviewStack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "explanation", "fileIds"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Names the reviewer question, not the code verb. Good: \"Recipe delete control\". Bad: \"Import cart-line removal builder\"."
+        },
+        "explanation": {
+          "description": "Plain Markdown briefing: shared outcome these changes achieve together. Consequence first; 2-4 sentences or bullets. No meta-grouping or file listing. Title-plus: add information the title cannot carry alone. Optional Reviewer attention: only when needed.",
+          "type": "string",
+          "minLength": 1
+        },
+        "fileIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^file-[0-9]+$"
+          }
+        }
+      }
+    }
+  }
+}
