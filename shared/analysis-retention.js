@@ -48,6 +48,11 @@ export function shouldExpireAnalysis({ item, latestRun, now }) {
   const nowMs = now instanceof Date ? now.getTime() : Date.parse(now);
   if (!Number.isFinite(nowMs)) return false;
 
+  const latestRunMs = latestRunActivityMs(latestRun);
+  if (latestRunMs != null && nowMs - latestRunMs < ANALYSIS_RETENTION_AFTER_CLOSE_MS) {
+    return false;
+  }
+
   const doneAtMs = timestampMs(item?.doneAt);
   if (doneAtMs != null && nowMs - doneAtMs >= ANALYSIS_RETENTION_AFTER_CLOSE_MS) {
     return true;

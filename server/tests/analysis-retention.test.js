@@ -24,13 +24,18 @@ test("keeps a recently merged pull request until the close retention elapses", (
   );
 });
 
-test("deletes analysis seven days after merge or close", () => {
+test("deletes analysis seven days after merge or close when the run is also stale", () => {
   assert.equal(
     shouldExpireAnalysis({
       item: {
         mergedAt: new Date(now.getTime() - ANALYSIS_RETENTION_AFTER_CLOSE_MS).toISOString(),
         state: "MERGED",
         updatedAt: new Date(now.getTime() - ANALYSIS_RETENTION_AFTER_CLOSE_MS).toISOString(),
+      },
+      latestRun: {
+        timestamps: {
+          completedAt: new Date(now.getTime() - ANALYSIS_RETENTION_AFTER_CLOSE_MS).toISOString(),
+        },
       },
       now,
     }),
@@ -43,9 +48,31 @@ test("deletes analysis seven days after merge or close", () => {
         state: "CLOSED",
         updatedAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1_000).toISOString(),
       },
+      latestRun: {
+        timestamps: {
+          completedAt: new Date(now.getTime() - ANALYSIS_RETENTION_AFTER_CLOSE_MS).toISOString(),
+        },
+      },
       now,
     }),
     true,
+  );
+});
+
+test("keeps analysis on an old merged pull request when the run completed recently", () => {
+  assert.equal(
+    shouldExpireAnalysis({
+      item: {
+        mergedAt: new Date(now.getTime() - ANALYSIS_RETENTION_AFTER_CLOSE_MS).toISOString(),
+        state: "MERGED",
+        updatedAt: new Date(now.getTime() - ANALYSIS_RETENTION_AFTER_CLOSE_MS).toISOString(),
+      },
+      latestRun: {
+        timestamps: { completedAt: now.toISOString() },
+      },
+      now,
+    }),
+    false,
   );
 });
 
@@ -63,7 +90,7 @@ test("does not delete an open pull request only because it is done", () => {
   );
 });
 
-test("deletes analysis seven days after it was marked done", () => {
+test("deletes analysis seven days after it was marked done and the run is stale", () => {
   assert.equal(
     shouldExpireAnalysis({
       item: {
@@ -71,6 +98,11 @@ test("deletes analysis seven days after it was marked done", () => {
         doneAt: new Date(now.getTime() - ANALYSIS_RETENTION_AFTER_CLOSE_MS).toISOString(),
         state: "OPEN",
         updatedAt: now.toISOString(),
+      },
+      latestRun: {
+        timestamps: {
+          completedAt: new Date(now.getTime() - ANALYSIS_RETENTION_AFTER_CLOSE_MS).toISOString(),
+        },
       },
       now,
     }),
@@ -83,6 +115,9 @@ test("deletes analysis seven days after it was marked done", () => {
         doneAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1_000).toISOString(),
         state: "OPEN",
         updatedAt: now.toISOString(),
+      },
+      latestRun: {
+        timestamps: { completedAt: now.toISOString() },
       },
       now,
     }),

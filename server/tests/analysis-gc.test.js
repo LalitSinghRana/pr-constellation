@@ -74,6 +74,7 @@ test("inbox retention deletes merged analysis after seven days and keeps an open
 test("recently merged analysis is kept", async (context) => {
   const { parsed, service, url } = await createService(context, "prc-analysis-gc-keep-");
   await createSucceededRun(service, {
+    completedAt: now.toISOString(),
     number: 9,
     runId: "run-fresh",
     slug: parsed.slug,
@@ -192,6 +193,31 @@ test("deletes remaining analysis seven days after the inbox row was marked done"
   await assert.rejects(() => access(path.join(reviewsDir, parsed.slug)), { code: "ENOENT" });
 });
 
+test("keeps fresh analysis on an old merged pull request until run retention elapses", async (context) => {
+  const { parsed, reviewsDir, service, url } = await createService(
+    context,
+    "prc-analysis-gc-fresh-",
+  );
+  await createSucceededRun(service, {
+    completedAt: now.toISOString(),
+    number: 42,
+    runId: "run-fresh-merged",
+    slug: parsed.slug,
+    title: "Fresh on old merge",
+    url,
+  });
+  const deleted = await service.deleteExpiredAnalysis({
+    now,
+    queueItems: [mergedItem(url, ANALYSIS_RETENTION_AFTER_CLOSE_MS)],
+  });
+  assert.deepEqual(deleted.deletedSlugs, []);
+  assert.equal(
+    (await service.store.readRun(parsed.slug, "run-fresh-merged")).runId,
+    "run-fresh-merged",
+  );
+  await access(path.join(reviewsDir, parsed.slug));
+});
+
 async function createService(context, prefix) {
   const root = await mkdtemp(path.join(os.tmpdir(), prefix));
   context.after(() => rm(root, { force: true, recursive: true }));
@@ -215,9 +241,11 @@ async function createService(context, prefix) {
   return { parsed: parseGitHubPrUrl(url), reviewsDir, service, url };
 }
 
-async function createSucceededRun(service, { number, runId, slug, title, url }) {
+async function createSucceededRun(service, { completedAt, number, runId, slug, title, url }) {
   await createTerminalRun(service, {
-    completedAt: now.toISOString(),
+    completedAt:
+      completedAt ??
+      new Date(now.getTime() - ANALYSIS_RETENTION_AFTER_CLOSE_MS - 60 * 60 * 1_000).toISOString(),
     number,
     runId,
     slug,
