@@ -19,6 +19,7 @@ pnpm dev
 
 - Open the URL shown in the terminal (default [http://127.0.0.1:4397/](http://127.0.0.1:4397/))
 - Add teammates and teams in **Settings → Team**
+- Browse the [demo review](https://lalitsinghrana.github.io/pr-constellation/demo/)
 
 ## Roadmap
 
