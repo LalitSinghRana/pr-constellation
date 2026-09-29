@@ -1122,7 +1122,7 @@ test("settings lists are validated before writing", () => {
       showMinimap: true,
       reviewTreeDensity: "1x",
       defaultReviewTab: "conversation",
-      defaultFileViewMode: "tree",
+      defaultFileViewMode: "source",
       defaultAnalysisProvider: "cursor",
       defaultAnalysisModel: "cursor-grok-4.5",
       defaultAnalysisReasoningEffort: "xhigh",
@@ -1132,13 +1132,13 @@ test("settings lists are validated before writing", () => {
   assert.equal(normalizeSettings({}).showMinimap, false);
   assert.equal(normalizeSettings({}).reviewTreeDensity, "1x");
   assert.equal(normalizeSettings({}).defaultReviewTab, "conversation");
-  assert.equal(normalizeSettings({}).defaultFileViewMode, "tree");
+  assert.equal(normalizeSettings({}).defaultFileViewMode, "source");
   assert.equal(normalizeSettings({ reviewTreeDensity: "10x" }).reviewTreeDensity, "10x");
   assert.equal(normalizeSettings({ reviewTreeDensity: "full" }).reviewTreeDensity, "1x");
   assert.equal(normalizeSettings({ defaultReviewTab: "trees" }).defaultReviewTab, "trees");
   assert.equal(normalizeSettings({ defaultReviewTab: "files" }).defaultReviewTab, "conversation");
   assert.equal(normalizeSettings({ defaultFileViewMode: "source" }).defaultFileViewMode, "source");
-  assert.equal(normalizeSettings({ defaultFileViewMode: "diff" }).defaultFileViewMode, "tree");
+  assert.equal(normalizeSettings({ defaultFileViewMode: "diff" }).defaultFileViewMode, "source");
   assert.equal(normalizeSettings({ reviewTreeDensity: null }).reviewTreeDensity, "1x");
   assert.equal(normalizeSettings({ defaultReviewTab: undefined }).defaultReviewTab, "conversation");
   assert.equal(normalizeSettings({}).defaultAnalysisModel, "cursor-grok-4.6");
@@ -1166,7 +1166,7 @@ test("settings lists are validated before writing", () => {
       showMinimap: false,
       reviewTreeDensity: "1x",
       defaultReviewTab: "conversation",
-      defaultFileViewMode: "tree",
+      defaultFileViewMode: "source",
       defaultAnalysisProvider: "codex",
       defaultAnalysisModel: "gpt-5.6-sol",
       defaultAnalysisReasoningEffort: "xhigh",

@@ -3,7 +3,7 @@ export const DEFAULT_REVIEW_TREE_DENSITY = "1x";
 export const REVIEW_CONTENT_TABS = Object.freeze(["conversation", "trees"]);
 export const DEFAULT_REVIEW_CONTENT_TAB = "conversation";
 export const FILE_VIEW_MODES = Object.freeze(["tree", "source"]);
-export const DEFAULT_FILE_VIEW_MODE = "tree";
+export const DEFAULT_FILE_VIEW_MODE = "source";
 
 export function normalizeReviewUiSettings(value = {}) {
   return {
