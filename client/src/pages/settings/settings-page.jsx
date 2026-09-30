@@ -210,25 +210,6 @@ export function SettingsPage() {
               </ItemActions>
             </Item>
             <ItemSeparator />
-            <Item size="sm" className="rounded-none border-0 px-5 py-4">
-              <ItemContent>
-                <ItemTitle>
-                  <Label htmlFor="show-minimap">Mini-map</Label>
-                </ItemTitle>
-                <ItemDescription className="line-clamp-none">
-                  Show the overview map on review tree pages so you can jump between nodes.
-                </ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <Switch
-                  id="show-minimap"
-                  checked={settings.showMinimap === true}
-                  disabled={busy}
-                  onCheckedChange={(enabled) => patchSettings({ showMinimap: enabled })}
-                />
-              </ItemActions>
-            </Item>
-            <ItemSeparator />
             <Item size="sm" className="items-start rounded-none border-0 px-5 py-4 max-sm:flex-col">
               <ItemContent>
                 <ItemTitle>

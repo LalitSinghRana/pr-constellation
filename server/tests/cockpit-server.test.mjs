@@ -1111,7 +1111,6 @@ test("settings lists are validated before writing", () => {
       people: ["alice", "alice", "not valid"],
       teams: ["example/platform", "bad"],
       autoQueue: true,
-      showMinimap: true,
       defaultAnalysisModel: "grok-4.5",
     }),
     {
@@ -1119,7 +1118,6 @@ test("settings lists are validated before writing", () => {
       people: ["alice"],
       teams: ["example/platform"],
       autoQueue: true,
-      showMinimap: true,
       reviewTreeDensity: "1x",
       defaultReviewTab: "conversation",
       defaultFileViewMode: "source",
@@ -1129,7 +1127,6 @@ test("settings lists are validated before writing", () => {
     },
   );
   assert.equal(normalizeSettings({}).autoQueue, false);
-  assert.equal(normalizeSettings({}).showMinimap, false);
   assert.equal(normalizeSettings({}).reviewTreeDensity, "1x");
   assert.equal(normalizeSettings({}).defaultReviewTab, "conversation");
   assert.equal(normalizeSettings({}).defaultFileViewMode, "source");
@@ -1145,9 +1142,7 @@ test("settings lists are validated before writing", () => {
   assert.equal(normalizeSettings({}).defaultAnalysisProvider, "cursor");
   assert.equal(normalizeSettings({}).defaultAnalysisReasoningEffort, "xhigh");
   assert.equal(normalizeSettings({ autoQueue: false }).autoQueue, false);
-  assert.equal(normalizeSettings({ showMinimap: false }).showMinimap, false);
   assert.equal(normalizeSettings({ autoQueue: true }).autoQueue, true);
-  assert.equal(normalizeSettings({ showMinimap: true }).showMinimap, true);
   assert.equal(
     normalizeSettings({ defaultAnalysisModel: "not a real model" }).defaultAnalysisModel,
     "cursor-grok-4.6",
@@ -1163,7 +1158,6 @@ test("settings lists are validated before writing", () => {
       people: [],
       teams: [],
       autoQueue: false,
-      showMinimap: false,
       reviewTreeDensity: "1x",
       defaultReviewTab: "conversation",
       defaultFileViewMode: "source",

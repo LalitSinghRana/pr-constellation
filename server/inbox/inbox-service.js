@@ -145,7 +145,6 @@ export function normalizeSettings(value = {}) {
     people: parseList(value.people, usernamePattern, 20),
     teams: parseList(value.teams, teamPattern, 10),
     autoQueue: value.autoQueue === true,
-    showMinimap: value.showMinimap === true,
     ...normalizeReviewUiSettings(value),
     ...normalizeSettingsAnalysisChoice(value),
   };

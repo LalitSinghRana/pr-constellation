@@ -18,7 +18,6 @@ export const EMPTY_SETTINGS = {
   people: [],
   teams: [],
   autoQueue: false,
-  showMinimap: false,
   reviewTreeDensity: DEFAULT_REVIEW_TREE_DENSITY,
   defaultReviewTab: DEFAULT_REVIEW_CONTENT_TAB,
   defaultFileViewMode: DEFAULT_FILE_VIEW_MODE,
