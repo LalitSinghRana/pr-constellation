@@ -1,7 +1,6 @@
 import {
   Background,
   BackgroundVariant,
-  MiniMap,
   ReactFlow,
   useNodes,
   useNodesInitialized,
@@ -20,7 +19,6 @@ import {
   SelectValue,
 } from "../components/ui/select.jsx";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.jsx";
-import { useSettingsQuery } from "../hooks/use-settings.js";
 import { CURRENT_REVIEW_NODE_Z_INDEX, latestCommentKeyOnSection } from "./comment-layout.js";
 import { ExplanationHoverCard } from "./explanation-hover-card.jsx";
 import { useReviewDraft } from "./review-draft-panel.jsx";
@@ -94,8 +92,6 @@ export function ReviewTreeCanvas({
     return targets;
   }, [reviewSteps]);
   const [currentStepId, setCurrentStepId] = useState(() => reviewSteps[0]?.id ?? null);
-  const settingsQuery = useSettingsQuery();
-  const showMinimap = settingsQuery.data?.showMinimap === true;
   const colorMode = useColorMode();
   const navigation = useMemo(() => {
     const currentIndex = reviewSteps.findIndex(({ id }) => id === currentStepId);
@@ -392,27 +388,6 @@ export function ReviewTreeCanvas({
             size={1.2}
             variant={BackgroundVariant.Dots}
           />
-          {showMinimap ? (
-            <MiniMap
-              ariaLabel="Review tree map"
-              className="overflow-hidden rounded-md border border-border bg-[color-mix(in_oklab,var(--card)_92%,transparent)] shadow-sm backdrop-blur-[12px]"
-              nodeClassName={reviewTreeMapNodeClassName}
-              nodeColor={reviewTreeMapNodeColor}
-              nodeComponent={ReviewTreeMapNode}
-              nodeStrokeColor={(node) =>
-                node.id === currentStepId ? "var(--primary)" : "transparent"
-              }
-              nodeStrokeWidth={4}
-              onNodeClick={(event, node) => {
-                event.stopPropagation();
-                snapToStep(node.id);
-              }}
-              pannable
-              position="top-right"
-              style={{ right: 18, top: 56 }}
-              zoomable={false}
-            />
-          ) : null}
         </ReactFlow>
         <div className="absolute top-4 left-[18px] z-[11]">
           <ReviewStackControl
@@ -545,104 +520,6 @@ function reviewViewportForNode(position, nodeWidth, canvasBounds) {
 
 function reviewStepTitle(step) {
   return step?.data?.reviewSection?.title || step?.data?.file?.path || "review step";
-}
-
-function reviewTreeMapNodeColor(node) {
-  if (node.type === "fileNode") {
-    return "color-mix(in oklab, var(--card) 90%, var(--primary))";
-  }
-
-  return (
-    {
-      primary: "var(--error)",
-      secondary: "var(--warning)",
-      skim: "var(--muted-foreground)",
-    }[node.data?.reviewSection?.reviewPriority] || "var(--primary)"
-  );
-}
-
-function reviewTreeMapNodeClassName(node) {
-  return `is-${node.type} is-${node.data?.reviewSection?.reviewPriority || "file"}`;
-}
-
-function ReviewTreeMapNode({
-  borderRadius,
-  className,
-  color,
-  height,
-  id,
-  onClick,
-  shapeRendering,
-  strokeColor,
-  strokeWidth,
-  width,
-  x,
-  y,
-}) {
-  const isFileNode = className.includes("is-fileNode");
-  const isGroup = className.includes("is-reviewGroup");
-  const headerHeight = isFileNode ? Math.max(36, height * 0.05) : Math.max(24, height * 0.18);
-  const lineWidth = Math.max(10, Math.min(width, height) * 0.035);
-
-  return (
-    <a
-      aria-label={`Focus ${id} in the review tree`}
-      className={`react-flow__minimap-node ${className}`}
-      href={`#${id}`}
-      onClick={(event) => {
-        event.preventDefault();
-        onClick?.(event, id);
-      }}
-    >
-      <rect
-        fill={isFileNode ? color : "var(--card)"}
-        height={height}
-        rx={borderRadius}
-        ry={borderRadius}
-        shapeRendering={shapeRendering}
-        width={width}
-        x={x}
-        y={y}
-      />
-      <rect
-        fill={color}
-        height={Math.min(height, headerHeight)}
-        opacity={isFileNode ? 0.45 : 0.8}
-        rx={borderRadius}
-        ry={borderRadius}
-        width={width}
-        x={x}
-        y={y}
-      />
-      {!isFileNode && !isGroup
-        ? [0.48, 0.64, 0.8].map((offset, index) => (
-            <line
-              key={offset}
-              opacity={0.55}
-              stroke={color}
-              strokeWidth={lineWidth}
-              x1={x + width * 0.1}
-              x2={x + width * (0.88 - index * 0.12)}
-              y1={y + height * offset}
-              y2={y + height * offset}
-            />
-          ))
-        : null}
-      <rect
-        fill="none"
-        height={height}
-        pointerEvents="none"
-        rx={borderRadius}
-        ry={borderRadius}
-        shapeRendering={shapeRendering}
-        stroke={strokeColor}
-        strokeWidth={strokeWidth}
-        width={width}
-        x={x}
-        y={y}
-      />
-    </a>
-  );
 }
 
 function ReviewDensityTabs({ onReviewerModeChange, reviewerMode }) {
