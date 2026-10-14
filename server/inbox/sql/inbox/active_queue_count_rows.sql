@@ -5,6 +5,7 @@ SELECT
   COALESCE(json_extract(record, '$.item.authored'), 0) AS authored,
   COALESCE(json_extract(record, '$.item.reviewed'), 0) AS reviewed,
   COALESCE(json_extract(record, '$.item.latestReviewState'), '') AS latest_review_state,
+  COALESCE(json_extract(record, '$.item.mergedAt'), '') AS merged_at,
   EXISTS (
     SELECT 1
     FROM json_each(queue_items.record, '$.item.signals') AS signal

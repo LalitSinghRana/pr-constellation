@@ -118,6 +118,7 @@ export function pullRequestRefreshIds({
       continue;
     }
     if (
+      item.state === "UNKNOWN" ||
       hasPullRequestChangeToken(item.id, {
         authoredOpenIds,
         authoredSnapshot: authoredSnapshots.get(item.id),

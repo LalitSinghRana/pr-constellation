@@ -187,9 +187,16 @@ export class InboxStore {
         authored: Boolean(row.authored),
         reviewed: Boolean(row.reviewed),
         latestReviewState: row.latest_review_state,
+        mergedAt: row.merged_at,
         signals: row.has_attention_signal ? [{ kind: "attention" }] : [],
       });
-      if (isOpenAuthoredPullRequest(row)) {
+      if (
+        isOpenAuthoredPullRequest({
+          authored: row.authored,
+          state: row.state,
+          mergedAt: row.merged_at,
+        })
+      ) {
         counts.mine++;
         continue;
       }
