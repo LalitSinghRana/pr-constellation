@@ -67,6 +67,9 @@ test("draft snapshot, comments, and submit stay allowed when GitHub HEAD moved a
   assert.ok(snapshot.draft);
   assert.equal(snapshot.draft.headSha, analysisHead);
 
+  store.syncReviewDraftHeadSha(slug, "older-than-analysis-head");
+  assert.equal(store.readReviewDraft(slug).headSha, "older-than-analysis-head");
+
   const withComment = await addReviewDraftComment(slug, {
     body: "Looks good",
     line: 10,
@@ -74,6 +77,7 @@ test("draft snapshot, comments, and submit stay allowed when GitHub HEAD moved a
     side: "RIGHT",
   });
   assert.equal(withComment.comments.length, 1);
+  assert.equal(withComment.headSha, analysisHead);
 
   const result = await submitReviewDraft(slug, { body: "", event: "APPROVE" });
   assert.equal(result.state, "APPROVED");

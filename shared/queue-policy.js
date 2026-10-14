@@ -49,8 +49,12 @@ export const SIGNAL_LABELS = Object.freeze({
   "team-covered": "Covered by teammate",
 });
 
+function hasMergeTimestamp(item) {
+  return typeof item?.mergedAt === "string" && item.mergedAt !== "";
+}
+
 export function lifecycleForQueueItem(item) {
-  if (item.state === "MERGED") return "merged";
+  if (item.state === "MERGED" || hasMergeTimestamp(item)) return "merged";
   if (item.state === "CLOSED") return "closed";
   if (item.draft) return "draft";
   if (item.authored) return "mine";
@@ -67,5 +71,10 @@ export function lifecycleForQueueItem(item) {
 }
 
 export function isOpenAuthoredPullRequest(item) {
-  return Boolean(item?.authored) && item.state !== "MERGED" && item.state !== "CLOSED";
+  return (
+    Boolean(item?.authored) &&
+    !hasMergeTimestamp(item) &&
+    item.state !== "MERGED" &&
+    item.state !== "CLOSED"
+  );
 }

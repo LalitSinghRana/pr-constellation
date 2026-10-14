@@ -20,6 +20,7 @@ import {
   tableInfoReviewDraftComments,
   updateDraftBody,
   updateDraftComment,
+  updateDraftHeadSha,
   upsertDraftComment,
 } from "../review/review-draft-sql.js";
 import {
@@ -186,9 +187,16 @@ export class InboxStore {
         authored: Boolean(row.authored),
         reviewed: Boolean(row.reviewed),
         latestReviewState: row.latest_review_state,
+        mergedAt: row.merged_at,
         signals: row.has_attention_signal ? [{ kind: "attention" }] : [],
       });
-      if (isOpenAuthoredPullRequest(row)) {
+      if (
+        isOpenAuthoredPullRequest({
+          authored: row.authored,
+          state: row.state,
+          mergedAt: row.merged_at,
+        })
+      ) {
         counts.mine++;
         continue;
       }
@@ -257,13 +265,19 @@ export class InboxStore {
     };
   }
 
+  syncReviewDraftHeadSha(slug, headSha, { now = new Date().toISOString() } = {}) {
+    const result = this.#database.prepare(updateDraftHeadSha).run(headSha, now, slug);
+    if (result.changes === 0) {
+      throw new Error("Review draft not found.");
+    }
+    return this.readReviewDraft(slug);
+  }
+
   ensureReviewDraft(context, { now = new Date().toISOString() } = {}) {
     const existing = this.readReviewDraft(context.slug);
     if (existing) {
       if (existing.headSha !== context.headSha) {
-        const error = new Error("Review draft is tied to an older commit.");
-        error.code = "HEAD_STALE";
-        throw error;
+        return this.syncReviewDraftHeadSha(context.slug, context.headSha, { now });
       }
       return existing;
     }

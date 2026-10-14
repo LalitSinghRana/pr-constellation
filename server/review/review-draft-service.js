@@ -37,6 +37,8 @@ export async function getReviewDraftSnapshot(slug) {
   let draft = store.readReviewDraft(slug);
   if (!draft) {
     draft = store.ensureReviewDraft(context);
+  } else if (draft.headSha !== context.headSha) {
+    draft = store.syncReviewDraftHeadSha(slug, context.headSha);
   }
   return {
     auth,
@@ -108,7 +110,7 @@ export async function submitReviewDraft(slug, { body, event }) {
     body: typeof body === "string" ? body : draft.body,
     comments: draft.comments,
     event,
-    headSha: draft.headSha || context.headSha,
+    headSha: context.headSha,
     number: draft.number,
     owner: draft.owner,
     repo: draft.repo,

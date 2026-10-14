@@ -10,6 +10,7 @@ export const readDraft = sql("./sql/review-drafts/read_draft.sql");
 export const readDraftComments = sql("./sql/review-drafts/read_draft_comments.sql");
 export const insertDraft = sql("./sql/review-drafts/insert_draft.sql");
 export const updateDraftBody = sql("./sql/review-drafts/update_draft_body.sql");
+export const updateDraftHeadSha = sql("./sql/review-drafts/update_draft_head_sha.sql");
 export const draftExists = sql("./sql/review-drafts/draft_exists.sql");
 export const upsertDraftComment = sql("./sql/review-drafts/upsert_draft_comment.sql");
 export const migrateDraftCommentLines = sql("./sql/review-drafts/migrate_draft_comment_lines.sql");
