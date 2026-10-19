@@ -62,6 +62,13 @@ export function normalizePr(pr) {
   };
 }
 
+function knownPullRequestState(state) {
+  const normalized = typeof state === "string" ? state.toUpperCase() : "";
+  return normalized === "OPEN" || normalized === "CLOSED" || normalized === "MERGED"
+    ? normalized
+    : "";
+}
+
 export function mergePr(item, pr) {
   const incoming = normalizePr(pr);
   return {
@@ -69,7 +76,7 @@ export function mergePr(item, pr) {
     title: incoming.title || item.title,
     url: incoming.url || item.url,
     author: incoming.author || item.author,
-    state: typeof pr.state === "string" ? pr.state.toUpperCase() : item.state,
+    state: knownPullRequestState(pr.state) || item.state,
     comments: pr.commentsCount == null ? item.comments : incoming.comments,
     createdAt: pr.createdAt ?? item.createdAt,
     updatedAt:

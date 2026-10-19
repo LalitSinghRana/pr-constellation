@@ -5,6 +5,7 @@ import {
   applyInboxActivity,
   refreshNotificationItems,
   reviewRequestSignals,
+  seedNotificationPullRequests,
 } from "../inbox/inbox-service.js";
 
 function openActivity(item, extra = {}) {
@@ -53,6 +54,84 @@ test("open authored pull requests exclude merged and closed states", () => {
   assert.equal(isOpenAuthoredPullRequest({ authored: true, state: "UNKNOWN" }), true);
   assert.equal(isOpenAuthoredPullRequest({ authored: true, state: "MERGED" }), false);
   assert.equal(isOpenAuthoredPullRequest({ authored: true, state: "CLOSED" }), false);
+  assert.equal(
+    isOpenAuthoredPullRequest({
+      authored: true,
+      mergedAt: "2026-10-12T13:55:39Z",
+      state: "UNKNOWN",
+    }),
+    false,
+  );
+});
+
+test("a stored merge time stays merged when the state was wiped", () => {
+  const reviewed = {
+    authored: false,
+    draft: false,
+    latestReviewState: "APPROVED",
+    mergedAt: "2026-10-12T13:55:39Z",
+    reviewed: true,
+    signals: [{ kind: "direct-mention" }],
+    state: "UNKNOWN",
+  };
+  const unreviewed = {
+    authored: false,
+    draft: false,
+    latestReviewState: null,
+    mergedAt: "2026-10-12T13:55:39Z",
+    reviewed: false,
+    signals: [{ kind: "direct-mention" }],
+    state: "UNKNOWN",
+  };
+  assert.equal(lifecycleForQueueItem(reviewed), "merged");
+  assert.equal(lifecycleForQueueItem(unreviewed), "merged");
+});
+
+test("a mention notification keeps a known merged state", () => {
+  const id = "owner/repo#3618";
+  const items = new Map([
+    [
+      id,
+      {
+        authored: false,
+        draft: false,
+        id,
+        latestReviewState: "APPROVED",
+        mergedAt: "2026-10-12T13:55:39Z",
+        number: 3618,
+        repository: "owner/repo",
+        reviewed: true,
+        signals: [],
+        state: "MERGED",
+        title: "Merged",
+        updatedAt: "2026-10-12T13:55:39Z",
+        url: "https://github.com/owner/repo/pull/3618",
+      },
+    ],
+  ]);
+
+  seedNotificationPullRequests(items, [
+    {
+      pr: {
+        number: 3618,
+        repository: { nameWithOwner: "owner/repo" },
+        state: "UNKNOWN",
+        title: "Merged",
+        updatedAt: "2026-10-12T16:39:12Z",
+        url: "https://github.com/owner/repo/pull/3618",
+      },
+      thread: { reason: "mention", updated_at: "2026-10-12T16:39:12Z" },
+    },
+  ]);
+
+  const item = items.get(id);
+  assert.equal(item.state, "MERGED");
+  assert.equal(item.mergedAt, "2026-10-12T13:55:39Z");
+  assert.equal(lifecycleForQueueItem(item), "merged");
+  assert.equal(
+    item.signals.some((signal) => signal.kind === "direct-mention"),
+    true,
+  );
 });
 
 test("GraphQL review requests become direct and team signals", () => {
@@ -453,6 +532,61 @@ test("an active pull request keeps its stored state when the notification token 
   assert.deepEqual(inspected, []);
   assert.equal(items.get(id).state, "OPEN");
   assert.equal(items.get(id).updatedAt, "2026-08-10T08:40:00Z");
+});
+
+test("an unknown pull request state refreshes when the notification token is unchanged", async () => {
+  const id = "owner/repo#5545";
+  const inspected = [];
+  const items = new Map([
+    [
+      id,
+      {
+        draft: false,
+        id,
+        notificationUpdatedAt: "2026-08-10T08:46:31Z",
+        number: 5545,
+        repository: "owner/repo",
+        signals: [],
+        state: "UNKNOWN",
+        updatedAt: "2026-08-10T08:40:00Z",
+        url: "https://github.com/owner/repo/pull/5545",
+      },
+    ],
+  ]);
+
+  await refreshNotificationItems(
+    items,
+    [
+      {
+        pr: { number: 5545, repository: { nameWithOwner: "owner/repo" } },
+        thread: { updated_at: "2026-08-10T08:46:31Z" },
+      },
+    ],
+    new Set(),
+    {
+      getActivity: async () => {
+        inspected.push(id);
+        return openActivity(
+          { number: 5545, url: "https://github.com/owner/repo/pull/5545" },
+          { mergedAt: "2026-08-10T09:20:00Z", state: "MERGED", updatedAt: "2026-08-10T09:20:00Z" },
+        );
+      },
+      inboxIds: new Set([id]),
+      queueRecords: {
+        [id]: {
+          version: "2026-08-10T08:46:31Z",
+          notificationUpdatedAt: "2026-08-10T08:46:31Z",
+          updatedAt: "2026-08-10T08:40:00Z",
+          item: { state: "UNKNOWN", updatedAt: "2026-08-10T08:40:00Z", headSha: "abc123" },
+        },
+      },
+      username: "me",
+    },
+  );
+
+  assert.deepEqual(inspected, [id]);
+  assert.equal(items.get(id).state, "MERGED");
+  assert.equal(lifecycleForQueueItem(items.get(id)), "merged");
 });
 
 test("a pinned pull request hydrates on first sight", async () => {

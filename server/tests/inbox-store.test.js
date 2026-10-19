@@ -129,6 +129,31 @@ test("inbox store pages every active item and counts categories across pages", a
   });
 });
 
+test("active counts treat a stored merge time as merged", async (context) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "prc-inbox-merged-at-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const store = await createInboxStore({ databasePath: path.join(root, "cockpit.sqlite3") });
+  context.after(() => store.close());
+  await store.mutateQueueState((state) =>
+    Object.assign(
+      state,
+      queueState({
+        wiped: categoryRecord("wiped", {
+          authored: true,
+          latestReviewState: "APPROVED",
+          mergedAt: "2026-10-12T13:55:39Z",
+          reviewed: true,
+          state: "UNKNOWN",
+        }),
+      }),
+    ),
+  );
+
+  assert.equal(store.activeQueueCounts().merged, 1);
+  assert.equal(store.activeQueueCounts().mine, 0);
+  assert.equal(store.activeQueueCounts().approved, 0);
+});
+
 test("row-level mutations can advance sync metadata without replacing the queue", async (context) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "prc-inbox-sync-state-"));
   context.after(() => rm(root, { recursive: true, force: true }));
