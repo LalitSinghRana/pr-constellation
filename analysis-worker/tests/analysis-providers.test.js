@@ -8,84 +8,73 @@ import {
   DEFAULT_ANALYSIS_PROVIDER,
   DEFAULT_ANALYSIS_REASONING_EFFORT,
   inferAnalysisProvider as inferSharedProvider,
-  mergeAnalysisModels,
   normalizeSettingsAnalysisChoice,
-  parseCursorModelList,
+  parseCodexModelCatalog,
 } from "../../shared/analysis-models.js";
 import {
   inferAnalysisProvider,
   normalizeAnalysisProvider,
   resolveAnalysisExecutor,
 } from "../workflow/07-run-retry-loop/analysis-providers.js";
-import { runClaudeExec } from "../workflow/07-run-retry-loop/claude-agent.js";
 import { runCodexExec } from "../workflow/07-run-retry-loop/codex-exec.js";
-import {
-  buildCursorAgentArgs,
-  buildCursorAgentPrompt,
-  parseCursorAgentJson,
-  resolveCursorModelId,
-  serializeCursorExecutor,
-} from "../workflow/07-run-retry-loop/cursor-agent.js";
 
-test("analysis defaults map to expected providers", () => {
-  assert.equal(DEFAULT_ANALYSIS_MODEL, "cursor-grok-4.6");
-  assert.equal(DEFAULT_ANALYSIS_PROVIDER, "cursor");
-  assert.equal(DEFAULT_ANALYSIS_REASONING_EFFORT, "xhigh");
-  assert.equal(inferSharedProvider("cursor-grok-4.6"), "cursor");
-  assert.equal(inferSharedProvider("grok-4.6"), "cursor");
+test("analysis defaults are codex-only", () => {
+  assert.equal(DEFAULT_ANALYSIS_MODEL, "gpt-5.6-sol");
+  assert.equal(DEFAULT_ANALYSIS_PROVIDER, "codex");
+  assert.equal(DEFAULT_ANALYSIS_REASONING_EFFORT, "medium");
   assert.equal(inferSharedProvider("gpt-5.6-sol"), "codex");
-  assert.equal(inferSharedProvider(""), "cursor");
-  assert.equal(inferSharedProvider("unknown-model"), "cursor");
+  assert.equal(inferSharedProvider("cursor-grok-4.6"), "codex");
+  assert.equal(inferSharedProvider(""), "codex");
   assert.ok(
-    ANALYSIS_MODELS.some((model) => model.id === "gpt-5.6-terra" && model.provider === "codex"),
+    ANALYSIS_MODELS.every((model) => model.provider === "codex"),
   );
-  assert.ok(ANALYSIS_MODELS.some((model) => model.id === "sonnet" && model.provider === "claude"));
-  assert.equal(
-    createAnalysisCatalog().providers.find((entry) => entry.id === "cursor")?.label,
-    "Cursor Agent",
-  );
-  assert.equal(
-    createAnalysisCatalog().providers.find((entry) => entry.id === "cursor")?.defaultModel,
-    "cursor-grok-4.6",
-  );
-  assert.equal(
-    createAnalysisCatalog().providers.find((entry) => entry.id === "cursor")
-      ?.defaultReasoningEffort,
-    "xhigh",
-  );
+  assert.equal(createAnalysisCatalog().providers.length, 1);
+  assert.equal(createAnalysisCatalog().providers[0]?.id, "codex");
+  assert.equal(createAnalysisCatalog().providers[0]?.defaultModel, "gpt-5.6-sol");
   assert.deepEqual(
     createAnalysisCatalog()
-      .providers.find((entry) => entry.id === "cursor")
-      .models.map((model) => model.id)
-      .sort(),
-    ["auto", "composer-2.5", "cursor-grok-4.5", "cursor-grok-4.6"],
+      .providers[0].models.map((model) => model.id)
+      .slice(0, 3),
+    ["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"],
   );
 });
 
-test("analysis provider helpers resolve executors", () => {
-  assert.equal(normalizeAnalysisProvider("cursor"), "cursor");
-  assert.equal(inferAnalysisProvider("cursor-grok-4.5"), "cursor");
+test("analysis provider helpers always resolve codex", () => {
+  assert.equal(normalizeAnalysisProvider("codex"), "codex");
+  assert.equal(normalizeAnalysisProvider(undefined), "codex");
+  assert.equal(inferAnalysisProvider("gpt-5.6-sol"), "codex");
+  assert.equal(resolveAnalysisExecutor(), runCodexExec);
   assert.equal(resolveAnalysisExecutor({ model: "gpt-5.6-sol", provider: "codex" }), runCodexExec);
-  assert.equal(resolveAnalysisExecutor({ provider: "claude" }), runClaudeExec);
-  assert.equal(resolveAnalysisExecutor({ provider: "codex" }), runCodexExec);
-  assert.equal(typeof resolveAnalysisExecutor({ model: "cursor-grok-4.5" }), "function");
-  assert.notEqual(resolveAnalysisExecutor({ model: "cursor-grok-4.5" }), runCodexExec);
-  assert.throws(() => normalizeAnalysisProvider("nope"), /Unsupported analysis provider/);
+  assert.throws(() => normalizeAnalysisProvider("cursor"), /Unsupported analysis provider/);
 });
 
-test("settings analysis choice keeps provider, model, and effort coherent", () => {
+test("settings analysis choice keeps codex model and effort coherent", () => {
   assert.deepEqual(normalizeSettingsAnalysisChoice({}), {
-    defaultAnalysisProvider: "cursor",
-    defaultAnalysisModel: "cursor-grok-4.6",
-    defaultAnalysisReasoningEffort: "xhigh",
+    defaultAnalysisProvider: "codex",
+    defaultAnalysisModel: "gpt-5.6-sol",
+    defaultAnalysisReasoningEffort: "medium",
   });
-  assert.equal(
-    normalizeSettingsAnalysisChoice({ defaultAnalysisModel: "grok-4.5" }).defaultAnalysisModel,
-    "cursor-grok-4.5",
+  assert.deepEqual(
+    normalizeSettingsAnalysisChoice({
+      defaultAnalysisProvider: "cursor",
+      defaultAnalysisModel: "cursor-grok-4.6",
+    }),
+    {
+      defaultAnalysisProvider: "codex",
+      defaultAnalysisModel: "gpt-5.6-sol",
+      defaultAnalysisReasoningEffort: "medium",
+    },
   );
-  assert.equal(
-    normalizeSettingsAnalysisChoice({ defaultAnalysisModel: "grok-4.6" }).defaultAnalysisModel,
-    "cursor-grok-4.6",
+  assert.deepEqual(
+    normalizeSettingsAnalysisChoice({
+      defaultAnalysisProvider: "claude",
+      defaultAnalysisModel: "sonnet",
+    }),
+    {
+      defaultAnalysisProvider: "codex",
+      defaultAnalysisModel: "gpt-5.6-sol",
+      defaultAnalysisReasoningEffort: "medium",
+    },
   );
   assert.equal(
     normalizeSettingsAnalysisChoice({
@@ -97,119 +86,46 @@ test("settings analysis choice keeps provider, model, and effort coherent", () =
   );
   assert.equal(
     normalizeSettingsAnalysisChoice({
-      defaultAnalysisProvider: "claude",
-      defaultAnalysisModel: "not a model",
-    }).defaultAnalysisModel,
-    "sonnet",
-  );
-  assert.deepEqual(
-    normalizeSettingsAnalysisChoice({
-      defaultAnalysisProvider: "cursor",
-      defaultAnalysisModel: "gpt-5.6-sol",
-    }),
-    {
-      defaultAnalysisProvider: "cursor",
-      defaultAnalysisModel: "cursor-grok-4.6",
-      defaultAnalysisReasoningEffort: "xhigh",
-    },
-  );
-  assert.equal(
-    normalizeSettingsAnalysisChoice({
-      defaultAnalysisProvider: "cursor",
-      defaultAnalysisModel: "composer-3",
-    }).defaultAnalysisModel,
-    "composer-3",
+      defaultAnalysisProvider: "codex",
+      defaultAnalysisModel: "gpt-6-sol",
+      defaultAnalysisReasoningEffort: "ultra",
+    }).defaultAnalysisReasoningEffort,
+    "ultra",
   );
 });
 
-test("cursor model lists group families and efforts", () => {
-  const parsed = parseCursorModelList(`
-Available models
-cursor-grok-4.5-high - Cursor Grok 4.5
-cursor-grok-4.5-high-fast - Cursor Grok 4.5 Fast
-cursor-grok-4.5-low - Cursor Grok 4.5 Low
-composer-2.5 - Composer 2.5
-composer-3 - Composer 3
-auto - Auto
-gpt-5.6-terra-high - GPT-5.6 Terra 1M High
-claude-4.5-sonnet-high - Claude 4.5 Sonnet
-gemini-3-pro - Gemini 3 Pro
-`);
-  const grok = parsed.find((model) => model.id === "cursor-grok-4.5");
-  const composer = parsed.find((model) => model.id === "composer-2.5");
-  assert.deepEqual(grok.reasoningEfforts, ["low", "high"]);
-  assert.equal(grok.encodeEffortInModelId, true);
-  assert.equal(composer.encodeEffortInModelId, false);
-  assert.ok(parsed.some((model) => model.id === "composer-3"));
-  assert.ok(parsed.some((model) => model.id === "auto"));
-  assert.equal(
-    parsed.find((model) => model.id === "gpt-5.6-terra"),
-    undefined,
-  );
-  assert.equal(
-    parsed.find((model) => model.id === "claude-4.5-sonnet"),
-    undefined,
-  );
-  assert.equal(
-    parsed.find((model) => model.id === "gemini-3-pro"),
-    undefined,
-  );
-  const merged = mergeAnalysisModels(ANALYSIS_MODELS, parsed);
-  const cursorCatalog = createAnalysisCatalog(merged).providers.find(
-    (entry) => entry.id === "cursor",
-  );
-  assert.ok(cursorCatalog.models.some((model) => model.id === "cursor-grok-4.5"));
-  assert.ok(cursorCatalog.models.some((model) => model.id === "composer-3"));
-  assert.equal(
-    cursorCatalog.models.some((model) => model.id.startsWith("gpt-")),
-    false,
-  );
-});
-
-test("cursor agent builds ask-mode args and parses json payloads", () => {
-  assert.equal(
-    resolveCursorModelId({ model: "grok-4.5", reasoningEffort: "high" }),
-    "cursor-grok-4.5-high",
-  );
-  assert.equal(analysisCliModelId("cursor-grok-4.5", "medium"), "cursor-grok-4.5-medium");
-  assert.equal(
-    resolveCursorModelId({ model: "composer-2.5", reasoningEffort: "high" }),
-    "composer-2.5",
-  );
-  assert.deepEqual(buildCursorAgentArgs({ model: "grok-4.5", reasoningEffort: "high" }), [
-    "--print",
-    "--trust",
-    "--output-format",
-    "json",
-    "--mode",
-    "ask",
-    "--sandbox",
-    "enabled",
-    "--model",
-    "cursor-grok-4.5-high",
-  ]);
-  assert.match(
-    buildCursorAgentPrompt({ prompt: "hello", schema: { type: "object" } }),
-    /json_schema/,
-  );
-  assert.deepEqual(parseCursorAgentJson('{"result":"{\\"ok\\":true}"}'), { ok: true });
-  assert.deepEqual(parseCursorAgentJson('{"intent":"x"}'), { intent: "x" });
-});
-
-test("cursor executor serializes concurrent calls", async () => {
-  let active = 0;
-  let maximumActive = 0;
-  const executeCursor = serializeCursorExecutor(async ({ value }) => {
-    active += 1;
-    maximumActive = Math.max(maximumActive, active);
-    await new Promise((resolve) => setTimeout(resolve, 1));
-    active -= 1;
-    return value;
+test("codex catalogs keep listed models and their efforts", () => {
+  const parsed = parseCodexModelCatalog({
+    models: [
+      {
+        slug: "gpt-6-sol",
+        display_name: "GPT-6-Sol",
+        visibility: "list",
+        default_reasoning_level: "medium",
+        supported_reasoning_levels: [{ effort: "low" }, { effort: "ultra" }, { effort: "medium" }],
+      },
+      {
+        slug: "gpt-daybreak-blue-latest",
+        display_name: "Daybreak Blue",
+        visibility: "hide",
+        supported_reasoning_levels: [{ effort: "low" }],
+      },
+      { slug: "not a model", display_name: "Broken", visibility: "list" },
+    ],
   });
-
   assert.deepEqual(
-    await Promise.all([executeCursor({ value: 1 }), executeCursor({ value: 2 })]),
-    [1, 2],
+    parsed.map((model) => model.id),
+    ["gpt-6-sol"],
   );
-  assert.equal(maximumActive, 1);
+  assert.equal(parsed[0].provider, "codex");
+  assert.equal(parsed[0].label, "GPT-6-Sol");
+  assert.deepEqual(parsed[0].reasoningEfforts, ["low", "medium", "ultra"]);
+  assert.equal(parsed[0].encodeEffortInModelId, false);
+  const catalog = createAnalysisCatalog([...ANALYSIS_MODELS, ...parsed]);
+  assert.ok(catalog.providers[0].models.some((model) => model.id === "gpt-6-sol"));
+});
+
+test("analysisCliModelId passes through canonical model ids", () => {
+  assert.equal(analysisCliModelId("gpt-5.6-sol"), "gpt-5.6-sol");
+  assert.equal(analysisCliModelId("gpt-6-sol"), "gpt-6-sol");
 });

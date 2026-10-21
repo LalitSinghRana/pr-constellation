@@ -68,8 +68,6 @@ when input was not fully persisted.
 |---|---|
 | `PORT` | HTTP listen port (default `4397`) |
 | `PRC_DISABLE_SYNC` | Set to `1` to disable GitHub background sync |
-| `PRC_CURSOR_AGENT_TIMEOUT_MS` | Cursor Agent subprocess timeout |
-| `PRC_CLAUDE_TIMEOUT_MS` | Claude CLI subprocess timeout |
 | `PRC_CODEX_TIMEOUT_MS` | Codex CLI subprocess timeout |
 | `PRC_CODEX_MODEL` | Override Codex model |
 | `PRC_CODEX_REASONING_EFFORT` | Override Codex reasoning effort |

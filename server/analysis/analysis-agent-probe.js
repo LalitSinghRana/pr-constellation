@@ -1,11 +1,9 @@
 import { spawn } from "node:child_process";
-import { buildClaudeProbeArgs } from "../../analysis-worker/workflow/07-run-retry-loop/claude-agent.js";
 import { buildCodexProbeArgs } from "../../analysis-worker/workflow/07-run-retry-loop/codex-exec.js";
-import { buildCursorAgentArgs } from "../../analysis-worker/workflow/07-run-retry-loop/cursor-agent.js";
 import {
   analysisModelReasoningEffort,
   DEFAULT_ANALYSIS_MODEL,
-  inferAnalysisProvider,
+  settingsAnalysisRunOptions,
 } from "../../shared/analysis-models.js";
 import { projectRoot } from "../runtime-config.js";
 
@@ -15,36 +13,14 @@ const PROBE_PROMPT = 'Reply with {"ok":true} only.';
 /**
  * Probe the configured default analysis agent the same way a real run does.
  */
-export async function probeAnalysisAgent({
-  model = DEFAULT_ANALYSIS_MODEL,
-  provider,
-  reasoningEffort,
-} = {}) {
+export async function probeAnalysisAgent(options = {}) {
+  const { model, provider, reasoningEffort } =
+    options && typeof options === "object" && "defaultAnalysisModel" in options
+      ? settingsAnalysisRunOptions(options)
+      : options;
   const selected =
     typeof model === "string" && model.trim() ? model.trim() : DEFAULT_ANALYSIS_MODEL;
-  const selectedProvider = inferAnalysisProvider(selected, provider);
-  if (selectedProvider === "cursor") {
-    return probeCursorAgent(selected, reasoningEffort);
-  }
-  if (selectedProvider === "codex") {
-    return probeCodexAgent(selected, reasoningEffort);
-  }
-  if (selectedProvider === "claude") {
-    return probeClaudeAgent(selected, reasoningEffort);
-  }
-  return {
-    accessible: false,
-    available: false,
-    message: `No accessibility probe for provider "${selectedProvider}" yet.`,
-    model: selected,
-    provider: selectedProvider,
-  };
-}
-
-function probeCursorAgent(model, reasoningEffort) {
-  const selectedEffort = reasoningEffort || analysisModelReasoningEffort(model, "cursor");
-  const args = [...buildCursorAgentArgs({ model, reasoningEffort: selectedEffort }), PROBE_PROMPT];
-  return runCliProbe({ command: "agent", args, model, provider: "cursor" });
+  return probeCodexAgent(selected, reasoningEffort);
 }
 
 function probeCodexAgent(model, reasoningEffort) {
@@ -63,21 +39,6 @@ function probeCodexAgent(model, reasoningEffort) {
   });
 }
 
-function probeClaudeAgent(model, reasoningEffort) {
-  const selectedEffort = reasoningEffort || analysisModelReasoningEffort(model, "claude");
-  const args = buildClaudeProbeArgs({
-    model,
-    reasoningEffort: selectedEffort,
-  });
-  return runCliProbe({
-    command: "claude",
-    args,
-    model,
-    provider: "claude",
-    stdin: PROBE_PROMPT,
-  });
-}
-
 function runCliProbe({ command, args, model, provider, stdin }) {
   return new Promise((resolve) => {
     let child;
@@ -91,7 +52,7 @@ function runCliProbe({ command, args, model, provider, stdin }) {
       resolve({
         accessible: false,
         available: false,
-        message: error?.message || "AI agent could not be started.",
+        message: error?.message || "Codex could not be started.",
         model,
         provider,
       });
@@ -119,7 +80,7 @@ function runCliProbe({ command, args, model, provider, stdin }) {
       finish({
         accessible: false,
         available: true,
-        message: `AI agent probe timed out after ${PROBE_TIMEOUT_MS / 1_000} seconds.`,
+        message: `Codex probe timed out after ${PROBE_TIMEOUT_MS / 1_000} seconds.`,
       });
     }, PROBE_TIMEOUT_MS);
 
@@ -146,7 +107,7 @@ function runCliProbe({ command, args, model, provider, stdin }) {
       finish({
         accessible: false,
         available: true,
-        message: error?.message || "AI agent could not be started.",
+        message: error?.message || "Codex could not be started.",
       });
     });
 
@@ -159,14 +120,14 @@ function runCliProbe({ command, args, model, provider, stdin }) {
         finish({
           accessible: true,
           available: true,
-          message: "AI agent is accessible",
+          message: "Codex is accessible",
         });
         return;
       }
       finish({
         accessible: false,
         available: true,
-        message: details || `AI agent probe failed with exit code ${code}.`,
+        message: details || `Codex probe failed with exit code ${code}.`,
       });
     });
   });

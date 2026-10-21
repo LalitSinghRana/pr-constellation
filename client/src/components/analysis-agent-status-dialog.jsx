@@ -69,10 +69,10 @@ export function AnalysisAgentStatusDialog() {
             <AlertTriangle className="size-3.5 shrink-0" />
             Analysis setup
           </p>
-          <DialogTitle className="text-balance">AI agent is not accessible</DialogTitle>
+          <DialogTitle className="text-balance">Codex is not accessible</DialogTitle>
           <DialogDescription className="text-pretty">
-            PR Constellation needs a working analysis agent to analyze pull requests. Recheck once
-            access is restored.
+            PR Constellation needs a working Codex CLI to analyze pull requests. Recheck once access
+            is restored.
           </DialogDescription>
         </DialogHeader>
 
@@ -83,7 +83,7 @@ export function AnalysisAgentStatusDialog() {
             className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
           >
             <RefreshCw className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
-            Checking AI agent access…
+            Checking Codex access…
           </div>
         ) : error || status.message ? (
           <div className="min-h-0 max-h-[min(40vh,14rem)] overflow-y-auto overscroll-contain rounded-md border border-warning/25 bg-warning/10 px-3 py-2">

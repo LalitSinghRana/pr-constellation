@@ -1,5 +1,6 @@
 import path from "node:path";
 import { parseGitHubPrUrl } from "../../analysis-worker/workflow/02-fetch-pr/github.js";
+import { ANALYSIS_REASONING_EFFORTS } from "../../shared/analysis-models.js";
 import { sortAnalysisQueueJobs } from "../../shared/analysis-queue-policy.js";
 import {
   runCompletedMs,
@@ -756,8 +757,10 @@ export class DashboardService {
   }
 
   #resolveReasoningEffort(model, reasoningEffort, provider) {
-    const supported =
-      this.#configuration.modelReasoningEfforts[model] || this.#configuration.reasoningEfforts;
+    const registered = this.#configuration.modelReasoningEfforts[model];
+    const supported = registered?.length
+      ? registered
+      : [...new Set([...this.#configuration.reasoningEfforts, ...ANALYSIS_REASONING_EFFORTS])];
     const preferred =
       analysisModelReasoningEffort(model, provider) ||
       (supported.includes(DEFAULT_ANALYSIS_REASONING_EFFORT)

@@ -1,30 +1,37 @@
 import { spawn } from "node:child_process";
 import {
-  ANALYSIS_MODELS,
   createAnalysisCatalog,
-  mergeAnalysisModels,
-  parseCursorModelList,
+  parseCodexModelCatalog,
+  resolveProviderCatalogModels,
 } from "../../shared/analysis-models.js";
 
 const LIST_MODELS_TIMEOUT_MS = 8_000;
 
-export async function loadAnalysisCatalog({ listCursorModels = listCursorModelsFromCli } = {}) {
-  let discovered = [];
-  try {
-    discovered = await listCursorModels();
-  } catch {
-    discovered = [];
-  }
-  const models = mergeAnalysisModels(ANALYSIS_MODELS, discovered);
+export async function loadAnalysisCatalog({
+  listCodexModels = listCodexModelsFromCli,
+} = {}) {
+  const codexDiscovered = await listCodexModels().catch(() => []);
+  const models = resolveProviderCatalogModels("codex", codexDiscovered);
   return createAnalysisCatalog(models);
 }
 
-export async function listCursorModelsFromCli({
+export async function listCodexModelsFromCli({
   spawnChild = spawn,
   timeoutMs = LIST_MODELS_TIMEOUT_MS,
 } = {}) {
-  const stdout = await runCommand(spawnChild, ["agent", ["--list-models"]], timeoutMs);
-  return parseCursorModelList(stdout);
+  try {
+    const stdout = await runCommand(spawnChild, ["codex", ["debug", "models"]], timeoutMs);
+    const models = parseCodexModelCatalog(stdout);
+    if (models.length > 0) return models;
+  } catch {
+    // The refresh can fail offline. The catalog shipped with the CLI is still current.
+  }
+  const stdout = await runCommand(
+    spawnChild,
+    ["codex", ["debug", "models", "--bundled"]],
+    timeoutMs,
+  );
+  return parseCodexModelCatalog(stdout);
 }
 
 function runCommand(spawnChild, argv, timeoutMs) {
