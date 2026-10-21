@@ -20,7 +20,7 @@ node --test --test-concurrency=1 analysis-worker/tests/benchmark-run.test.js
 
 - **Runtime:** Node 24 ESM
 - **GitHub:** local `gh` authentication via `analysis-worker/workflow/02-fetch-pr/github.js`
-- **AI providers:** Cursor Agent (`agent`), Claude (`claude`), Codex (`codex`) — configured in Settings
+- **AI provider:** Codex (`codex exec`) — model and effort configured in Settings
 - **Validation:** deterministic schema + briefing checks in stage 05; semantic judge (stage 06) for offline benchmarking only
 
 ## Architecture

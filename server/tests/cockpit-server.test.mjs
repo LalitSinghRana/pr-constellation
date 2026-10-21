@@ -1121,9 +1121,9 @@ test("settings lists are validated before writing", () => {
       reviewTreeDensity: "1x",
       defaultReviewTab: "conversation",
       defaultFileViewMode: "source",
-      defaultAnalysisProvider: "cursor",
-      defaultAnalysisModel: "cursor-grok-4.5",
-      defaultAnalysisReasoningEffort: "xhigh",
+      defaultAnalysisProvider: "codex",
+      defaultAnalysisModel: "grok-4.5",
+      defaultAnalysisReasoningEffort: "medium",
     },
   );
   assert.equal(normalizeSettings({}).autoQueue, false);
@@ -1138,14 +1138,14 @@ test("settings lists are validated before writing", () => {
   assert.equal(normalizeSettings({ defaultFileViewMode: "diff" }).defaultFileViewMode, "source");
   assert.equal(normalizeSettings({ reviewTreeDensity: null }).reviewTreeDensity, "1x");
   assert.equal(normalizeSettings({ defaultReviewTab: undefined }).defaultReviewTab, "conversation");
-  assert.equal(normalizeSettings({}).defaultAnalysisModel, "cursor-grok-4.6");
-  assert.equal(normalizeSettings({}).defaultAnalysisProvider, "cursor");
-  assert.equal(normalizeSettings({}).defaultAnalysisReasoningEffort, "xhigh");
+  assert.equal(normalizeSettings({}).defaultAnalysisModel, "gpt-5.6-sol");
+  assert.equal(normalizeSettings({}).defaultAnalysisProvider, "codex");
+  assert.equal(normalizeSettings({}).defaultAnalysisReasoningEffort, "medium");
   assert.equal(normalizeSettings({ autoQueue: false }).autoQueue, false);
   assert.equal(normalizeSettings({ autoQueue: true }).autoQueue, true);
   assert.equal(
     normalizeSettings({ defaultAnalysisModel: "not a real model" }).defaultAnalysisModel,
-    "cursor-grok-4.6",
+    "gpt-5.6-sol",
   );
   assert.deepEqual(
     normalizeSettings({

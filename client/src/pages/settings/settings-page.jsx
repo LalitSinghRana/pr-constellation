@@ -176,8 +176,8 @@ export function SettingsPage() {
                   <Label>Default analysis</Label>
                 </ItemTitle>
                 <ItemDescription className="line-clamp-none">
-                  Provider, model, and effort used for Analyze, Retry, and auto-queue. Cursor Agent
-                  runs Composer and Grok; GPT models use Codex; Claude models use Claude.
+                  Model and effort used for Analyze, Retry, and auto-queue. The list comes from
+                  codex debug models.
                 </ItemDescription>
               </ItemContent>
               <ItemActions className="max-sm:w-full max-sm:justify-stretch">

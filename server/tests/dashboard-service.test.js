@@ -49,14 +49,10 @@ assert.notEqual(
 
 try {
   const configuration = await loadDashboardConfiguration();
-  assert.equal(configuration.defaultModel, "cursor-grok-4.6");
-  assert.ok(configuration.models.includes("cursor-grok-4.6"));
+  assert.equal(configuration.defaultModel, "gpt-5.6-sol");
   assert.ok(configuration.models.includes("gpt-5.6-sol"));
-  assert.ok(configuration.models.includes("sonnet"));
-  assert.equal(configuration.modelProviders["cursor-grok-4.6"], "cursor");
   assert.equal(configuration.modelProviders["gpt-5.6-sol"], "codex");
-  assert.equal(configuration.modelProviders.sonnet, "claude");
-  assert.ok(configuration.modelReasoningEfforts["cursor-grok-4.6"].includes("xhigh"));
+  assert.ok(configuration.modelReasoningEfforts["gpt-5.6-sol"].includes("medium"));
 
   const service = new DashboardService({
     configuration: {
@@ -193,8 +189,8 @@ try {
   assert.equal(executions[0].sourceRunDir, null);
   assert.equal(executions[1].sourceRunDir, null);
   assert.equal(executions[0].model, "gpt-fixture");
-  assert.equal(executions[0].provider, "cursor");
-  assert.equal(executions[0].reasoningEffort, "xhigh");
+  assert.equal(executions[0].provider, "codex");
+  assert.equal(executions[0].reasoningEffort, "medium");
   const storedFirst = await service.store.readRun(first.slug, first.runId);
   const storedSecond = await service.store.readRun(second.slug, second.runId);
   assert.equal(storedFirst.status, "succeeded");
@@ -307,9 +303,9 @@ try {
     defaultModel: "gpt-fixture",
     models: ["gpt-fixture", "gpt-other", "other-fixture"],
     modelProviders: {
-      "gpt-fixture": "cursor",
-      "gpt-other": "cursor",
-      "other-fixture": "cursor",
+      "gpt-fixture": "codex",
+      "gpt-other": "codex",
+      "other-fixture": "codex",
     },
     reasoningEfforts: ["low", "medium", "high", "xhigh"],
     modelReasoningEfforts: {
@@ -324,17 +320,17 @@ try {
     prUrl: "https://github.com/example/delta/pull/4",
     refresh: true,
   });
-  assert.equal(customEffortBatch.provider, "cursor");
+  assert.equal(customEffortBatch.provider, "codex");
   assert.deepEqual(customEffortBatch.reasoningEfforts, ["low", "medium", "high", "max"]);
   assert.deepEqual(
     customEffortBatch.runs.map((run) => run.metrics.provider),
-    Array(4).fill("cursor"),
+    Array(4).fill("codex"),
   );
   await service.waitForIdle();
   const customEffortExecutions = executions.slice(-4);
   assert.deepEqual(
     customEffortExecutions.map((execution) => execution.provider),
-    Array(4).fill("cursor"),
+    Array(4).fill("codex"),
   );
   assert.deepEqual(
     customEffortExecutions.map((execution) => execution.reasoningEffort),
@@ -345,7 +341,7 @@ try {
   );
   assert.deepEqual(
     storedCustomEffortRuns.map((run) => run.metrics.provider),
-    Array(4).fill("cursor"),
+    Array(4).fill("codex"),
   );
 
   await assert.rejects(

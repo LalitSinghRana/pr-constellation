@@ -23,6 +23,7 @@ const effortLabels = {
   high: "High",
   xhigh: "Extra high",
   max: "Max",
+  ultra: "Ultra",
 };
 
 function preferredEffort(efforts, ...candidates) {
@@ -35,7 +36,7 @@ export function AnalysisAgentSettings({ busy, catalog, onSave, settings }) {
     : createAnalysisCatalog().providers;
   const choice = normalizeSettingsAnalysisChoice(settings);
   const provider =
-    providers.find((entry) => entry.id === choice.defaultAnalysisProvider) || providers[0];
+    providers.find((entry) => entry.id === DEFAULT_ANALYSIS_PROVIDER) || providers[0];
   const models = provider?.models ?? [];
   const selectedModel =
     models.find((entry) => entry.id === choice.defaultAnalysisModel) ||
@@ -55,32 +56,6 @@ export function AnalysisAgentSettings({ busy, catalog, onSave, settings }) {
   return (
     <div className="flex w-full min-w-0 flex-col gap-3 sm:w-auto sm:flex-row sm:items-end">
       <CatalogSelect
-        disabled={busy}
-        id="default-analysis-provider"
-        label="Provider"
-        onValueChange={(value) => {
-          const nextProvider = providers.find((entry) => entry.id === value);
-          const nextModel =
-            nextProvider?.models.find((entry) => entry.id === nextProvider.defaultModel) ||
-            nextProvider?.models[0];
-          const nextEfforts = nextModel?.reasoningEfforts?.length
-            ? nextModel.reasoningEfforts
-            : (nextProvider?.reasoningEfforts ?? []);
-          onSave(
-            normalizeSettingsAnalysisChoice({
-              defaultAnalysisProvider: value,
-              defaultAnalysisModel: nextModel?.id,
-              defaultAnalysisReasoningEffort: preferredEffort(
-                nextEfforts,
-                nextProvider?.defaultReasoningEffort,
-              ),
-            }),
-          );
-        }}
-        options={providers.map((entry) => ({ id: entry.id, label: entry.label }))}
-        value={provider?.id || DEFAULT_ANALYSIS_PROVIDER}
-      />
-      <CatalogSelect
         disabled={busy || models.length === 0}
         id="default-analysis-model"
         label="Model"
@@ -91,7 +66,7 @@ export function AnalysisAgentSettings({ busy, catalog, onSave, settings }) {
             : efforts;
           onSave(
             normalizeSettingsAnalysisChoice({
-              defaultAnalysisProvider: provider?.id,
+              defaultAnalysisProvider: DEFAULT_ANALYSIS_PROVIDER,
               defaultAnalysisModel: value,
               defaultAnalysisReasoningEffort: preferredEffort(
                 nextEfforts,
@@ -112,7 +87,7 @@ export function AnalysisAgentSettings({ busy, catalog, onSave, settings }) {
           onValueChange={(value) =>
             onSave(
               normalizeSettingsAnalysisChoice({
-                defaultAnalysisProvider: provider?.id,
+                defaultAnalysisProvider: DEFAULT_ANALYSIS_PROVIDER,
                 defaultAnalysisModel: selectedModel?.id,
                 defaultAnalysisReasoningEffort: value,
               }),
