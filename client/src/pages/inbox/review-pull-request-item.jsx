@@ -27,6 +27,7 @@ export function ReviewPullRequestItem({
 }) {
   const labelColor = (color) => (/^[\da-f]{6}$/i.test(color) ? `#${color}` : "#9b948d");
   const teammate = item.signals.find((signal) => signal.kind === "teammate-pr");
+  const directMention = item.signals.find((signal) => signal.kind === "direct-mention");
   const reviewRequest =
     item.signals.find((signal) => signal.kind === "direct-review") ??
     item.signals.find((signal) => signal.kind === "team-review");
@@ -87,6 +88,18 @@ export function ReviewPullRequestItem({
                     <b className="font-semibold text-foreground/65">{item.author}</b>
                   )}
                 </span>
+              )}
+              {directMention && (
+                <Badge
+                  className={cn(
+                    "h-5 gap-1 px-1.5 text-[11px] font-semibold",
+                    signalStyles[directMention.kind],
+                  )}
+                  variant="outline"
+                >
+                  <AtSign className="size-3" />
+                  Mentioned you
+                </Badge>
               )}
               {reviewRequest && (
                 <Badge

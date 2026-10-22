@@ -5,6 +5,7 @@ export const titleClassName = "text-[17px] font-semibold leading-snug tracking-[
 
 export const signalStyles = {
   "direct-review": "border-error/20 bg-error/10 text-error-strong",
+  "direct-mention": "border-info/20 bg-info/10 text-info-strong",
   "teammate-pr": "border-warning/25 bg-warning/10 text-warning-strong",
   "team-review": "border-lilac/25 bg-lilac/10 text-lilac-strong",
 };
