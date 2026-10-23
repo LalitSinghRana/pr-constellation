@@ -12,6 +12,7 @@ import { createSyncScheduler } from "../inbox/sync-scheduler.js";
 import { handleGitHubMediaRequest } from "../review/github-media.js";
 import { handleReviewDraftApiRequest } from "../review/review-draft-api.js";
 import { handleReviewPayloadApiRequest } from "../review/review-payload-api.js";
+import { clearSettleInboxTimers } from "../review/settle-inbox-after-review.js";
 import {
   clientDistRoot,
   clientRoot,
@@ -81,6 +82,7 @@ export async function startServer({
   let resourcesClosePromise;
   const closeResources = () => {
     resourcesClosePromise ??= (async () => {
+      clearSettleInboxTimers();
       eventHub.close();
       await scheduler.stop();
       await dashboardService.close();
@@ -110,7 +112,7 @@ export async function startServer({
       .then(async (handled) => {
         if (handled) return;
         if (await handleGitHubMediaRequest(request, response)) return;
-        if (await handleReviewDraftApiRequest(request, response)) return;
+        if (await handleReviewDraftApiRequest(request, response, { eventHub })) return;
         if (
           await handleReviewPayloadApiRequest(request, response, {
             store: dashboardService.store,

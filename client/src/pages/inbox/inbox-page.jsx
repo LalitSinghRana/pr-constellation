@@ -101,6 +101,7 @@ export function InboxPage() {
                             GroupHeading={GroupHeading}
                             RowHeading={RowHeading}
                             label={group.label}
+                            sectionId={section.id}
                             items={group.items}
                             isDone={inbox.isDone}
                             onToggleDone={inbox.onToggleDone}

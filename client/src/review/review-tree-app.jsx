@@ -20,7 +20,15 @@ import {
 import { ReviewTreeCanvas } from "./review-tree-canvas.jsx";
 import { ReviewTreesStatus } from "./review-trees-status.jsx";
 
-function App({ analysisBusy, analysisStatus, onAnalyze, review, reviewSlug, treeData }) {
+function App({
+  analysisBusy,
+  analysisStatus,
+  conversationReload = 0,
+  onAnalyze,
+  review,
+  reviewSlug,
+  treeData,
+}) {
   const hasTree = Boolean(
     (treeData?.files || []).some((file) => sectionTreeSections(file).length > 0),
   );
@@ -85,7 +93,11 @@ function App({ analysisBusy, analysisStatus, onAnalyze, review, reviewSlug, tree
         <ReviewHeader activeTab={activeTab} onTabChange={setActiveTabOverride} review={review} />
         <main className="grid min-h-0 overflow-hidden">
           {activeTab === "conversation" ? (
-            <PullRequestConversation review={review} reviewSlug={reviewSlug} />
+            <PullRequestConversation
+              conversationReload={conversationReload}
+              review={review}
+              reviewSlug={reviewSlug}
+            />
           ) : hasTree ? (
             <section
               className="size-full min-h-0 overflow-hidden rounded-none border-0 bg-card shadow-none"
@@ -121,6 +133,7 @@ function App({ analysisBusy, analysisStatus, onAnalyze, review, reviewSlug, tree
 export function ReviewTreeApp({
   analysisBusy = false,
   analysisStatus,
+  conversationReload = 0,
   onAnalyze,
   review,
   reviewSlug,
@@ -130,6 +143,7 @@ export function ReviewTreeApp({
     <App
       analysisBusy={analysisBusy}
       analysisStatus={analysisStatus}
+      conversationReload={conversationReload}
       onAnalyze={onAnalyze}
       review={review}
       reviewSlug={reviewSlug || readReviewSlug()}

@@ -8,11 +8,12 @@ import {
   updateReviewDraftBody,
   updateReviewDraftComment,
 } from "./review-draft-service.js";
+import { scheduleSettleInboxAfterReview } from "./settle-inbox-after-review.js";
 
 const reviewSlugPattern =
   /^\/api\/reviews\/([^/]+)\/(?:conversation|draft(?:\/comments(?:\/([^/]+))?|\/submit)?)$/;
 
-export async function handleReviewDraftApiRequest(request, response) {
+export async function handleReviewDraftApiRequest(request, response, { eventHub } = {}) {
   const url = new URL(request.url, cockpitOrigin);
   const match = reviewSlugPattern.exec(url.pathname);
   if (!match) return false;
@@ -42,11 +43,9 @@ export async function handleReviewDraftApiRequest(request, response) {
 
     if (request.method === "POST" && submitPath) {
       const body = await readRequestJson(request);
-      sendJson(
-        response,
-        200,
-        await submitReviewDraft(slug, { body: body.body, event: body.event }),
-      );
+      const submitted = await submitReviewDraft(slug, { body: body.body, event: body.event });
+      scheduleSettleInboxAfterReview(slug, { eventHub });
+      sendJson(response, 200, submitted);
       return true;
     }
 

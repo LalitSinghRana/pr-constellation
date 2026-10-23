@@ -17,13 +17,13 @@ import { relativeTime } from "../lib/queue.js";
 import { cn } from "../lib/utils.js";
 import { GitHubMarkdown } from "./github-markdown.jsx";
 
-export function PullRequestConversation({ review, reviewSlug }) {
+export function PullRequestConversation({ conversationReload = 0, review, reviewSlug }) {
   const {
     data: conversation,
     error,
     isLoading,
   } = useQuery({
-    queryKey: ["review-conversation", reviewSlug],
+    queryKey: ["review-conversation", reviewSlug, conversationReload],
     queryFn: async ({ queryKey, signal }) => {
       const slug = queryKey[1];
       const response = await fetch(`/api/reviews/${encodeURIComponent(slug)}/conversation`, {

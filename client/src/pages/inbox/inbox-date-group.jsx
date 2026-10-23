@@ -7,7 +7,15 @@ import { MyPullRequestItem } from "./my-pull-request-item.jsx";
 import { NotificationItem } from "./notification-item.jsx";
 import { ReviewPullRequestItem } from "./review-pull-request-item.jsx";
 
-function DateGroupHeader({ GroupHeading, items, label, onToggleDone, doneBusy, openItems }) {
+function DateGroupHeader({
+  GroupHeading,
+  items,
+  label,
+  onToggleDone,
+  doneBusy,
+  openItems,
+  showMarkAllDone = true,
+}) {
   return (
     <ItemGroup.Header>
       <GroupHeading className="m-0 flex min-w-0 items-center gap-[0.55rem] text-[0.75rem] font-[750] tracking-[0.01em] text-foreground [overflow-wrap:anywhere]">
@@ -18,7 +26,7 @@ function DateGroupHeader({ GroupHeading, items, label, onToggleDone, doneBusy, o
         <Badge variant="outline">
           {items.length} {items.length === 1 ? "item" : "items"}
         </Badge>
-        {openItems.length > 0 && (
+        {showMarkAllDone && openItems.length > 0 && (
           <Button
             size="icon-sm"
             variant="outline"
@@ -53,9 +61,11 @@ export function PullRequestDateGroup({
   prioritizeMutation,
   onMarkRead,
   label,
+  sectionId,
 }) {
   const groupDoneBusy = items.some((item) => doneMutation.includes(item.id));
   const openItems = items.filter((item) => !isDone(item));
+  const showMarkAllDone = sectionId !== "reviewed" && sectionId !== "approved";
   return (
     <ItemGroup className={itemGroupCardClassName} aria-label={`${label} items`}>
       <DateGroupHeader
@@ -65,6 +75,7 @@ export function PullRequestDateGroup({
         onToggleDone={onToggleDone}
         doneBusy={groupDoneBusy}
         openItems={openItems}
+        showMarkAllDone={showMarkAllDone}
       />
       {items.map((item) => {
         const shared = {
