@@ -14,7 +14,7 @@ const PROBE_PROMPT = 'Reply with {"ok":true} only.';
  * Probe the configured default analysis agent the same way a real run does.
  */
 export async function probeAnalysisAgent(options = {}) {
-  const { model, provider, reasoningEffort } =
+  const { model, reasoningEffort } =
     options && typeof options === "object" && "defaultAnalysisModel" in options
       ? settingsAnalysisRunOptions(options)
       : options;
