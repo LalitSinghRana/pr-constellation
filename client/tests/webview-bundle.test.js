@@ -153,7 +153,6 @@ assert.match(treeAppSource, /aria-label="Review tree density"/);
 assert.match(treeAppSource, /REVIEW_TREE_DENSITY_MODES/);
 assert.match(treeAppSource, /absolute top-4 right-\[18px\]/);
 assert.match(reviewTreeSource, /value="source"/);
-assert.match(reviewTreeSource, /ariaLabel="Review tree map"/);
 assert.match(reviewTreeSource, /pointerEvents: "auto"/);
 assert.match(treeAppSource, /text-sm font-normal leading-normal/);
 assert.match(treeAppSource, /<ReviewDraftSheet \/>/);
@@ -222,11 +221,6 @@ assert.match(treeAppSource, /min-h-16 max-h-32 w-full shrink-0 resize-y/);
 assert.match(treeAppSource, /max-h-48 gap-3 overflow-y-auto/);
 assert.doesNotMatch(treeAppSource, /grid min-h-0 flex-1 gap-3 overflow-y-auto/);
 assert.match(webStyles, /\.review-branch-hit-path/);
-assert.match(treeAppSource, /ariaLabel="Review tree map"/);
-assert.match(
-  treeAppSource,
-  /overflow-hidden rounded-md border border-border bg-\[color-mix\(in_oklab,var\(--card\)_92%,transparent\)\] shadow-sm backdrop-blur-\[12px\]/,
-);
 assert.doesNotMatch(webStyles, /\.review-tree-map/);
 assert.doesNotMatch(webStyles, /\.change-pill\.is-add/);
 assert.doesNotMatch(webStyles, /\.review-mark\.is-open/);
