@@ -31,6 +31,8 @@ export function ReviewPullRequestItem({
   const reviewRequest =
     item.signals.find((signal) => signal.kind === "direct-review") ??
     item.signals.find((signal) => signal.kind === "team-review");
+  const showMarkDone =
+    completed || (item.lifecycle !== "reviewed" && item.lifecycle !== "approved");
 
   return (
     <ActivityHoverCard updates={activityUpdates(item)} since={item.changesSince}>
@@ -155,12 +157,14 @@ export function ReviewPullRequestItem({
               onPrioritize={onPrioritize}
               prioritizeBusy={prioritizeBusy}
             />
-            <MarkDoneOrRestore
-              completed={completed}
-              doneBusy={doneBusy}
-              item={item}
-              onToggleDone={onToggleDone}
-            />
+            {showMarkDone ? (
+              <MarkDoneOrRestore
+                completed={completed}
+                doneBusy={doneBusy}
+                item={item}
+                onToggleDone={onToggleDone}
+              />
+            ) : null}
           </Item.Actions>
         </article>
       </Item>

@@ -43,16 +43,30 @@ export function ReviewPage() {
     treeData: undefined,
   });
 
+  const [conversationReload, setConversationReload] = useState(0);
+
   useEffect(() => {
     const events = new EventSource("/api/events");
     const refreshSoon = () => {
       void contextQuery.refetch();
       if (payloadEnabled) void payloadQuery.refetch();
     };
+    const onReviewSettled = (event) => {
+      try {
+        const payload = JSON.parse(event.data || "{}");
+        if (payload.slug && payload.slug === slug) {
+          void contextQuery.refetch();
+          setConversationReload((current) => current + 1);
+        }
+      } catch {
+        // Ignore malformed SSE payloads.
+      }
+    };
     events.addEventListener("analysis", refreshSoon);
     events.addEventListener("ready", refreshSoon);
+    events.addEventListener("review", onReviewSettled);
     return () => events.close();
-  }, [contextQuery.refetch, payloadEnabled, payloadQuery.refetch]);
+  }, [contextQuery.refetch, payloadEnabled, payloadQuery.refetch, slug]);
 
   useEffect(() => {
     if (!payloadEnabled) {
@@ -176,6 +190,7 @@ export function ReviewPage() {
       analysisStatus={analysisStatus}
       onAnalyze={() => analyzeMutation.mutate(review.url)}
       review={review}
+      conversationReload={conversationReload}
       reviewSlug={slug}
       treeData={presentation.status === "success" ? presentation.treeData : undefined}
     />
