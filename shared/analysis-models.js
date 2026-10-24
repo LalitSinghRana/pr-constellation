@@ -266,7 +266,9 @@ function withProvider(entry, provider) {
     provider,
     encodeEffortInModelId: false,
     defaultReasoningEffort: entry.defaultReasoningEffort ?? providerEntry?.defaultReasoningEffort,
-    reasoningEfforts: Object.freeze(entry.reasoningEfforts ?? providerEntry?.reasoningEfforts ?? []),
+    reasoningEfforts: Object.freeze(
+      entry.reasoningEfforts ?? providerEntry?.reasoningEfforts ?? [],
+    ),
   });
 }
 
