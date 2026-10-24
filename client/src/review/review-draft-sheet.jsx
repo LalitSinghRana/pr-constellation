@@ -62,8 +62,8 @@ export function ReviewDraftSheet() {
             <p className="flex items-start gap-2 rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-sm text-warning-strong">
               <AlertTriangle aria-hidden="true" className="mt-0.5 shrink-0" size={16} />
               <span>
-                The branch has moved ahead since this review was generated. Comments and reviews
-                you submit here target this review's commit.
+                The branch has moved ahead since this review was generated. Comments and reviews you
+                submit here target this review's commit.
               </span>
             </p>
           ) : null}

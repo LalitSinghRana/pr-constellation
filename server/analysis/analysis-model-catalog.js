@@ -7,9 +7,7 @@ import {
 
 const LIST_MODELS_TIMEOUT_MS = 8_000;
 
-export async function loadAnalysisCatalog({
-  listCodexModels = listCodexModelsFromCli,
-} = {}) {
+export async function loadAnalysisCatalog({ listCodexModels = listCodexModelsFromCli } = {}) {
   const codexDiscovered = await listCodexModels().catch(() => []);
   const models = resolveProviderCatalogModels("codex", codexDiscovered);
   return createAnalysisCatalog(models);

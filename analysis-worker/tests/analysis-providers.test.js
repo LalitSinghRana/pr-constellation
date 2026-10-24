@@ -25,9 +25,7 @@ test("analysis defaults are codex-only", () => {
   assert.equal(inferSharedProvider("gpt-5.6-sol"), "codex");
   assert.equal(inferSharedProvider("cursor-grok-4.6"), "codex");
   assert.equal(inferSharedProvider(""), "codex");
-  assert.ok(
-    ANALYSIS_MODELS.every((model) => model.provider === "codex"),
-  );
+  assert.ok(ANALYSIS_MODELS.every((model) => model.provider === "codex"));
   assert.equal(createAnalysisCatalog().providers.length, 1);
   assert.equal(createAnalysisCatalog().providers[0]?.id, "codex");
   assert.equal(createAnalysisCatalog().providers[0]?.defaultModel, "gpt-5.6-sol");
